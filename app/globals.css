@@ -1,0 +1,46 @@
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=Inter:wght@300;400;500&family=DM+Mono:wght@300;400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --arc-bg-0: #0F0D1A;
+  --arc-bg-1: #16132A;
+  --arc-bg-2: #1E1A35;
+  --arc-bg-3: #251F40;
+  --arc-gold: #F5A623;
+  --arc-coral: #E8635A;
+  --arc-purple: #8B5FBF;
+  --arc-lavender: #C8B8E8;
+  --text-primary: #EDE8F8;
+  --text-secondary: #8A7FAA;
+  --text-dim: #3A3460;
+  --green: #2ECC71;
+  --border: rgba(200, 184, 232, 0.08);
+  --border-bright: rgba(200, 184, 232, 0.15);
+}
+
+* { box-sizing: border-box; }
+
+html { color-scheme: dark; }
+
+body {
+  background-color: var(--arc-bg-0);
+  color: var(--text-primary);
+  font-family: 'Inter', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+@layer base {
+  h1, h2, h3, h4, h5, h6 { font-family: 'Syne', sans-serif; font-weight: 700; }
+  code, pre { font-family: 'DM Mono', monospace; }
+}
+
+@layer components {
+  .glass-panel { @apply bg-arc-bg-2/60 backdrop-blur-xl border border-border rounded-xl; }
+  .glass-panel-bright { @apply bg-arc-bg-2/80 backdrop-blur-xl border border-border-bright rounded-xl; }
+  .btn-primary { @apply px-6 py-3 bg-gradient-to-r from-arc-gold to-arc-purple text-white font-display font-bold rounded-lg hover:opacity-90 transition-all duration-200 disabled:opacity-50; }
+  .btn-secondary { @apply px-6 py-3 border border-border-bright text-text-primary font-display font-bold rounded-lg hover:bg-arc-bg-2 transition-all duration-200; }
+  .input-field { @apply w-full px-4 py-3 bg-arc-bg-1 border border-border rounded-lg text-text-primary placeholder:text-text-dim focus:outline-none focus:border-arc-purple focus:ring-1 focus:ring-arc-purple/30 transition-all duration-200; }
+}

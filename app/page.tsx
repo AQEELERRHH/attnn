@@ -52,7 +52,7 @@ export default async function HomePage() {
           <div className="flex items-center justify-center gap-4">
             {session?.user ? (
               <Link href="/dashboard">
-                <Button size="lg">Go to Dashboard <ArrowRight className="ml-2 w-4 h-4" /></Button>
+                <Button size="lg">Register as a Creator <ArrowRight className="ml-2 w-4 h-4" /></Button>
               </Link>
             ) : (
               <Link href="/register">

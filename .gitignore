@@ -39,3 +39,15 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Environment secrets - NEVER commit
+.env
+.env.local
+.env*.local
+.env.production
+
+# Circle recovery files
+recovery/
+recovery_file.dat
+contracts/cache/
+contracts/broadcast/

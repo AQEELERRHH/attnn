@@ -29,7 +29,7 @@ export function DashboardClient({
   userRole: string;
 }) {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState(profile?.isActive ? "creator" : "bidder");
+  const [activeTab, setActiveTab] = useState(profile?.isActive ? "bidder" : "creator");
   const [dailyBudget, setDailyBudget] = useState(bidderConfig?.dailyBudget ?? "50000000");
   const [minFitScore, setMinFitScore] = useState(bidderConfig?.minFitScore ?? 5);
   const [agentRunning, setAgentRunning] = useState(false);

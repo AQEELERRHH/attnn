@@ -4,21 +4,13 @@ import {
 import { type Abi, type Hex } from "viem";
 import { usdcAbi, USDC_ADDRESS } from "./arc";
 
-let sdk: CircleDeveloperControlledWalletsClient | null = null;
-
 function getSDK(): CircleDeveloperControlledWalletsClient {
-  if (!sdk) {
-    const apiKey = process.env.CIRCLE_API_KEY;
-    const entitySecret = process.env.CIRCLE_ENTITY_SECRET;
-    if (!apiKey || !entitySecret) {
-      throw new Error("Circle API credentials not configured");
-    }
-    sdk = new CircleDeveloperControlledWalletsClient({
-      apiKey,
-      entitySecret,
-    });
+  const apiKey = process.env.CIRCLE_API_KEY;
+  const entitySecret = process.env.CIRCLE_ENTITY_SECRET;
+  if (!apiKey || !entitySecret) {
+    throw new Error("Circle API credentials not configured");
   }
-  return sdk;
+  return new CircleDeveloperControlledWalletsClient({ apiKey, entitySecret });
 }
 
 let walletSetId: string | null = null;

@@ -64,7 +64,7 @@ export async function runBidderAgent(userId: string): Promise<AgentRunResult> {
           functionName: "getCreatorsByTag",
           args: [tag],
         });
-        addresses.forEach((a) => creatorAddresses.add(a));
+        addresses.forEach((a) => creatorAddresses.add(a.toLowerCase()));
       } catch (err) {
         errors.push(`Failed to query tag "${tag}": ${err}`);
       }

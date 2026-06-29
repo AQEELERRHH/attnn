@@ -190,11 +190,22 @@ export function DashboardClient({
           {/* Creator Tab */}
           <TabsContent value="creator" className="space-y-6 mt-6">
             {(!profile || editingProfile) && (
-              <CreatorSetupForm
-                existingProfile={profile}
-                onComplete={() => { setEditingProfile(false); router.refresh(); }}
-                onCancel={profile ? () => setEditingProfile(false) : undefined}
-              />
+              wallet && !profile && typeof window !== "undefined" && !localStorage.getItem("attnn:funded:" + wallet.address) ? (
+                <FundWalletCard
+                  address={wallet.address}
+                  onFunded={() => {
+                    localStorage.setItem("attnn:funded:" + wallet.address, "1");
+                    setEditingProfile(false);
+                    router.refresh();
+                  }}
+                />
+              ) : (
+                <CreatorSetupForm
+                  existingProfile={profile}
+                  onComplete={() => { setEditingProfile(false); router.refresh(); }}
+                  onCancel={profile ? () => setEditingProfile(false) : undefined}
+                />
+              )
             )}
 
             {profile && (

@@ -146,4 +146,43 @@ export const bidExpiryNotification = inngest.createFunction(
 );
 
 // Export all functions
-export const functions = [autoRefund, activityFeed, bidExpiryNotification];
+
+// --- Bidder Agent Auto-Runner ----------------------------------------------
+// Runs every 10 minutes for every active bidder config.
+export const runActiveBidders = inngest.createFunction(
+  { id: "run-active-bidders", name: "Run Active Bidder Agents" },
+  { cron: "*/10 * * * *" },
+  async ({ step }: { step: any }) => {
+    const { bidderConfigs } = await import("@/lib/db/schema");
+    const { runBidderAgent } = await import("@/lib/agent");
+
+    const activeBidders = await step.run("fetch-active-bidders", async () => {
+      return db.select().from(bidderConfigs).where(eq(bidderConfigs.isActive, true));
+    });
+
+    if (activeBidders.length === 0) {
+      return { message: "No active bidders" };
+    }
+
+    const results = await Promise.allSettled(
+      activeBidders.map((cfg: any) =>
+        step.run(`run-bidder-${cfg.userId}`, async () => {
+          try {
+            const r = await runBidderAgent(cfg.userId);
+            return { userId: cfg.userId, ...r };
+          } catch (err) {
+            const e = err as Error;
+            return { userId: cfg.userId, error: e.message };
+          }
+        })
+      )
+    );
+
+    return {
+      total: activeBidders.length,
+      results: results.map((r) => (r.status === "fulfilled" ? r.value : { error: r.reason })),
+    };
+  }
+);
+
+export const functions = [autoRefund, activityFeed, bidExpiryNotification, runActiveBidders];

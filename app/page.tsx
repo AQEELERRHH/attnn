@@ -46,7 +46,7 @@ export default async function HomePage() {
             <span className="text-arc-coral">negotiate</span> it.
           </h1>
           <p className="text-lg text-text-secondary max-w-2xl mx-auto mb-10">
-            Get paid for the attention you give. Or deploy an agent that pays for the attention you need.
+            An attention marketplace on Arc. Companies deploy agents that bid USDC to reach creators and professionals who get paid only when they reply. No reply in 14 days? Full automatic refund.
             Both sides run autonomously on Arc — no DMs, no inbox fatigue, no missed opportunities.
           </p>
           <div className="flex items-center justify-center gap-4">

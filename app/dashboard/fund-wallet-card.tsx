@@ -22,15 +22,13 @@ export function FundWalletCard({
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const FAUCET_URL = "https://faucet.circle.com";
-
   return (
     <Card className="p-8">
       <div className="text-xs uppercase tracking-wider text-arc-gold mb-2">
         Creator Registration
       </div>
       <h2 className="text-2xl font-display font-bold mb-2">
-        Your inbox, priced and ranked.
+        Your inbox, priced & ranked.
       </h2>
       <p className="text-sm text-text-secondary mb-8">
         Register once. Your Circle Agent Wallet handles everything autonomously.
@@ -38,7 +36,7 @@ export function FundWalletCard({
 
       <div className="flex items-center gap-2 mb-8">
         <div className="px-3 py-1 rounded-full border border-green/40 text-green text-xs font-mono">
-          01 Register
+          01 Register ✓
         </div>
         <div className="px-3 py-1 rounded-full border border-arc-gold/60 text-arc-gold text-xs font-mono">
           02 Fund wallet
@@ -64,13 +62,12 @@ export function FundWalletCard({
             {copied ? "Copied" : "Copy address"}
           </Button>
           
-            href={FAUCET_URL}
+            href="https://faucet.circle.com"
             target="_blank"
             rel="noopener noreferrer"
             className="text-arc-gold text-sm flex items-center gap-1 hover:underline"
           >
-            Get testnet USDC
-            <ExternalLink className="w-3 h-3" />
+            Get testnet USDC <ExternalLink className="w-3 h-3" />
           </a>
         </div>
       </div>
@@ -80,7 +77,7 @@ export function FundWalletCard({
         <li>
           Go to{" "}
           
-            href={FAUCET_URL}
+            href="https://faucet.circle.com"
             target="_blank"
             rel="noopener noreferrer"
             className="text-arc-gold hover:underline"
@@ -96,7 +93,7 @@ export function FundWalletCard({
       </ol>
 
       <Button type="button" onClick={onFunded} className="w-full">
-        I have funded my wallet, Activate on Arc
+        I&apos;ve funded my wallet, Activate on Arc →
       </Button>
     </Card>
   );

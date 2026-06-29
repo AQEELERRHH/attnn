@@ -10,7 +10,6 @@ import { Slider } from "@/components/ui/slider";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/hooks/use-toast";
 import { LogOut, Wallet, Play, Square, MessageCircle, Check, X, Activity, Zap, Bot, Users } from "lucide-react";
-import { FundWalletCard } from "./fund-wallet-card";
 
 interface WalletData { id: string; address: string; circleWalletId: string; blockchain: string; state: string; }
 interface ProfileData { id: string; handle: string; minBid: string; tags: string[]; bio: string | null; autoAcceptThreshold: number | null; isActive: boolean; }
@@ -191,22 +190,11 @@ export function DashboardClient({
           {/* Creator Tab */}
           <TabsContent value="creator" className="space-y-6 mt-6">
             {(!profile || editingProfile) && (
-              wallet && !profile && typeof window !== "undefined" && !localStorage.getItem("attnn:funded:" + wallet.address) ? (
-                <FundWalletCard
-                  address={wallet.address}
-                  onFunded={() => {
-                    localStorage.setItem("attnn:funded:" + wallet.address, "1");
-                    setEditingProfile(false);
-                    router.refresh();
-                  }}
-                />
-              ) : (
-                <CreatorSetupForm
-                  existingProfile={profile}
-                  onComplete={() => { setEditingProfile(false); router.refresh(); }}
-                  onCancel={profile ? () => setEditingProfile(false) : undefined}
-                />
-              )
+              <CreatorSetupForm
+                existingProfile={profile}
+                onComplete={() => { setEditingProfile(false); router.refresh(); }}
+                onCancel={profile ? () => setEditingProfile(false) : undefined}
+              />
             )}
 
             {profile && (

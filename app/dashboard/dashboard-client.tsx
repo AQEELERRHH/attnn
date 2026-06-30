@@ -101,11 +101,17 @@ export function DashboardClient({
   };
 
   const handleAcceptBid = async (bidId: string) => {
+    const reply = window.prompt("Write your reply to accept this bid (min 10 characters):");
+    if (reply === null) return;
+    if (reply.trim().length < 10) {
+      toast({ title: "Reply too short", description: "Reply must be at least 10 characters.", variant: "destructive" });
+      return;
+    }
     try {
       const res = await fetch("/api/bid/accept", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ bidId, userId }),
+        body: JSON.stringify({ bidId, userId, reply: reply.trim() }),
       });
       const data = await res.json();
       if (data.success) {

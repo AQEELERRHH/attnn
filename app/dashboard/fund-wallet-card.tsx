@@ -58,7 +58,7 @@ export function FundWalletCard({
             <Copy className="w-3 h-3 mr-2" />
             {copied ? "Copied" : "Copy address"}
           </Button>
-          
+          <a
             href={faucetUrl}
             target="_blank"
             rel="noopener noreferrer"

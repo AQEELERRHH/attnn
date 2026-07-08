@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { FundWalletCard } from "./fund-wallet-card";
 import { Slider } from "@/components/ui/slider";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/hooks/use-toast";
@@ -196,11 +197,20 @@ export function DashboardClient({
           {/* Creator Tab */}
           <TabsContent value="creator" className="space-y-6 mt-6">
             {(!profile || editingProfile) && (
-              <CreatorSetupForm
-                existingProfile={profile}
-                onComplete={() => { setEditingProfile(false); router.refresh(); }}
-                onCancel={profile ? () => setEditingProfile(false) : undefined}
-              />
+              wallet && !profile && !editingProfile && typeof window !== "undefined" && !localStorage.getItem("attnn:funded:" + wallet.address) ? (
+                <FundWalletCard
+                  address={wallet.address}
+                  onFunded={() => {
+                    localStorage.setItem("attnn:funded:" + wallet.address, "1");
+                  }}
+                />
+              ) : (
+                <CreatorSetupForm
+                  existingProfile={profile}
+                  onComplete={() => { setEditingProfile(false); router.refresh(); }}
+                  onCancel={profile ? () => setEditingProfile(false) : undefined}
+                />
+              )
             )}
 
             {profile && (

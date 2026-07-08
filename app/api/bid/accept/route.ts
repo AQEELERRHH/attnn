@@ -1,3 +1,6 @@
+// Polyfill BigInt JSON serialization for NextResponse.json
+(BigInt.prototype as unknown as { toJSON: () => string }).toJSON = function () { return this.toString(); };
+
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db/client";

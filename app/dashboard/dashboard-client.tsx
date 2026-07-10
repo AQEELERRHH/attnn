@@ -36,6 +36,7 @@ export function DashboardClient({
   const [agentRunning, setAgentRunning] = useState(false);
   const [provisioning, setProvisioning] = useState(!wallet);
   const [editingProfile, setEditingProfile] = useState(false);
+  const [walletFunded, setWalletFunded] = useState(false);
 
   // Auto-provision wallet if missing
   useEffect(() => {
@@ -52,6 +53,7 @@ export function DashboardClient({
               description: data.wallet?.address?.slice(0, 6) + "..." + data.wallet?.address?.slice(-4),
               variant: "success",
             });
+            setProvisioning(false);
             router.refresh();
           } else {
             toast({ title: "Wallet provisioning failed", description: data.error ?? "Unknown error", variant: "destructive" });
@@ -197,11 +199,12 @@ export function DashboardClient({
           {/* Creator Tab */}
           <TabsContent value="creator" className="space-y-6 mt-6">
             {(!profile || editingProfile) && (
-              wallet && !profile && !editingProfile && typeof window !== "undefined" && !localStorage.getItem("attnn:funded:" + wallet.address) ? (
+              wallet && !profile && !editingProfile && !walletFunded && typeof window !== "undefined" && !localStorage.getItem("attnn:funded:" + wallet.address) ? (
                 <FundWalletCard
                   address={wallet.address}
                   onFunded={() => {
                     localStorage.setItem("attnn:funded:" + wallet.address, "1");
+                    setWalletFunded(true);
                   }}
                 />
               ) : (

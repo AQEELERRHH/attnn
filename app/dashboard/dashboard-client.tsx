@@ -37,6 +37,7 @@ export function DashboardClient({
   const [provisioning, setProvisioning] = useState(!wallet);
   const [editingProfile, setEditingProfile] = useState(false);
   const [walletFunded, setWalletFunded] = useState(false);
+  const [editingBidder, setEditingBidder] = useState(false);
 
   // Auto-provision wallet if missing
   useEffect(() => {
@@ -322,8 +323,8 @@ export function DashboardClient({
 
           {/* Bidder Tab */}
           <TabsContent value="bidder" className="space-y-6 mt-6">
-            {!bidderConfig && (
-              <BidderSetupForm userId={userId} onComplete={() => router.refresh()} />
+            {(!bidderConfig || editingBidder) && (
+              <BidderSetupForm userId={userId} onComplete={() => { setEditingBidder(false); router.refresh(); }} />
             )}
 
             {bidderConfig && (
@@ -368,6 +369,9 @@ export function DashboardClient({
                         router.refresh();
                       }}>
                         {bidderConfig.isActive ? <><Square className="w-4 h-4 mr-1" /> Pause</> : <><Play className="w-4 h-4 mr-1" /> Activate</>}
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={() => setEditingBidder(true)}>
+                        Edit Agent
                       </Button>
                       <Button variant="outline" size="sm" onClick={handleRunAgent} disabled={agentRunning}>
                         <Zap className="w-4 h-4 mr-1" /> {agentRunning ? "Running..." : "Run Now"}

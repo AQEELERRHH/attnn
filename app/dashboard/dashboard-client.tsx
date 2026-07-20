@@ -312,9 +312,9 @@ export function DashboardClient({
                     defaultValue={[autoAcceptThreshold]}
                     max={10}
                     step={1}
-                    onValueChange={(val) => setAutoAcceptThreshold(val[0])}
+                    onValueChange={(val) => setAutoAcceptThreshold(val[0] ?? 0)}
                     onValueCommit={async (val) => {
-                      setAutoAcceptThreshold(val[0]);
+                      setAutoAcceptThreshold(val[0] ?? 0);
                       await fetch("/api/profile/update", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },

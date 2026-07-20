@@ -38,6 +38,7 @@ export function DashboardClient({
   const [editingProfile, setEditingProfile] = useState(false);
   const [walletFunded, setWalletFunded] = useState(false);
   const [editingBidder, setEditingBidder] = useState(false);
+  const [autoAcceptThreshold, setAutoAcceptThreshold] = useState(profile?.autoAcceptThreshold ?? 0);
 
   // Auto-provision wallet if missing
   useEffect(() => {
@@ -305,13 +306,15 @@ export function DashboardClient({
                       <h3 className="font-display font-bold">Auto-Accept Threshold</h3>
                       <p className="text-xs text-text-secondary">Bids scored above this will be automatically accepted</p>
                     </div>
-                    <span className="text-2xl font-display font-bold text-arc-gold">{profile.autoAcceptThreshold ?? 0}</span>
+                    <span className="text-2xl font-display font-bold text-arc-gold">{autoAcceptThreshold}</span>
                   </div>
                   <Slider
-                    defaultValue={[profile.autoAcceptThreshold ?? 5]}
+                    defaultValue={[autoAcceptThreshold]}
                     max={10}
                     step={1}
+                    onValueChange={(val) => setAutoAcceptThreshold(val[0])}
                     onValueCommit={async (val) => {
+                      setAutoAcceptThreshold(val[0]);
                       await fetch("/api/profile/update", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },

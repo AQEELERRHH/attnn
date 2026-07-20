@@ -71,6 +71,41 @@ export function DashboardClient({
     return () => { cancelled = true; };
   }, []); // run once on mount
 
+  const formatLogData = (action: string, data: any): string => {
+    if (!data || Object.keys(data).length === 0) return "";
+    try {
+      switch (action) {
+        case "creator_discovered":
+          return [
+            data.count !== undefined ? `${data.count} creator${data.count !== 1 ? "s" : ""} found` : null,
+            data.scored !== undefined ? `${data.scored} scored` : null,
+            data.bidsPlaced !== undefined ? `${data.bidsPlaced} bid${data.bidsPlaced !== 1 ? "s" : ""} placed` : null,
+          ].filter(Boolean).join(" · ");
+        case "bid_placed":
+          return [
+            data.amount ? `Bid ${formatAmount(data.amount)}` : null,
+            data.creator ? `on @${data.creator}` : null,
+            data.score !== undefined ? `· fit score ${data.score}/10` : null,
+          ].filter(Boolean).join(" ");
+        case "agent_stopped":
+          return data.reason ?? "Agent stopped";
+        case "auto_refund":
+          return data.bidId ? `Refunded bid ${data.bidId.slice(0, 8)}...` : "Bid refunded";
+        case "bid_accepted":
+          return data.creator ? `Accepted by @${data.creator}` : "Bid accepted";
+        case "bid_rejected":
+          return data.creator ? `Rejected by @${data.creator}` : "Bid rejected";
+        default:
+          return Object.entries(data)
+            .slice(0, 3)
+            .map(([k, v]) => `${k}: ${v}`)
+            .join(" · ");
+      }
+    } catch {
+      return "";
+    }
+  };
+
   const formatAmount = (amount: string) => {
     const n = Number(BigInt(amount || "0")) / 1_000_000;
     return "$" + n.toFixed(2);
@@ -421,7 +456,7 @@ export function DashboardClient({
                   <div className="flex-1">
                     <span className="font-medium capitalize">{log.action.replace(/_/g, " ")}</span>
                     {log.data && Object.keys(log.data).length > 0 && (
-                      <span className="text-text-dim ml-2 text-xs">{JSON.stringify(log.data).slice(0, 100)}</span>
+                      <span className="text-text-dim ml-2 text-xs">{formatLogData(log.action, log.data)}</span>
                     )}
                   </div>
                   <span className="text-xs text-text-dim">{new Date(log.createdAt).toLocaleString()}</span>

@@ -5,6 +5,7 @@ import { bids, wallets, profiles } from "@/lib/db/schema";
 import { executeContractCall } from "@/lib/circle";
 import { escrowAbi } from "@/lib/arc";
 import { eq } from "drizzle-orm";
+import { createPublicClient, http } from "viem";
 
 export async function POST(req: NextRequest) {
   try {
@@ -31,11 +32,34 @@ export async function POST(req: NextRequest) {
       args: [creatorWallet.address, amountUsdc, message ?? "", isPrivate ?? false],
     });
 
+    // Wait briefly for Circle transaction to settle on Arc
+    await new Promise(r => setTimeout(r, 4000));
+
+    // Query contract for the latest on-chain bid ID for this bidder
+    let onChainBidId: string | null = null;
+    try {
+      const publicClient = createPublicClient({
+        chain: { id: parseInt(process.env.ARC_CHAIN_ID ?? "5042002"), name: "Arc Testnet", nativeCurrency: { decimals: 18, name: "USDC", symbol: "USDC" }, rpcUrls: { default: { http: ["https://rpc.testnet.arc.network"] } } },
+        transport: http("https://rpc.testnet.arc.network"),
+      });
+      const bidIds = await publicClient.readContract({
+        address: escrowAddr as `0x${string}`,
+        abi: escrowAbi,
+        functionName: "getBidderBids",
+        args: [bidderWallet.address as `0x${string}`],
+      }) as bigint[];
+      if (bidIds.length > 0) {
+        onChainBidId = bidIds[bidIds.length - 1].toString();
+      }
+    } catch (e) {
+      console.error("Failed to fetch on-chain bid ID:", e);
+    }
+
     const [bid] = await db.insert(bids).values({
       bidderUserId: session.user.id, creatorUserId: creatorProfile.userId,
       bidderAddress: bidderWallet.address, creatorAddress: creatorWallet.address,
       amountUsdc, message, isPrivate: isPrivate ?? false, status: "pending",
-      bidTxHash: result.txId,
+      bidTxHash: result.txId, onChainBidId,
     }).returning();
     // Auto-accept logic — runs after bid is inserted
     let autoAccepted = false;

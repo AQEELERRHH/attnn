@@ -39,6 +39,7 @@ export async function POST(req: NextRequest) {
     }).returning();
     // Auto-accept logic — runs after bid is inserted
     let autoAccepted = false;
+    if (!bid) return NextResponse.json({ success: true, txId: result.txId, autoAccepted });
     try {
       const threshold = creatorProfile.autoAcceptThreshold ?? 0;
       if (threshold > 0) {

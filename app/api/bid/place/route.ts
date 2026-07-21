@@ -37,7 +37,44 @@ export async function POST(req: NextRequest) {
       amountUsdc, message, isPrivate: isPrivate ?? false, status: "pending",
       bidTxHash: result.txId,
     }).returning();
-    return NextResponse.json({ bid, success: true, txId: result.txId });
+    // Auto-accept logic — runs after bid is inserted
+    let autoAccepted = false;
+    try {
+      const threshold = creatorProfile.autoAcceptThreshold ?? 0;
+      if (threshold > 0) {
+        const { scoreBidForCreator } = await import("@/lib/ai");
+        const scoreResult = await scoreBidForCreator(
+          { amountUsdc, message: message ?? "", bidderAddress: bidderWallet.address },
+          { minBid: creatorProfile.minBid, tags: creatorProfile.tags, bio: creatorProfile.bio ?? "", handle: creatorProfile.handle }
+        );
+        // Update bid score in DB
+        await db.update(bids).set({ score: scoreResult.score }).where(eq(bids.id, bid.id));
+        if (scoreResult.score >= threshold) {
+          const replyTemplate = creatorProfile.autoReplyTemplate ?? "Thanks for reaching out! I have reviewed your bid and I am happy to connect.";
+          // Call acceptBid on-chain using creator wallet
+          const acceptResult = await executeContractCall({
+            walletId: creatorWallet.circleWalletId,
+            contractAddress: escrowAddr,
+            abi: escrowAbi as any,
+            functionName: "acceptBid",
+            args: [BigInt(bid.onChainBidId ?? "0"), replyTemplate],
+          });
+          await db.update(bids).set({
+            status: "accepted",
+            reply: replyTemplate,
+            score: scoreResult.score,
+            settlementTxHash: acceptResult.txId,
+            settledAt: new Date(),
+          }).where(eq(bids.id, bid.id));
+          autoAccepted = true;
+        }
+      }
+    } catch (autoErr) {
+      // Auto-accept failure is non-fatal — bid stays pending
+      console.error("Auto-accept failed:", autoErr);
+    }
+
+    return NextResponse.json({ bid, success: true, txId: result.txId, autoAccepted });
   } catch (err: any) {
     return NextResponse.json({ error: err.message ?? "Failed" }, { status: 500 });
   }

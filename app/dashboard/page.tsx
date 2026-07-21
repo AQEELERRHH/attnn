@@ -32,7 +32,7 @@ export default async function DashboardPage() {
   return (
     <DashboardClient
       wallet={wallet ? { id: wallet.id, address: wallet.address, circleWalletId: wallet.circleWalletId, blockchain: wallet.blockchain, state: wallet.state } : null}
-      profile={profile ? { id: profile.id, handle: profile.handle, minBid: profile.minBid, tags: profile.tags, bio: profile.bio, autoAcceptThreshold: profile.autoAcceptThreshold, isActive: profile.isActive } : null}
+      profile={profile ? { id: profile.id, handle: profile.handle, minBid: profile.minBid, tags: profile.tags, bio: profile.bio, autoAcceptThreshold: profile.autoAcceptThreshold, autoReplyTemplate: profile.autoReplyTemplate ?? null, isActive: profile.isActive } : null}
       bidderConfig={bidderCfg ? { id: bidderCfg.id, goal: bidderCfg.goal, dailyBudget: bidderCfg.dailyBudget, maxBidPerCreator: bidderCfg.maxBidPerCreator, minFitScore: bidderCfg.minFitScore, searchTags: bidderCfg.searchTags, defaultMessage: bidderCfg.defaultMessage, isActive: bidderCfg.isActive } : null}
       bids={recentBids.map(b => ({ id: b.id, onChainBidId: b.onChainBidId, bidderUserId: b.bidderUserId, creatorUserId: b.creatorUserId, bidderAddress: b.bidderAddress, creatorAddress: b.creatorAddress, amountUsdc: b.amountUsdc, message: b.message, status: b.status, score: b.score, reply: b.reply, bidTxHash: b.bidTxHash, settlementTxHash: b.settlementTxHash, createdAt: b.createdAt.toISOString(), settledAt: b.settledAt?.toISOString() ?? null }))}
       logs={logs.map(l => ({ id: l.id, action: l.action, data: l.data, txHash: l.txHash, createdAt: l.createdAt.toISOString() }))}

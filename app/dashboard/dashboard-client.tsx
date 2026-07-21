@@ -13,7 +13,7 @@ import { toast } from "@/hooks/use-toast";
 import { LogOut, Wallet, Play, Square, MessageCircle, Check, X, Activity, Zap, Bot, Users } from "lucide-react";
 
 interface WalletData { id: string; address: string; circleWalletId: string; blockchain: string; state: string; }
-interface ProfileData { id: string; handle: string; minBid: string; tags: string[]; bio: string | null; autoAcceptThreshold: number | null; isActive: boolean; }
+interface ProfileData { id: string; handle: string; minBid: string; tags: string[]; bio: string | null; autoAcceptThreshold: number | null; autoReplyTemplate: string | null; isActive: boolean; }
 interface BidderConfigData { id: string; goal: string | null; dailyBudget: string; maxBidPerCreator: string; minFitScore: number; searchTags: string[]; defaultMessage: string | null; isActive: boolean; }
 interface BidData { id: string; onChainBidId: string | null; bidderUserId: string; creatorUserId: string; bidderAddress: string; creatorAddress: string; amountUsdc: string; message: string | null; status: string; score: number | null; reply: string | null; bidTxHash: string | null; settlementTxHash: string | null; createdAt: string; settledAt: string | null; }
 interface LogData { id: string; action: string; data: any; txHash: string | null; createdAt: string; }
@@ -494,6 +494,7 @@ function CreatorSetupForm({
   );
   const [tags, setTags] = useState(existingProfile?.tags?.join(", ") ?? "");
   const [bio, setBio] = useState(existingProfile?.bio ?? "");
+  const [autoReplyTemplate, setAutoReplyTemplate] = useState(existingProfile?.autoReplyTemplate ?? "Thanks for reaching out! I've reviewed your bid and I'm happy to connect. Looking forward to hearing more — reach out on WhatsApp: +2319023XXXXXXX");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -510,7 +511,7 @@ function CreatorSetupForm({
         const res = await fetch("/api/profile/update", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ handle, minBid: minBidRaw, tags: tagsArr, bio: bio || null }),
+          body: JSON.stringify({ handle, minBid: minBidRaw, tags: tagsArr, bio: bio || null, autoReplyTemplate: autoReplyTemplate || null }),
         });
         const data = await res.json();
         if (data.success) {
@@ -524,7 +525,7 @@ function CreatorSetupForm({
         const res = await fetch("/api/profile/create", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ handle, minBid: minBidRaw, tags: tagsArr, bio: bio || null }),
+          body: JSON.stringify({ handle, minBid: minBidRaw, tags: tagsArr, bio: bio || null, autoReplyTemplate: autoReplyTemplate || null }),
         });
         const data = await res.json();
         if (data.success) {
@@ -594,6 +595,17 @@ function CreatorSetupForm({
             value={bio}
             onChange={e => setBio(e.target.value)}
           />
+        </div>
+        <div>
+          <label className="text-sm text-text-secondary mb-1 block">Auto-Reply Template</label>
+          <textarea
+            className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm text-text-primary placeholder:text-text-dim focus:outline-none focus:ring-1 focus:ring-arc-gold resize-none"
+            rows={3}
+            placeholder="Message sent automatically when a bid is auto-accepted..."
+            value={autoReplyTemplate}
+            onChange={e => setAutoReplyTemplate(e.target.value)}
+          />
+          <p className="text-xs text-text-dim mt-1">This message is sent on your behalf when a bid scores above your auto-accept threshold.</p>
         </div>
         {error && <p className="text-sm text-red-500">{error}</p>}
         <div className="flex gap-3">

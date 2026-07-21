@@ -19,6 +19,7 @@ export async function POST(req: NextRequest) {
     if (updates.bio !== undefined) profileUpdates.bio = updates.bio;
     if (updates.profileURI !== undefined) profileUpdates.profileURI = updates.profileURI;
     if (updates.autoAcceptThreshold !== undefined) profileUpdates.autoAcceptThreshold = updates.autoAcceptThreshold;
+    if (updates.autoReplyTemplate !== undefined) profileUpdates.autoReplyTemplate = updates.autoReplyTemplate;
 
     if (Object.keys(profileUpdates).length > 0) {
       // Check handle uniqueness if changing handle

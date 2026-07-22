@@ -48,8 +48,9 @@ export async function POST(req: NextRequest) {
         functionName: "getBidderBids",
         args: [bidderWallet.address as `0x${string}`],
       }) as bigint[];
-      if (bidIds.length > 0) {
-        onChainBidId = bidIds[bidIds.length - 1].toString();
+      const lastBidId = bidIds.at(-1);
+      if (lastBidId !== undefined) {
+        onChainBidId = lastBidId.toString();
       }
     } catch (e) {
       console.error("Failed to fetch on-chain bid ID:", e);

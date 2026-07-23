@@ -24,7 +24,7 @@ export function PublicProfileClient({
       // First call without payment — expect 402 in mock mode it passes through
       const res = await fetch(`/api/c/${handle}`, {
         method: "GET",
-        headers: { "payment-signature": "mock" },
+        headers: { "payment-signature": btoa("mock") },
       });
       const data = await res.json();
       if (res.ok && data.unlocked) {

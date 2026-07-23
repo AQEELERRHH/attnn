@@ -21,13 +21,13 @@ export function PublicProfileClient({
   async function handleAccess() {
     setLoading(true);
     try {
-      const res = await fetch("/api/x402/access", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ handle }),
+      // First call without payment — expect 402 in mock mode it passes through
+      const res = await fetch(`/api/c/${handle}`, {
+        method: "GET",
+        headers: { "payment-signature": "mock" },
       });
       const data = await res.json();
-      if (data.success) {
+      if (res.ok && data.unlocked) {
         setAccessGranted(true);
       } else {
         toast({ title: "Access denied", description: data.error ?? "Payment required", variant: "destructive" });

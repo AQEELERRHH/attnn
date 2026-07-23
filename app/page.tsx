@@ -17,6 +17,9 @@ export default async function HomePage() {
             <span className="font-display font-bold text-xl">attnn.</span>
           </Link>
           <div className="flex items-center gap-4">
+            <Link href="/about">
+              <Button variant="ghost" size="sm">About</Button>
+            </Link>
             {session?.user ? (
               <Link href="/dashboard">
                 <Button variant="default" size="sm">Dashboard</Button>

@@ -9,7 +9,7 @@ import { toast } from "@/hooks/use-toast";
 import { Lock, Unlock, Coins } from "lucide-react";
 
 export function PublicProfileClient({
-  handle, bio, tags, minBid, isActive, profileURI,
+  handle, bio, tags, minBid, isActive,
 }: {
   handle: string; bio: string | null; tags: string[]; minBid: string;
   isActive: boolean; profileURI: string | null;

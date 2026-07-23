@@ -39,6 +39,9 @@ export function DashboardClient({
   const [walletFunded, setWalletFunded] = useState(false);
   const [editingBidder, setEditingBidder] = useState(false);
   const [autoAcceptThreshold, setAutoAcceptThreshold] = useState(profile?.autoAcceptThreshold ?? 0);
+  const [walletOpen, setWalletOpen] = useState(false);
+  const [walletBalance, setWalletBalance] = useState<string | null>(null);
+  const [balanceLoading, setBalanceLoading] = useState(false);
 
   // Auto-provision wallet if missing
   useEffect(() => {
@@ -117,6 +120,17 @@ export function DashboardClient({
       navigator.clipboard.writeText(wallet.address);
       toast({ title: "Copied!", variant: "success" });
     }
+  };
+
+  const fetchBalance = async () => {
+    if (walletBalance !== null) return;
+    setBalanceLoading(true);
+    try {
+      const res = await fetch("/api/wallet/balance");
+      const data = await res.json();
+      if (data.success) setWalletBalance(data.balance);
+    } catch {}
+    finally { setBalanceLoading(false); }
   };
 
   const handleRunAgent = async () => {
@@ -211,10 +225,30 @@ export function DashboardClient({
           </div>
           <div className="flex items-center gap-4">
             {wallet && (
-              <button onClick={copyAddress} className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border bg-arc-bg-2 text-xs text-text-secondary hover:text-text-primary transition-colors">
-                <Wallet className="w-3 h-3" />
-                {wallet.address.slice(0, 6)}...{wallet.address.slice(-4)}
-              </button>
+              <div className="relative">
+                <button
+                  onClick={() => { setWalletOpen(!walletOpen); fetchBalance(); }}
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border bg-arc-bg-2 text-xs text-text-secondary hover:text-text-primary transition-colors"
+                >
+                  <Wallet className="w-3 h-3" />
+                  {wallet.address.slice(0, 6)}...{wallet.address.slice(-4)}
+                </button>
+                {walletOpen && (
+                  <div className="absolute right-0 top-9 w-64 rounded-lg border border-border bg-arc-bg-1 shadow-xl z-50 p-4">
+                    <div className="text-xs text-text-secondary mb-1 uppercase tracking-wider">USDC Balance</div>
+                    <div className="text-xl font-display font-bold text-arc-gold mb-3">
+                      {balanceLoading ? "..." : walletBalance !== null ? `$${parseFloat(walletBalance).toFixed(2)}` : "—"}
+                    </div>
+                    <div className="text-xs text-text-dim font-mono break-all mb-3">{wallet.address}</div>
+                    <button
+                      onClick={() => { copyAddress(); setWalletOpen(false); }}
+                      className="w-full text-xs py-1.5 rounded border border-border text-text-secondary hover:text-text-primary transition-colors"
+                    >
+                      Copy Address
+                    </button>
+                  </div>
+                )}
+              </div>
             )}
             <Badge variant="gold" className="text-xs">{userRole}</Badge>
             <form action="/api/auth/signout" method="POST">

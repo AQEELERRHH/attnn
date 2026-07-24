@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { db } from "@/lib/db/client";
 import { bids, wallets, profiles } from "@/lib/db/schema";
 import { executeContractCall } from "@/lib/circle";
-import { escrowAbi } from "@/lib/arc";
+import { escrowAbi, usdcAbi, USDC_ADDRESS } from "@/lib/arc";
 import { eq } from "drizzle-orm";
 import { createPublicClient, http } from "viem";
 
@@ -24,6 +24,19 @@ export async function POST(req: NextRequest) {
     const escrowAddr = process.env.ATTN_ESCROW_CONTRACT;
     if (!escrowAddr) return NextResponse.json({ error: "Escrow not deployed" }, { status: 500 });
 
+    // Step 1: Approve escrow to spend USDC
+    await executeContractCall({
+      walletId: bidderWallet.circleWalletId,
+      contractAddress: USDC_ADDRESS,
+      abi: usdcAbi as any,
+      functionName: "approve",
+      args: [escrowAddr, amountUsdc],
+    });
+
+    // Wait for approval to settle on Arc
+    await new Promise(r => setTimeout(r, 4000));
+
+    // Step 2: Place the bid
     const result = await executeContractCall({
       walletId: bidderWallet.circleWalletId,
       contractAddress: escrowAddr,

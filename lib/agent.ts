@@ -152,6 +152,21 @@ export async function runBidderAgent(userId: string): Promise<AgentRunResult> {
       }
 
       try {
+        // Step 1: Approve escrow to spend USDC
+        const usdcAddr = process.env.ATTN_USDC_ADDRESS ?? "0x3600000000000000000000000000000000000000";
+        const { usdcAbi } = await import("@/lib/arc");
+        await executeContractCall({
+          walletId: bidderWallet.circleWalletId,
+          contractAddress: usdcAddr,
+          abi: usdcAbi as any,
+          functionName: "approve",
+          args: [escrowAddr, tc.bidAmount],
+        });
+
+        // Wait for approval to settle on Arc
+        await new Promise(r => setTimeout(r, 4000));
+
+        // Step 2: Place the bid
         const result = await executeContractCall({
           walletId: bidderWallet.circleWalletId,
           contractAddress: escrowAddr,

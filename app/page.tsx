@@ -129,7 +129,10 @@ export default async function HomePage() {
             <span className="w-6 h-6 rounded-md bg-gradient-to-br from-arc-gold to-arc-purple flex items-center justify-center text-[10px] font-display font-bold">A</span>
             <span>attnn.</span>
           </div>
-          <div>Arc Testnet · Circle USDC · x402 · ERC-8183</div>
+          <div>
+            <span>Built on Arc Network™ · Circle USDC · x402</span>
+            <span className="block mt-1 text-[10px] text-text-dim">Arc is a trademark of Circle Internet Group, Inc. and/or its affiliates.</span>
+          </div>
         </div>
       </footer>
     </div>

@@ -101,7 +101,7 @@ export default function AboutPage() {
           <h2 className="text-2xl font-display font-bold mb-4 text-arc-gold">The Technology</h2>
           <Card className="p-6">
             <p className="text-text-secondary leading-relaxed mb-6">
-              You don&apos;t need to understand the technology to use Attnn. But if you&apos;re curious, here is what powers it, explained simply.
+              You don&apos;t need to understand the technology to use Attnn. But if you&apos;re curious, here is what powers it, explained simply. Attnn. is built on Arc Network™, a blockchain infrastructure developed by Circle Internet Group, Inc.
             </p>
             <div className="space-y-4">
               <div className="flex gap-4">
@@ -115,7 +115,7 @@ export default function AboutPage() {
                 <div className="w-8 h-8 rounded-full bg-arc-gold/20 flex items-center justify-center shrink-0 text-arc-gold font-bold text-sm">2</div>
                 <div>
                   <h4 className="font-medium mb-1">Arc: The Settlement Layer</h4>
-                  <p className="text-sm text-text-secondary">Arc is a blockchain built by Circle that settles transactions in under one second. When a bid is accepted, USDC moves from the bidder&apos;s wallet to the creator&apos;s wallet almost instantly no bank transfers, no waiting days.</p>
+                  <p className="text-sm text-text-secondary">Arc Network is a blockchain built by Circle that settles transactions in under one second. When a bid is accepted, USDC moves from the bidder&apos;s wallet to the creator&apos;s wallet almost instantly no bank transfers, no waiting days.</p>
                 </div>
               </div>
               <div className="flex gap-4">
@@ -227,6 +227,9 @@ export default function AboutPage() {
         </section>
 
         {/* CTA */}
+        <div className="text-center text-xs text-text-dim mb-8">
+          Arc is a trademark of Circle Internet Group, Inc. and/or its affiliates. Attnn. is built on Arc Network and is not affiliated with or endorsed by Circle.
+        </div>
         <div className="text-center">
           <h2 className="text-2xl font-display font-bold mb-4">Ready to try it?</h2>
           <p className="text-text-secondary mb-6">Sign in with Google. Your wallet is ready in seconds.</p>

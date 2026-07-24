@@ -42,6 +42,10 @@ export function DashboardClient({
   const [walletOpen, setWalletOpen] = useState(false);
   const [walletBalance, setWalletBalance] = useState<string | null>(null);
   const [balanceLoading, setBalanceLoading] = useState(false);
+  const [showSend, setShowSend] = useState(false);
+  const [sendTo, setSendTo] = useState("");
+  const [sendAmount, setSendAmount] = useState("");
+  const [sendLoading, setSendLoading] = useState(false);
 
   // Auto-provision wallet if missing
   useEffect(() => {
@@ -242,10 +246,61 @@ export function DashboardClient({
                     <div className="text-xs text-text-dim font-mono break-all mb-3">{wallet.address}</div>
                     <button
                       onClick={() => { copyAddress(); setWalletOpen(false); }}
-                      className="w-full text-xs py-1.5 rounded border border-border text-text-secondary hover:text-text-primary transition-colors"
+                      className="w-full text-xs py-1.5 rounded border border-border text-text-secondary hover:text-text-primary transition-colors mb-2"
                     >
                       Copy Address
                     </button>
+                    <button
+                      onClick={() => setShowSend(!showSend)}
+                      className="w-full text-xs py-1.5 rounded border border-arc-gold/40 text-arc-gold hover:bg-arc-gold/10 transition-colors"
+                    >
+                      {showSend ? "Cancel" : "Send USDC"}
+                    </button>
+                    {showSend && (
+                      <div className="mt-3 space-y-2">
+                        <input
+                          type="text"
+                          placeholder="Recipient address (0x...)"
+                          value={sendTo}
+                          onChange={e => setSendTo(e.target.value)}
+                          className="w-full text-xs px-2 py-1.5 rounded border border-border bg-arc-bg-2 text-text-primary placeholder:text-text-dim focus:outline-none focus:ring-1 focus:ring-arc-gold"
+                        />
+                        <input
+                          type="number"
+                          placeholder="Amount (USDC)"
+                          value={sendAmount}
+                          onChange={e => setSendAmount(e.target.value)}
+                          min="0.01"
+                          step="0.01"
+                          className="w-full text-xs px-2 py-1.5 rounded border border-border bg-arc-bg-2 text-text-primary placeholder:text-text-dim focus:outline-none focus:ring-1 focus:ring-arc-gold"
+                        />
+                        <button
+                          disabled={sendLoading || !sendTo || !sendAmount}
+                          onClick={async () => {
+                            setSendLoading(true);
+                            try {
+                              const res = await fetch("/api/wallet/send", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ to: sendTo, amount: sendAmount }),
+                              });
+                              const data = await res.json();
+                              if (data.success) {
+                                toast({ title: "Sent!", description: `${sendAmount} USDC sent`, variant: "success" });
+                                setSendTo(""); setSendAmount(""); setShowSend(false); setWalletOpen(false);
+                                setWalletBalance(null);
+                              } else {
+                                toast({ title: "Failed", description: data.error ?? "Send failed", variant: "destructive" });
+                              }
+                            } catch { toast({ title: "Error", variant: "destructive" }); }
+                            finally { setSendLoading(false); }
+                          }}
+                          className="w-full text-xs py-1.5 rounded bg-arc-gold text-arc-bg-0 font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
+                        >
+                          {sendLoading ? "Sending..." : "Confirm Send"}
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

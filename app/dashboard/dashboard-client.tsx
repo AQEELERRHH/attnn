@@ -44,6 +44,7 @@ export function DashboardClient({
   const [balanceLoading, setBalanceLoading] = useState(false);
   const [showSend, setShowSend] = useState(false);
   const [localBids, setLocalBids] = useState(bids);
+  const [activityFilter, setActivityFilter] = useState("all");
   const [sendTo, setSendTo] = useState("");
   const [sendAmount, setSendAmount] = useState("");
   const [sendLoading, setSendLoading] = useState(false);

@@ -544,21 +544,87 @@ export function DashboardClient({
 
           {/* Activity Tab */}
           <TabsContent value="activity" className="space-y-4 mt-6">
-            <h2 className="text-xl font-display font-bold mb-4">Agent Activity Feed</h2>
-            <div className="space-y-2">
-              {logs.map((log) => (
-                <Card key={log.id} className="p-3 flex items-center gap-3 text-sm">
-                  <Activity className="w-4 h-4 text-arc-purple shrink-0" />
-                  <div className="flex-1">
-                    <span className="font-medium capitalize">{log.action.replace(/_/g, " ")}</span>
-                    {log.data && Object.keys(log.data).length > 0 && (
-                      <span className="text-text-dim ml-2 text-xs">{formatLogData(log.action, log.data)}</span>
-                    )}
-                  </div>
-                  <span className="text-xs text-text-dim">{new Date(log.createdAt).toLocaleString()}</span>
-                </Card>
+            {/* Header */}
+            <div className="flex items-center justify-between mb-2">
+              <div>
+                <h2 className="text-xl font-display font-bold">Agent Activity</h2>
+                <p className="text-xs text-text-secondary mt-0.5">Real-time updates from your agent discovery and bidding activity.</p>
+              </div>
+              {bidderConfig?.isActive && (
+                <div className="flex items-center gap-1.5 text-xs text-green">
+                  <span className="w-2 h-2 rounded-full bg-green animate-pulse" />
+                  Agent Live
+                </div>
+              )}
+            </div>
+
+            {/* Summary Cards */}
+            {(() => {
+              const creatorsFound = logs.filter(l => l.action === "creator_discovered").reduce((sum, l) => sum + (l.data?.count ?? 0), 0);
+              const bidsPlaced = logs.filter(l => l.action === "bid_placed").length;
+              const accepted = localBids.filter(b => b.bidderUserId === userId && b.status === "accepted").length;
+              const totalBidValue = localBids.filter(b => b.bidderUserId === userId).reduce((sum, b) => sum + Number(BigInt(b.amountUsdc || "0")) / 1_000_000, 0);
+              return (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                  {[
+                    { label: "Creators Found", value: creatorsFound, color: "text-arc-purple" },
+                    { label: "Bids Placed", value: bidsPlaced, color: "text-arc-gold" },
+                    { label: "Accepted", value: accepted, color: "text-green" },
+                    { label: "Total Bid Value", value: `$${totalBidValue.toFixed(2)}`, color: "text-arc-coral" },
+                  ].map(({ label, value, color }) => (
+                    <Card key={label} className="p-3 text-center">
+                      <div className={`text-xl font-display font-bold ${color}`}>{value}</div>
+                      <div className="text-xs text-text-secondary mt-0.5">{label}</div>
+                    </Card>
+                  ))}
+                </div>
+              );
+            })()}
+
+            {/* Filter Tabs */}
+            <div className="flex gap-2 mb-3">
+              {["all", "creators", "bids", "accepted"].map(f => (
+                <button
+                  key={f}
+                  onClick={() => setActivityFilter(f)}
+                  className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${activityFilter === f ? "bg-arc-gold text-arc-bg-0" : "border border-border text-text-secondary hover:text-text-primary"}`}
+                >
+                  {f.charAt(0).toUpperCase() + f.slice(1)}
+                </button>
               ))}
-              {logs.length === 0 && <p className="text-text-dim text-center py-8">No activity yet</p>}
+            </div>
+
+            {/* Activity Feed */}
+            <div className="space-y-2">
+              {logs.filter(log => {
+                if (activityFilter === "creators") return log.action === "creator_discovered";
+                if (activityFilter === "bids") return log.action === "bid_placed";
+                if (activityFilter === "accepted") return log.action === "bid_accepted";
+                return true;
+              }).map((log) => {
+                const isBid = log.action === "bid_placed";
+                const isAccepted = log.action === "bid_accepted";
+                const isRejected = log.action === "bid_rejected";
+                const iconColor = isBid ? "text-arc-gold" : isAccepted ? "text-green" : isRejected ? "text-arc-coral" : "text-arc-purple";
+                const borderColor = isBid ? "border-l-arc-gold" : isAccepted ? "border-l-green" : isRejected ? "border-l-arc-coral" : "border-l-arc-purple";
+                return (
+                  <Card key={log.id} className={`p-3 border-l-2 ${borderColor}`}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-start gap-3 flex-1">
+                        <Activity className={`w-4 h-4 mt-0.5 shrink-0 ${iconColor}`} />
+                        <div className="flex-1 min-w-0">
+                          <span className="font-medium text-sm capitalize">{log.action.replace(/_/g, " ")}</span>
+                          {log.data && Object.keys(log.data).length > 0 && (
+                            <p className="text-xs text-text-secondary mt-0.5">{formatLogData(log.action, log.data)}</p>
+                          )}
+                        </div>
+                      </div>
+                      <span className="text-xs text-text-dim shrink-0">{new Date(log.createdAt).toLocaleString()}</span>
+                    </div>
+                  </Card>
+                );
+              })}
+              {logs.length === 0 && <p className="text-text-dim text-center py-8">No activity yet. Run your agent to get started.</p>}
             </div>
           </TabsContent>
         </Tabs>

@@ -444,7 +444,7 @@ export function DashboardClient({
                       </Card>
                     ))}
                     {localBids.filter(b => b.creatorUserId === userId && b.status === "pending").length === 0 && (
-                      <p className="text-sm text-text-dim text-center py-8">No bids yet. Share your handle: <code className="text-arc-gold">attn.xyz/c/{profile.handle}</code></p>
+                      <p className="text-sm text-text-dim text-center py-8">No bids yet. Share your handle: <code className="text-arc-gold">attnn.vercel.app/c/{profile.handle}</code></p>
                     )}
                   </div>
                 </div>

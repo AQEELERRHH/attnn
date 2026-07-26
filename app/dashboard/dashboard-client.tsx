@@ -306,9 +306,10 @@ export function DashboardClient({
               </div>
             )}
             <Badge variant="gold" className="text-xs">{userRole}</Badge>
-            <form action="/api/auth/signout" method="POST">
-              <Button variant="ghost" size="sm" type="submit"><LogOut className="w-4 h-4" /></Button>
-            </form>
+            <Button variant="ghost" size="sm" onClick={async () => {
+              await fetch("/api/auth/signout", { method: "POST" });
+              window.location.href = "/";
+            }}><LogOut className="w-4 h-4" /></Button>
           </div>
         </div>
       </header>

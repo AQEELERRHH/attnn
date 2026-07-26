@@ -43,6 +43,7 @@ export function DashboardClient({
   const [walletBalance, setWalletBalance] = useState<string | null>(null);
   const [balanceLoading, setBalanceLoading] = useState(false);
   const [showSend, setShowSend] = useState(false);
+  const [localBids, setLocalBids] = useState(bids);
   const [sendTo, setSendTo] = useState("");
   const [sendAmount, setSendAmount] = useState("");
   const [sendLoading, setSendLoading] = useState(false);
@@ -174,6 +175,7 @@ export function DashboardClient({
       const data = await res.json();
       if (data.success) {
         toast({ title: "Bid accepted!", variant: "success" });
+        setLocalBids(prev => prev.map(b => b.id === bidId ? { ...b, status: "accepted" } : b));
         router.refresh();
       } else {
         toast({ title: "Error", description: data.error ?? "Failed to accept", variant: "destructive" });
@@ -192,6 +194,7 @@ export function DashboardClient({
       });
       if (res.ok) {
         toast({ title: "Bid rejected", variant: "success" });
+        setLocalBids(prev => prev.map(b => b.id === bidId ? { ...b, status: "rejected" } : b));
         router.refresh();
       }
     } catch (err) {
@@ -421,7 +424,7 @@ export function DashboardClient({
                     <span className="text-xs text-text-secondary font-normal">(AI-scored by bid amount)</span>
                   </h2>
                   <div className="space-y-3">
-                    {bids.filter(b => b.creatorUserId === userId).map((bid) => (
+                    {localBids.filter(b => b.creatorUserId === userId).map((bid) => (
                       <Card key={bid.id} className="p-4 flex items-start justify-between">
                         <div className="flex-1">
                           <div className="flex items-center gap-3 mb-1">
@@ -440,7 +443,7 @@ export function DashboardClient({
                         )}
                       </Card>
                     ))}
-                    {bids.filter(b => b.creatorUserId === userId).length === 0 && (
+                    {localBids.filter(b => b.creatorUserId === userId).length === 0 && (
                       <p className="text-sm text-text-dim text-center py-8">No bids yet. Share your handle: <code className="text-arc-gold">attn.xyz/c/{profile.handle}</code></p>
                     )}
                   </div>
@@ -523,7 +526,7 @@ export function DashboardClient({
                 <div>
                   <h2 className="text-xl font-display font-bold mb-4">Bid History</h2>
                   <div className="space-y-2">
-                    {bids.filter(b => b.bidderUserId === userId).map((bid) => (
+                    {localBids.filter(b => b.bidderUserId === userId).map((bid) => (
                       <Card key={bid.id} className="p-3 flex items-center justify-between text-sm">
                         <div className="flex items-center gap-3">
                           {statusBadge(bid.status)}

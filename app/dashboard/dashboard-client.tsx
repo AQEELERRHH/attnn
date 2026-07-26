@@ -424,7 +424,7 @@ export function DashboardClient({
                     <span className="text-xs text-text-secondary font-normal">(AI-scored by bid amount)</span>
                   </h2>
                   <div className="space-y-3">
-                    {localBids.filter(b => b.creatorUserId === userId).map((bid) => (
+                    {localBids.filter(b => b.creatorUserId === userId && b.status === "pending").map((bid) => (
                       <Card key={bid.id} className="p-4 flex items-start justify-between">
                         <div className="flex-1">
                           <div className="flex items-center gap-3 mb-1">
@@ -443,7 +443,7 @@ export function DashboardClient({
                         )}
                       </Card>
                     ))}
-                    {localBids.filter(b => b.creatorUserId === userId).length === 0 && (
+                    {localBids.filter(b => b.creatorUserId === userId && b.status === "pending").length === 0 && (
                       <p className="text-sm text-text-dim text-center py-8">No bids yet. Share your handle: <code className="text-arc-gold">attn.xyz/c/{profile.handle}</code></p>
                     )}
                   </div>

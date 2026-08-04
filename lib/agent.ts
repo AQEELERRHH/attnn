@@ -87,7 +87,7 @@ export async function runBidderAgent(userId: string): Promise<AgentRunResult> {
       const wallet = await db.query.wallets.findFirst({
         where: eq(wallets.userId, profile.userId),
       });
-      if (wallet && creatorAddresses.has(wallet.address.toLowerCase())) {
+      if (wallet && creatorAddresses.has(wallet.address.toLowerCase()) && profile.userId !== userId) {
         creatorsToScore.push({ profile, address: wallet.address });
       }
     }

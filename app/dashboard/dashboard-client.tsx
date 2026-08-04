@@ -387,9 +387,29 @@ export function DashboardClient({
                         {profile.bio && <> &middot; Bio: {profile.bio}</>}
                       </p>
                     </div>
-                    <Button variant="outline" size="sm" onClick={() => setEditingProfile(true)}>
-                      Edit Profile
-                    </Button>
+                    <div className="flex gap-2">
+                      {!profile.isActive && (
+                        <Button variant="default" size="sm" onClick={async () => {
+                          try {
+                            const res = await fetch("/api/profile/activate", { method: "POST" });
+                            const data = await res.json();
+                            if (data.success) {
+                              toast({ title: "Activated on Arc!", variant: "success" });
+                              router.refresh();
+                            } else {
+                              toast({ title: "Activation failed", description: data.error ?? "Try again", variant: "destructive" });
+                            }
+                          } catch {
+                            toast({ title: "Error", variant: "destructive" });
+                          }
+                        }}>
+                          Activate on Arc
+                        </Button>
+                      )}
+                      <Button variant="outline" size="sm" onClick={() => setEditingProfile(true)}>
+                        Edit Profile
+                      </Button>
+                    </div>
                   </div>
                 </Card>
 

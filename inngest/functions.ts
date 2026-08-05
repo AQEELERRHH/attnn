@@ -185,4 +185,103 @@ export const runActiveBidders = inngest.createFunction(
   }
 );
 
-export const functions = [autoRefund, activityFeed, bidExpiryNotification, runActiveBidders];
+
+// ─── Creator Agent Triage ─────────────────────────────────────────────────────
+// Triggered when a new bid is placed. Scores and triages the bid on behalf of the creator.
+export const creatorAgentTriage = inngest.createFunction(
+  { id: "creator-agent-triage", name: "Creator Agent Triage" },
+  { event: "attnn/bid.placed" },
+  async ({ event, step }: { event: any; step: any }) => {
+    const { bidId, creatorUserId } = event.data;
+
+    const bidData = await step.run("fetch-bid", async () => {
+      const { bids, profiles, wallets } = await import("@/lib/db/schema");
+      const { eq } = await import("drizzle-orm");
+      const bid = await db.query.bids.findFirst({ where: eq(bids.id, bidId) });
+      const profile = await db.query.profiles.findFirst({ where: eq(profiles.userId, creatorUserId) });
+      const wallet = await db.query.wallets.findFirst({ where: eq(wallets.userId, creatorUserId) });
+      const queueDepth = await db.select().from(bids).where(
+        eq(bids.creatorUserId, creatorUserId)
+      ).then(r => r.filter(b => b.status === "pending").length);
+      return { bid, profile, wallet, queueDepth };
+    });
+
+    const { bid, profile, wallet, queueDepth } = bidData;
+    if (!bid || !profile || !wallet) return { message: "Missing data — skipping triage" };
+    if (bid.status !== "pending") return { message: "Bid already processed" };
+
+    const triageResult = await step.run("triage-bid", async () => {
+      const { triageBidForCreator } = await import("@/lib/ai");
+      return triageBidForCreator(
+        { amountUsdc: bid.amountUsdc, message: bid.message ?? "", bidderAddress: bid.bidderAddress },
+        {
+          handle: profile.handle,
+          bio: profile.bio ?? undefined,
+          tags: profile.tags,
+          minBid: profile.minBid,
+          autoAcceptThreshold: profile.autoAcceptThreshold ?? 0,
+          autoReplyTemplate: profile.autoReplyTemplate,
+          queueDepth,
+        }
+      );
+    });
+
+    if (triageResult.decision === "accept" && triageResult.draftedReply) {
+      await step.run("auto-accept-bid", async () => {
+        const { executeContractCall } = await import("@/lib/circle");
+        const { escrowAbi } = await import("@/lib/arc");
+        const escrowAddr = process.env.ATTN_ESCROW_CONTRACT;
+        if (!escrowAddr || !bid.onChainBidId) return { skipped: true };
+
+        const result = await executeContractCall({
+          walletId: wallet.circleWalletId,
+          contractAddress: escrowAddr,
+          abi: escrowAbi as any,
+          functionName: "acceptBid",
+          args: [BigInt(bid.onChainBidId), triageResult.draftedReply],
+        });
+
+        await db.update(bids).set({
+          status: "accepted",
+          reply: triageResult.draftedReply,
+          score: triageResult.score,
+          settlementTxHash: result.txId,
+          settledAt: new Date(),
+        }).where(eq(bids.id, bidId));
+
+        return { accepted: true, txId: result.txId };
+      });
+    } else if (triageResult.decision === "reject") {
+      await step.run("auto-reject-bid", async () => {
+        const { executeContractCall } = await import("@/lib/circle");
+        const { escrowAbi } = await import("@/lib/arc");
+        const escrowAddr = process.env.ATTN_ESCROW_CONTRACT;
+        if (!escrowAddr || !bid.onChainBidId) return { skipped: true };
+
+        const result = await executeContractCall({
+          walletId: wallet.circleWalletId,
+          contractAddress: escrowAddr,
+          abi: escrowAbi as any,
+          functionName: "rejectBid",
+          args: [BigInt(bid.onChainBidId)],
+        });
+
+        await db.update(bids).set({
+          status: "rejected",
+          score: triageResult.score,
+          settlementTxHash: result.txId,
+          settledAt: new Date(),
+        }).where(eq(bids.id, bidId));
+
+        return { rejected: true, txId: result.txId };
+      });
+    } else {
+      // Surface — update score only, leave as pending for manual review
+      await db.update(bids).set({ score: triageResult.score }).where(eq(bids.id, bidId));
+    }
+
+    return { decision: triageResult.decision, score: triageResult.score, reason: triageResult.reason };
+  }
+);
+
+export const functions = [autoRefund, activityFeed, bidExpiryNotification, runActiveBidders, creatorAgentTriage];

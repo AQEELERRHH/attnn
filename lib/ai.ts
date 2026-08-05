@@ -168,4 +168,61 @@ Be authentic, professional, and engaging. Return JSON: { "reply": string }`;
   }
 }
 
+
+// ─── Creator Agent Triage ─────────────────────────────────────────────────────
+export interface TriageResult {
+  decision: "accept" | "surface" | "reject";
+  score: number;
+  reason: string;
+  draftedReply?: string;
+}
+
+export async function triageBidForCreator(
+  bid: BidData & { message: string },
+  creatorProfile: CreatorProfile & { autoAcceptThreshold: number; autoReplyTemplate: string | null; queueDepth: number },
+): Promise<TriageResult> {
+  const systemPrompt = `You are a creator-side AI agent on an attention marketplace.
+Triage an incoming bid on a scale of 0-10 based on:
+1. Bid amount vs creator minimum (40 points max)
+2. Message quality and topic relevance to creator tags (30 points max)
+3. Queue depth adjustment — if many bids pending, raise the bar (up to -15)
+4. Overall engagement potential (30 points max)
+Decision rules: score >= 8 = accept, score 5-7 = surface (show to creator), score < 5 = reject.
+Return JSON: { "score": number, "decision": "accept"|"surface"|"reject", "reason": string }`;
+
+  const prompt = JSON.stringify({
+    bid: { amount: bid.amountUsdc, message: bid.message },
+    creator: { handle: creatorProfile.handle, bio: creatorProfile.bio, tags: creatorProfile.tags, minBid: creatorProfile.minBid },
+    queueDepth: creatorProfile.queueDepth,
+    autoAcceptThreshold: creatorProfile.autoAcceptThreshold,
+  });
+
+  try {
+    const raw = await callAI(prompt, systemPrompt);
+    const parsed = safeJsonParse(raw);
+    const score = typeof parsed.score === "number" ? Math.min(10, Math.max(0, parsed.score)) : 5;
+    const decision = score >= 8 ? "accept" as const : score >= 5 ? "surface" as const : "reject" as const;
+    const reason = typeof parsed.reason === "string" ? parsed.reason : "AI triage completed.";
+
+    let draftedReply: string | undefined;
+    if (decision === "accept") {
+      draftedReply = creatorProfile.autoReplyTemplate ??
+        await draftReply(bid.message, { handle: creatorProfile.handle, bio: creatorProfile.bio });
+    }
+
+    return { decision, score, reason, draftedReply };
+  } catch {
+    const bidAmount = BigInt(bid.amountUsdc);
+    const minBid = BigInt(creatorProfile.minBid);
+    const score = bidAmount >= minBid * BigInt(2) ? 8 : bidAmount >= minBid ? 5 : 3;
+    const decision = score >= 8 ? "accept" as const : score >= 5 ? "surface" as const : "reject" as const;
+    return {
+      decision,
+      score,
+      reason: "Fallback triage — AI unavailable.",
+      draftedReply: decision === "accept" ? (creatorProfile.autoReplyTemplate ?? undefined) : undefined,
+    };
+  }
+}
+
 export { callAI, safeJsonParse };

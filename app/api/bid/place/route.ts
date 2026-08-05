@@ -6,6 +6,7 @@ import { executeContractCall } from "@/lib/circle";
 import { escrowAbi, usdcAbi, USDC_ADDRESS } from "@/lib/arc";
 import { eq } from "drizzle-orm";
 import { createPublicClient, http } from "viem";
+import { inngest } from "@/lib/inngest";
 
 export async function POST(req: NextRequest) {
   try {
@@ -111,6 +112,14 @@ export async function POST(req: NextRequest) {
     } catch (autoErr) {
       // Auto-accept failure is non-fatal — bid stays pending
       console.error("Auto-accept failed:", autoErr);
+    }
+
+    // Fire creator-agent triage event
+    if (bid) {
+      await inngest.send({
+        name: "attnn/bid.placed",
+        data: { bidId: bid.id, creatorUserId: creatorProfile.userId },
+      }).catch(() => {}); // non-fatal if Inngest is unavailable
     }
 
     return NextResponse.json({ bid, success: true, txId: result.txId, autoAccepted });

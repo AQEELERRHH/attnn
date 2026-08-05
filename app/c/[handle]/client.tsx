@@ -16,6 +16,10 @@ export function PublicProfileClient({
 }) {
   const [accessGranted, setAccessGranted] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [showBidForm, setShowBidForm] = useState(false);
+  const [bidAmount, setBidAmount] = useState("");
+  const [bidMessage, setBidMessage] = useState("");
+  const [bidLoading, setBidLoading] = useState(false);
 
   async function handleAccess() {
     setLoading(true);

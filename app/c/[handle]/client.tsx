@@ -80,9 +80,74 @@ export function PublicProfileClient({
               <Coins className="w-4 h-4 text-arc-gold" />
               <span className="font-mono text-arc-gold">{minBid} USDC minimum bid</span>
             </div>
-            <Button className="w-full" onClick={() => window.location.href = "/"}>
-              Place a Bid on @{handle}
-            </Button>
+            {!showBidForm ? (
+              <Button className="w-full" onClick={() => setShowBidForm(true)}>
+                Place a Bid on @{handle}
+              </Button>
+            ) : (
+              <div className="space-y-3 mt-2">
+                <p className="text-sm font-medium">Place a bid on @{handle}</p>
+                <input
+                  type="number"
+                  placeholder={`Minimum ${minBid} USDC`}
+                  value={bidAmount}
+                  onChange={e => setBidAmount(e.target.value)}
+                  min={minBid}
+                  step="0.01"
+                  className="w-full text-sm px-3 py-2 rounded border border-border bg-arc-bg-2 text-text-primary placeholder:text-text-dim focus:outline-none focus:ring-1 focus:ring-arc-gold"
+                />
+                <textarea
+                  placeholder="Write your message (min 10 characters)..."
+                  value={bidMessage}
+                  onChange={e => setBidMessage(e.target.value)}
+                  rows={3}
+                  className="w-full text-sm px-3 py-2 rounded border border-border bg-arc-bg-2 text-text-primary placeholder:text-text-dim focus:outline-none focus:ring-1 focus:ring-arc-gold resize-none"
+                />
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    className="flex-1"
+                    onClick={() => setShowBidForm(false)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    className="flex-1"
+                    disabled={bidLoading || !bidAmount || !bidMessage || bidMessage.length < 10}
+                    onClick={async () => {
+                      setBidLoading(true);
+                      try {
+                        const res = await fetch("/api/bid/place", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({
+                            creatorHandle: handle,
+                            amountUsdc: Math.round(parseFloat(bidAmount) * 1_000_000).toString(),
+                            message: bidMessage,
+                            isPrivate: false,
+                          }),
+                        });
+                        const data = await res.json();
+                        if (data.success) {
+                          toast({ title: "Bid placed!", description: `$${bidAmount} USDC bid sent to @${handle}`, variant: "success" });
+                          setShowBidForm(false);
+                          setBidAmount("");
+                          setBidMessage("");
+                        } else {
+                          toast({ title: "Failed", description: data.error ?? "Could not place bid", variant: "destructive" });
+                        }
+                      } catch {
+                        toast({ title: "Error", variant: "destructive" });
+                      } finally {
+                        setBidLoading(false);
+                      }
+                    }}
+                  >
+                    {bidLoading ? "Placing..." : "Confirm Bid"}
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
         ) : (
           <div className="text-center py-8">

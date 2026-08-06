@@ -589,7 +589,7 @@ export function DashboardClient({
 
             {/* Summary Cards */}
             {(() => {
-              const creatorsFound = logs.filter(l => l.action === "creator_discovered").reduce((sum, l) => sum + (l.data?.count ?? 0), 0);
+              const creatorsFound = Math.max(...logs.filter(l => l.action === "creator_discovered").map(l => l.data?.count ?? 0), 0);
               const bidsPlaced = logs.filter(l => l.action === "bid_placed").length;
               const accepted = localBids.filter(b => b.bidderUserId === userId && b.status === "accepted").length;
               const totalBidValue = localBids.filter(b => b.bidderUserId === userId).reduce((sum, b) => sum + Number(BigInt(b.amountUsdc || "0")) / 1_000_000, 0);
@@ -625,12 +625,19 @@ export function DashboardClient({
 
             {/* Activity Feed */}
             <div className="space-y-2">
-              {logs.filter(log => {
-                if (activityFilter === "creators") return log.action === "creator_discovered";
-                if (activityFilter === "bids") return log.action === "bid_placed";
-                if (activityFilter === "accepted") return log.action === "bid_accepted";
-                return true;
-              }).map((log) => {
+              {(activityFilter === "accepted"
+                ? localBids.filter(b => b.bidderUserId === userId && b.status === "accepted").map(b => ({
+                    id: b.id,
+                    action: "bid_accepted",
+                    data: { creator: b.creatorAddress.slice(0,6) + "..." + b.creatorAddress.slice(-4), amount: b.amountUsdc, reply: b.reply },
+                    createdAt: b.settledAt ?? b.createdAt,
+                  }))
+                : logs.filter(log => {
+                    if (activityFilter === "creators") return log.action === "creator_discovered";
+                    if (activityFilter === "bids") return log.action === "bid_placed";
+                    return true;
+                  })
+              ).map((log) => {
                 const isBid = log.action === "bid_placed";
                 const isAccepted = log.action === "bid_accepted";
                 const isRejected = log.action === "bid_rejected";
@@ -654,6 +661,7 @@ export function DashboardClient({
                 );
               })}
               {logs.length === 0 && <p className="text-text-dim text-center py-8">No activity yet. Run your agent to get started.</p>}
+              {logs.length > 0 && activityFilter === "all" && <p className="text-xs text-text-dim text-center pt-2">Showing last {Math.min(logs.length, 50)} entries</p>}
             </div>
           </TabsContent>
             </div>

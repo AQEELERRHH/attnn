@@ -26,7 +26,6 @@ export function PublicProfileClient({
     try {
       const res = await fetch(`/api/c/${handle}`, {
         method: "GET",
-        headers: { "payment-signature": btoa("mock") },
       });
       const data = await res.json();
       if (res.ok && data.unlocked) {

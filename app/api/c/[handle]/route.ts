@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { gate } from "@/lib/x402";
 import { getFullProfileByHandle } from "@/lib/profiles";
+import { auth } from "@/lib/auth";
 
 const PRICE = "$0.001";
 
@@ -11,8 +12,15 @@ export async function GET(
   const { handle } = await ctx.params;
   const endpoint = `/api/c/${handle}`;
 
-  const result = await gate(req, PRICE, endpoint);
-  if (!result.ok) return result.response;
+  // Signed-in Attn. users get free access — no payment required
+  const session = await auth();
+  const isSignedIn = !!session?.user?.id;
+
+  if (!isSignedIn) {
+    // External agent or non-signed-in visitor — require x402 payment
+    const result = await gate(req, PRICE, endpoint);
+    if (!result.ok) return result.response;
+  }
 
   const profile = await getFullProfileByHandle(handle);
   if (!profile) {
@@ -22,7 +30,7 @@ export async function GET(
   const res = NextResponse.json({
     handle,
     unlocked: true,
-    payer: result.payer,
+    payer: isSignedIn ? "authenticated-user" : "x402",
     profile: {
       handle: profile.handle,
       bio: profile.bio,
@@ -31,8 +39,6 @@ export async function GET(
       isActive: profile.isActive,
     },
   });
-  if (result.paymentResponseHeader) {
-    res.headers.set("PAYMENT-RESPONSE", result.paymentResponseHeader);
-  }
+
   return res;
 }

@@ -20,6 +20,9 @@ export default async function HomePage() {
             <Link href="/about">
               <Button variant="ghost" size="sm">About</Button>
             </Link>
+            <Link href="/creators">
+              <Button variant="ghost" size="sm">Creators</Button>
+            </Link>
             {session?.user ? (
               <Link href="/dashboard">
                 <Button variant="default" size="sm">Dashboard</Button>

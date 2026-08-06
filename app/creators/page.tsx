@@ -39,13 +39,13 @@ export default async function CreatorsPage() {
         <div className="mb-10">
           <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-arc-gold mb-3">
             <Users className="w-3 h-3" />
-            <span>{activeCreators.length} creators registered on Arc</span>
+            <span>{activeCreators.length} creators registered on Attnn.</span>
           </div>
           <h1 className="text-4xl font-display font-bold mb-3">
             Discover Creators
           </h1>
           <p className="text-text-secondary max-w-xl">
-            Browse creators and professionals registered on Attn. Each profile is live on Arc Network. Bid on anyone to get their attention.
+            Browse creators and professionals registered on Attnn. Each profile is live. Bid on anyone to get their attention.
           </p>
         </div>
 

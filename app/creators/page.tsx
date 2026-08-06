@@ -66,26 +66,11 @@ export default async function CreatorsPage() {
               return (
                 <Card key={creator.id} className="p-5 flex flex-col gap-3 hover:border-arc-gold/40 transition-colors">
                   <div className="flex items-start justify-between">
-                    <div>
-                      <h2 className="font-display font-bold text-lg">@{creator.handle}</h2>
-                      {creator.bio && (
-                        <p className="text-sm text-text-secondary mt-1 line-clamp-2">{creator.bio}</p>
-                      )}
-                    </div>
+                    <h2 className="font-display font-bold text-lg">@{creator.handle}</h2>
                     <span className="text-xs font-mono text-arc-gold bg-arc-gold/10 px-2 py-1 rounded-full shrink-0 ml-2">
                       ${minBidUsd} min
                     </span>
                   </div>
-                  {creator.tags.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5">
-                      {creator.tags.slice(0, 4).map(tag => (
-                        <Badge key={tag} variant="secondary" className="text-xs">{tag}</Badge>
-                      ))}
-                      {creator.tags.length > 4 && (
-                        <span className="text-xs text-text-dim">+{creator.tags.length - 4}</span>
-                      )}
-                    </div>
-                  )}
                   <div className="flex gap-2 mt-auto pt-2">
                     <Link href={`/c/${creator.handle}`} className="flex-1">
                       <Button variant="outline" size="sm" className="w-full">View Profile</Button>

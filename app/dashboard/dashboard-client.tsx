@@ -597,7 +597,7 @@ export function DashboardClient({
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
                   {[
                     { label: "Creators Found", value: creatorsFound, color: "text-arc-purple" },
-                    { label: "Bids Placed", value: bidsPlaced, color: "text-arc-gold" },
+                    { label: "Agent Bids", value: bidsPlaced, color: "text-arc-gold" },
                     { label: "Accepted", value: accepted, color: "text-green" },
                     { label: "Total Bid Value", value: `$${totalBidValue.toFixed(2)}`, color: "text-arc-coral" },
                   ].map(({ label, value, color }) => (

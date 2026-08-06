@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Users, Search } from "lucide-react";
+import { Users } from "lucide-react";
 
 export const revalidate = 60; // revalidate every 60 seconds
 

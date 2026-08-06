@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
     });
 
     // Wait for approval to settle on Arc
-    await new Promise(r => setTimeout(r, 4000));
+    await new Promise(r => setTimeout(r, 8000));
 
     // Step 2: Place the bid
     const result = await executeContractCall({
@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
     });
 
     // Wait briefly for Circle transaction to settle on Arc
-    await new Promise(r => setTimeout(r, 4000));
+    await new Promise(r => setTimeout(r, 8000));
 
     // Query contract for the latest on-chain bid ID for this bidder
     let onChainBidId: string | null = null;

@@ -2,7 +2,6 @@ import { db } from "@/lib/db/client";
 import { profiles } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import Link from "next/link";
-import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Users } from "lucide-react";

@@ -321,11 +321,19 @@ export function DashboardClient({
       <div className="max-w-7xl mx-auto px-6 py-8">
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="mb-8">
-          <TabsList>
-            <TabsTrigger value="creator" className="flex items-center gap-2"><Users className="w-4 h-4" /> Creator</TabsTrigger>
-            <TabsTrigger value="bidder" className="flex items-center gap-2"><Bot className="w-4 h-4" /> Bidder</TabsTrigger>
-            <TabsTrigger value="activity" className="flex items-center gap-2"><Activity className="w-4 h-4" /> Activity</TabsTrigger>
-          </TabsList>
+          <div className="flex gap-6">
+            <TabsList className="flex flex-col h-auto w-44 shrink-0 gap-1 bg-arc-bg-2 p-2 rounded-xl self-start sticky top-24">
+              <TabsTrigger value="creator" className="w-full justify-start flex items-center gap-2 px-3 py-2.5 text-sm">
+                <Users className="w-4 h-4" /> Creator
+              </TabsTrigger>
+              <TabsTrigger value="bidder" className="w-full justify-start flex items-center gap-2 px-3 py-2.5 text-sm">
+                <Bot className="w-4 h-4" /> Bidder
+              </TabsTrigger>
+              <TabsTrigger value="activity" className="w-full justify-start flex items-center gap-2 px-3 py-2.5 text-sm">
+                <Activity className="w-4 h-4" /> Activity
+              </TabsTrigger>
+            </TabsList>
+            <div className="flex-1 min-w-0">
 
           {/* Creator Tab */}
           <TabsContent value="creator" className="space-y-6 mt-6">
@@ -648,6 +656,8 @@ export function DashboardClient({
               {logs.length === 0 && <p className="text-text-dim text-center py-8">No activity yet. Run your agent to get started.</p>}
             </div>
           </TabsContent>
+            </div>
+          </div>
         </Tabs>
       </div>
       </>

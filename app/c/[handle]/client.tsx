@@ -47,7 +47,7 @@ export function PublicProfileClient({
         <div className="flex items-start justify-between mb-6">
           <div>
             <h1 className="text-3xl font-display font-bold">@{handle}</h1>
-            <p className="text-text-secondary mt-1 text-sm">Creator on Attn.</p>
+            <p className="text-text-secondary mt-1 text-sm">Creator on Attnn.</p>
           </div>
           <div className="flex items-center gap-2 text-sm text-text-dim">
             <Lock className="w-4 h-4" />
@@ -167,7 +167,7 @@ export function PublicProfileClient({
             <Lock className="w-10 h-10 mx-auto mb-4 text-text-secondary" />
             <h2 className="text-lg font-display font-semibold mb-2">Profile Locked</h2>
             <p className="text-text-secondary text-sm mb-6">
-              Pay $0.001 USDC to unlock this creator&apos;s full profile — bio, tags, and contact details.
+              Pay $0.001 USDC to unlock this creator&apos;s full profile: bio, tags, and contact details.
             </p>
             <Button onClick={handleAccess} disabled={loading} className="w-full">
               {loading ? "Processing..." : "Unlock for $0.001 USDC"}

@@ -473,52 +473,56 @@ Applied for listing on [agents.circle.com](https://agents.circle.com). The `/api
 | Platform Seller Wallet | `0x569ab5cafeba4d38d2b95cd509ed97779e5ff9bf` |
 
 ---
-
-Agentic Economy Track Alignment
+## Agentic Economy Track Alignment
 
 This section maps Attnn. against the Programmable Money Hackathon Agentic Economy track criteria.
 
-"Agents with clear decision logic tied to real signals"
+### "Agents with clear decision logic tied to real signals"
 
-Bidder agent:
+**Bidder agent:**
+- Queries AttnnRegistry contract on-chain for creators matching search tags real signal: on-chain data
+- AISA scores each creator 0-10 against free-text goal real signal: AI semantic evaluation
+- Only bids if score >= minFitScore AND daily budget allows clear deterministic gate
 
-Queries AttnnRegistry contract on-chain for creators matching search tags — real signal: on-chain data
-AISA scores each creator 0-10 against free-text goal — real signal: AI semantic evaluation
-Only bids if score >= minFitScore AND daily budget allows — clear deterministic gate
+**Creator agent:**
+- Scores incoming bid on 4 signals: bid amount vs minimum, message quality, tag relevance to creator profile, current queue depth all real signals
+- Score >= 8 → auto-accept with AI-drafted reply, 5-7 → surface to inbox, < 5 → auto-reject with refund
 
-Creator agent:
+### "Autonomous spending, payments or settlement flows using USDC"
 
-Scores incoming bid on 4 signals: bid amount vs minimum, message quality, tag relevance to creator profile, current queue depth — all real signals
-Score >= 8 → auto-accept with AI-drafted reply, 5-7 → surface to inbox, < 5 → auto-reject with refund
-"Autonomous spending, payments or settlement flows using USDC"
-Bidder agent places USDC bids every 10 minutes without any human input
-Creator agent accepts/rejects bids on-chain, triggering USDC settlement or immediate refund
-14-day auto-refund Inngest cron sweeps expired bids daily at 03:00 UTC
-All flows execute via Circle Developer-Controlled Wallets — no human signing at any step
-"Use of Agent Stack to connect agents to wallets, USDC payments and onchain actions"
+- Bidder agent places USDC bids every 10 minutes without any human input
+- Creator agent accepts/rejects bids on-chain, triggering USDC settlement or immediate refund
+- 14-day auto-refund Inngest cron sweeps expired bids daily at 03:00 UTC
+- All flows execute via Circle Developer-Controlled Wallets no human signing at any step
+
+### "Use of Agent Stack to connect agents to wallets, USDC payments and onchain actions"
 
 Attnn. uses the core Agent Stack components:
 
-Circle Developer-Controlled Wallets — every agent action (bid placement, acceptance, rejection, refund) executes through wallets provisioned via the Circle SDK
-x402 nanopayments — creator profiles are payable x402 endpoints using @circle-fin/x402-batching with real BatchFacilitatorClient verification
+- **Circle Developer-Controlled Wallets** every agent action (bid placement, acceptance, rejection, refund) executes through wallets provisioned via the Circle SDK
+- **x402 nanopayments** creator profiles are payable x402 endpoints using `@circle-fin/x402-batching` with real `BatchFacilitatorClient` verification and Circle Gateway settlement
 
-Why not the Circle CLI directly: The Circle CLI is a terminal tool designed for agents consuming services. Attnn. is a web application running on Vercel serverless functions — the CLI doesn't fit a stateless serverless environment. We use the underlying npm packages (@circle-fin/x402-batching, @circle-fin/developer-controlled-wallets) directly, which is the correct approach for a web application. External agents use the Circle CLI to pay to access Attnn.'s x402 endpoint. Attnn. itself builds the endpoint using the SDK.
+**Why not the Circle CLI directly:** The Circle CLI is a terminal tool designed for agents consuming services. Attnn. is a web application running on Vercel serverless functions the CLI doesn't fit a stateless serverless environment. We use the underlying npm packages (`@circle-fin/x402-batching`, `@circle-fin/developer-controlled-wallets`) directly, which is the correct approach for a web application. External agents use the Circle CLI to pay to access Attnn.'s x402 endpoint. Attnn. itself builds the endpoint using the SDK.
 
-"Use of Nanopayments, Paymaster or App Kits where relevant"
-Nanopayments ✅ — x402 gate on /api/c/{handle}. Any external AI agent pays $0.001 USDC via Circle Gateway GatewayWalletBatched to access a creator's full profile. Real EIP-3009 verification via BatchFacilitatorClient in production.
-Paymaster — not applicable — Arc uses USDC as the native gas token. There is no separate gas token problem to solve. Every transaction is already denominated and settled in USDC.
-App Kits — not applicable — Bridge Kit, Swap Kit, and Transfer Kit are designed for cross-chain or same-chain token movement. Attnn.'s core primitive is escrow-based attention settlement on a single chain, handled by custom contracts.
-Core Products Used
-Product	Status	How
-Arc Network	✅	All contracts deployed, USDC as native gas, sub-second finality
-USDC	✅	All bids, settlement, refunds — everything dollar-denominated
-Circle Developer-Controlled Wallets	✅	Every user and agent action
-Circle Contracts	✅	AttnnRegistry + AttnnEscrow on Arc Testnet
-Nanopayments (x402)	✅	Creator profile API gate
-Agent Stack (SDK components)	✅	Wallets + x402 batching
-Circle Agent Marketplace	Applied	/api/c/{handle} submitted for listing
-Paymaster	N/A	Not needed on Arc
-App Kits	N/A	Not applicable to attention escrow use case
+### "Use of Nanopayments, Paymaster or App Kits where relevant"
+
+- **Nanopayments** ✅ x402 gate on `/api/c/{handle}`. Any external AI agent pays $0.001 USDC via Circle Gateway GatewayWalletBatched. Real EIP-3009 verification in production.
+- **Paymaster** — not applicable Arc uses USDC as the native gas token. No separate gas token problem exists.
+- **App Kits** — not applicable Bridge Kit, Swap Kit, and Transfer Kit are for cross-chain token movement. Attnn.'s core primitive is escrow-based attention settlement on a single chain, handled by custom contracts.
+
+### Core Products Used
+
+| Product | Status | How |
+|---|---|---|
+| Arc Network | ✅ | All contracts deployed, USDC as native gas, sub-second finality |
+| USDC | ✅ | All bids, settlement, refunds everything dollar-denominated |
+| Circle Developer-Controlled Wallets | ✅ | Every user and agent action |
+| Circle Contracts | ✅ | AttnnRegistry + AttnnEscrow on Arc Testnet |
+| Nanopayments (x402) | ✅ | Creator profile API gate |
+| Agent Stack (SDK components) | ✅ | Wallets + x402 batching |
+| Circle Agent Marketplace | Applied | `/api/c/{handle}` submitted for listing |
+| Paymaster | N/A | Not needed on Arc |
+| App Kits | N/A | Not applicable to attention escrow use case |
 
 ## Resources
 

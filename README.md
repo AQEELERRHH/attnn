@@ -425,7 +425,19 @@ The Circle SDK client is instantiated fresh on every API call not cached at modu
 
 ---
 
-## Post-Hackathon Roadmap
+## Post-Hackathon Roadmap 
+
+### Arc x402 Interoperability Note
+Attnn.'s x402 gate is correctly implemented and returns valid v2 402 responses with proper GatewayWalletBatched payment requirements. During testing, PayBox (an external AI agent payment infrastructure tool) successfully discovered and decoded the payment requirements but could not complete payment because PayBox currently settles only on Base and Solana not Arc Testnet.
+
+<img width="678" height="1080" alt="WhatsApp Image 2026-08-07 at 13 09 53" src="https://github.com/user-attachments/assets/16b4f607-f9f9-4b4a-8885-ae49c5bec21a" />
+
+<img width="540" height="896" alt="WhatsApp Image 2026-08-07 at 13 10 27" src="https://github.com/user-attachments/assets/75526c5c-a26b-4d14-9cc0-d3e8d8c3696d" />
+
+
+This surfaces a meaningful interoperability consideration: as the Arc ecosystem grows, agent payment infrastructure like PayBox, and other x402-compatible agents will need Arc support to participate in Arc-native payment flows. The Attnn. x402 gate is ready the broader agent payment rail ecosystem needs to catch up to Arc.
+
+For the current implementation, the intended payment path is Arc-native: agents with Circle Developer-Controlled Wallets funded on Arc Testnet can pay to access creator profiles. Cross-rail payability (Base/Solana → Arc) is a post-mainnet consideration.
 
 ### x402 Payment for Signed-In Users
 Currently, signed-in Attnn. users get free profile access. Post-hackathon, we plan to charge a small fee ($0.001) even for signed-in users, using a direct Circle wallet transfer. The txId from the transfer becomes the payment proof in the x402 header. This requires fetching the transfer receipt, confirming it on Arc via viem, then returning the profile.

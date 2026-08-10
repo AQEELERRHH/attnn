@@ -1,0 +1,266 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Attn. Creator Profile API",
+    "description": "Pay-per-access creator and professional profiles via x402 nanopayments on Arc Network. Any AI agent can pay $0.001 USDC to unlock a creator's full profile. Built on Circle Gateway GatewayWalletBatched settlement with real EIP-3009 verification.",
+    "version": "1.0.0",
+    "contact": {
+      "name": "Asmau Zubairu",
+      "email": "aszubairu74@gmail.com",
+      "url": "https://attnn.vercel.app"
+    },
+    "license": {
+      "name": "MIT"
+    }
+  },
+  "servers": [
+    {
+      "url": "https://attnn.vercel.app",
+      "description": "Production server (Arc Testnet)"
+    }
+  ],
+  "paths": {
+    "/api/c/{handle}": {
+      "get": {
+        "summary": "Get creator profile (x402 gated)",
+        "description": "Returns a creator or professional's full profile. Requires a valid x402 EIP-3009 payment signature for $0.001 USDC on Arc Testnet. Signed-in Attn. users receive free access. External AI agents must pay via the x402 protocol.\n\n**Payment flow:**\n1. Call this endpoint without a payment header\n2. Receive HTTP 402 with PAYMENT-REQUIRED header (base64 encoded GatewayWalletBatched requirements)\n3. Decode the requirements and sign an EIP-3009 payment authorization for $0.001 USDC to the seller wallet\n4. Re-call with the payment-signature header containing the base64 encoded signed authorization\n5. Receive HTTP 200 with full profile JSON",
+        "operationId": "getCreatorProfile",
+        "tags": ["Creator Profiles"],
+        "parameters": [
+          {
+            "name": "handle",
+            "in": "path",
+            "required": true,
+            "description": "The creator's unique handle registered on Attn.",
+            "schema": {
+              "type": "string",
+              "example": "xeenty"
+            }
+          },
+          {
+            "name": "payment-signature",
+            "in": "header",
+            "required": false,
+            "description": "Base64 encoded EIP-3009 signed payment authorization. Required for external agents. Omit to receive the 402 payment challenge.",
+            "schema": {
+              "type": "string",
+              "example": "eyJwYXltZW50IjoiZXhhbXBsZSJ9..."
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Payment verified. Full creator profile returned.",
+            "headers": {
+              "PAYMENT-RESPONSE": {
+                "description": "Base64 encoded payment settlement confirmation from Circle Gateway",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatorProfileResponse"
+                },
+                "example": {
+                  "handle": "xeenty",
+                  "unlocked": true,
+                  "payer": "x402",
+                  "profile": {
+                    "handle": "xeenty",
+                    "bio": "I am the founder of Attnn and a full stack developer",
+                    "tags": ["web3", "creator", "developer"],
+                    "minBid": "5000000",
+                    "isActive": true
+                  }
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Payment required. Returns x402 payment challenge with GatewayWalletBatched requirements.",
+            "headers": {
+              "PAYMENT-REQUIRED": {
+                "description": "Base64 encoded x402 payment requirements including amount, asset, network, and seller wallet",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentRequired"
+                },
+                "example": {
+                  "error": "payment required"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Creator not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "creator not found"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Payment processing error (e.g. invalid payment signature)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "payment processing error",
+                  "message": "Unexpected token in payment signature"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/creators": {
+      "get": {
+        "summary": "Browse all active creators",
+        "description": "Returns a public HTML page listing all active creators registered on Attn. No payment required. Shows handle and minimum bid only full profile details require visiting the individual creator profile page.",
+        "operationId": "listCreators",
+        "tags": ["Creator Discovery"],
+        "responses": {
+          "200": {
+            "description": "HTML page with creator listing",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "CreatorProfile": {
+        "type": "object",
+        "properties": {
+          "handle": {
+            "type": "string",
+            "description": "Unique creator handle on Attn.",
+            "example": "xeenty"
+          },
+          "bio": {
+            "type": "string",
+            "nullable": true,
+            "description": "Creator bio",
+            "example": "Full stack developer and Web3 builder"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Creator tags/skills",
+            "example": ["web3", "developer", "solidity"]
+          },
+          "minBid": {
+            "type": "string",
+            "description": "Minimum bid amount in USDC atomic units (6 decimals). Divide by 1,000,000 for USD value.",
+            "example": "5000000"
+          },
+          "isActive": {
+            "type": "boolean",
+            "description": "Whether the creator is currently accepting bids",
+            "example": true
+          }
+        }
+      },
+      "CreatorProfileResponse": {
+        "type": "object",
+        "properties": {
+          "handle": {
+            "type": "string",
+            "example": "xeenty"
+          },
+          "unlocked": {
+            "type": "boolean",
+            "example": true
+          },
+          "payer": {
+            "type": "string",
+            "description": "Who paid for access. 'x402' for external agents, 'authenticated-user' for signed-in users.",
+            "example": "x402"
+          },
+          "profile": {
+            "$ref": "#/components/schemas/CreatorProfile"
+          }
+        }
+      },
+      "PaymentRequired": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "example": "payment required"
+          }
+        },
+        "description": "The PAYMENT-REQUIRED header contains a base64 encoded JSON object with x402Version, resource, and accepts fields. The accepts array contains GatewayWalletBatched payment requirements: scheme (exact), network (eip155:5042002 = Arc Testnet), asset (0x3600000000000000000000000000000000000000 = USDC on Arc), amount (1000 = $0.001 USDC), payTo (platform seller wallet), and verifyingContract (Circle Gateway contract)."
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "x402Payment": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "payment-signature",
+        "description": "Base64 encoded EIP-3009 signed payment authorization for $0.001 USDC on Arc Testnet (eip155:5042002) via Circle Gateway GatewayWalletBatched. Generate by signing the payment requirements returned in the PAYMENT-REQUIRED header of a 402 response."
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "Creator Profiles",
+      "description": "x402-gated creator profile access endpoints"
+    },
+    {
+      "name": "Creator Discovery",
+      "description": "Public creator browsing (no payment required)"
+    }
+  ],
+  "x-payment-info": {
+    "protocol": "x402",
+    "version": 2,
+    "network": "eip155:5042002",
+    "asset": "0x3600000000000000000000000000000000000000",
+    "amount": "1000",
+    "amountUsd": "0.001",
+    "currency": "USDC",
+    "sellerWallet": "0x569ab5cafeba4d38d2b95cd509ed97779e5ff9bf",
+    "settlementScheme": "GatewayWalletBatched",
+    "verifyingContract": "0x0077777d7EBA4688BDeF3E311b846F25870A19B9",
+    "chain": "Arc Testnet",
+    "chainId": 5042002
+  }
+}

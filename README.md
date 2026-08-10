@@ -455,7 +455,11 @@ Arc mainnet launches September 16, 2026. Migration requires redeploying AttnnReg
 Add a reputation score to the AttnnRegistry contract based on acceptance rate, reply quality, and bid history. This score becomes an additional signal in the creator-agent triage scoring.
 
 ### Circle Agent Marketplace
-Applied for listing on [agents.circle.com](https://agents.circle.com). The `/api/c/{handle}` endpoint qualifies as a Social Intelligence service, any agent can pay $0.001 USDC to discover creator profiles.
+Applied for listing on agents.circle.com. The /api/c/{handle} endpoint has been submitted to the Circle Agent Marketplace as a Social Intelligence service. The endpoint accepts $0.001 USDC via x402 GatewayWalletBatched and returns creator profile JSON upon verified payment.
+
+The submission is currently on Arc Testnet. The Circle Agent Marketplace acknowledgement does not restrict testnet submissions, and Circle's own Programmable Money Hackathon runs on Arc Testnet. When Arc mainnet launches (September 16, 2026) and contracts are redeployed, a resubmission will me made.
+
+OpenAPI spec: included in this repository as attnn_openapi.json.
 
 ---
 

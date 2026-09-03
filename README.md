@@ -3,7 +3,7 @@
 <img width="1888" height="826" alt="image" src="https://github.com/user-attachments/assets/b6f17375-8ac2-4e6b-9c15-a668cee5dd92" />
 
 
-**Live:** [attnn.vercel.app](https://attnn.vercel.app) · **V1 Protocol:** [pitchslotarc.vercel.app](https://pitchslotarc.vercel.app) · **Creators:** [attnn.vercel.app/creators](https://attnn.vercel.app/creators)
+**Live:** [attnn.xyz](https://attnn.xyz) · **V1 Protocol:** [pitchslotarc.vercel.app](https://pitchslotarc.vercel.app) · **Creators:** [attnn.xyz/creators](https://attnn.xyz/creators)
 
 > Attention is scarce. Let agents negotiate it.
 
@@ -102,7 +102,7 @@ On every new bid:
 - Reactive (event-driven), not proactive
 - Uses saved auto-reply template or AISA-drafted personalized reply
 - Executes real on-chain accept/reject transactions
-- Falls back to rule-based scoring if AISA is unavailable — protocol never breaks
+- Falls back to rule-based scoring if AISA is unavailable, protocol never breaks
 
 ### Why This Makes Attnn. Fully Agentic
 

@@ -45,29 +45,34 @@ export async function POST(req: NextRequest) {
       functionName: "placeBid",
       args: [creatorWallet.address, amountUsdc, message ?? "", isPrivate ?? false],
     });
-
-    // Wait briefly for Circle transaction to settle on Arc
-    await new Promise(r => setTimeout(r, 8000));
-
-    // Query contract for the latest on-chain bid ID for this bidder
+    // Retry loop — give Arc and Circle time to finalize before reading bid ID
     let onChainBidId: string | null = null;
-    try {
-      const publicClient = createPublicClient({
-        chain: { id: parseInt(process.env.ARC_CHAIN_ID ?? "5042002"), name: "Arc Testnet", nativeCurrency: { decimals: 18, name: "USDC", symbol: "USDC" }, rpcUrls: { default: { http: ["https://rpc.testnet.arc.network"] } } },
-        transport: http("https://rpc.testnet.arc.network"),
-      });
-      const bidIds = await publicClient.readContract({
-        address: escrowAddr as `0x${string}`,
-        abi: escrowAbi,
-        functionName: "getBidderBids",
-        args: [bidderWallet.address as `0x${string}`],
-      }) as bigint[];
-      const lastBidId = bidIds.at(-1);
-      if (lastBidId !== undefined) {
-        onChainBidId = lastBidId.toString();
+    const publicClient = createPublicClient({
+      chain: { id: parseInt(process.env.ARC_CHAIN_ID ?? "5042002"), name: "Arc Testnet", nativeCurrency: { decimals: 18, name: "USDC", symbol: "USDC" }, rpcUrls: { default: { http: ["https://rpc.testnet.arc.network"] } } },
+      transport: http("https://rpc.testnet.arc.network"),
+    });
+    for (let attempt = 0; attempt < 8; attempt++) {
+      await new Promise(r => setTimeout(r, 6000));
+      try {
+        const bidIds = await publicClient.readContract({
+          address: escrowAddr as `0x${string}`,
+          abi: escrowAbi,
+          functionName: "getBidderBids",
+          args: [bidderWallet.address as `0x${string}`],
+        }) as bigint[];
+        const lastBidId = bidIds.at(-1);
+        if (lastBidId !== undefined) {
+          onChainBidId = lastBidId.toString();
+          console.log("Got onChainBidId " + onChainBidId + " on attempt " + (attempt + 1));
+          break;
+        }
+      } catch (e) {
+        console.error("Attempt " + (attempt + 1) + " failed:", e);
       }
-    } catch (e) {
-      console.error("Failed to fetch on-chain bid ID:", e);
+    }
+    if (!onChainBidId) {
+      console.error("Failed to get onChainBidId after 8 attempts");
+    }
     }
 
     const [bid] = await db.insert(bids).values({
@@ -97,7 +102,7 @@ export async function POST(req: NextRequest) {
             contractAddress: escrowAddr,
             abi: escrowAbi as any,
             functionName: "acceptBid",
-            args: [BigInt(bid.onChainBidId ?? "0"), replyTemplate],
+            args: [BigInt(bid.onChainBidId!), replyTemplate],
           });
           await db.update(bids).set({
             status: "accepted",

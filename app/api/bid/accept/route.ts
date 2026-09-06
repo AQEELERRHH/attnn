@@ -26,7 +26,8 @@ export async function POST(req: NextRequest) {
     const escrowAddr = process.env.ATTN_ESCROW_CONTRACT;
     if (!escrowAddr) return NextResponse.json({ error: "Escrow not deployed" }, { status: 500 });
 
-    const onChainBidId = BigInt(bid.onChainBidId ?? "0");
+    if (!bid.onChainBidId) return NextResponse.json({ error: "Bid not yet confirmed on-chain. Wait 30 seconds and try again." }, { status: 400 });
+    const onChainBidId = BigInt(bid.onChainBidId);
     const result = await executeContractCall({
       walletId: wallet.circleWalletId,
       contractAddress: escrowAddr,

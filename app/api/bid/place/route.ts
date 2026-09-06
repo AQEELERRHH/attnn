@@ -73,7 +73,6 @@ export async function POST(req: NextRequest) {
     if (!onChainBidId) {
       console.error("Failed to get onChainBidId after 8 attempts");
     }
-    }
 
     const [bid] = await db.insert(bids).values({
       bidderUserId: session.user.id, creatorUserId: creatorProfile.userId,

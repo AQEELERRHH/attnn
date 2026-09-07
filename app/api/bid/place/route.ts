@@ -45,58 +45,33 @@ export async function POST(req: NextRequest) {
       functionName: "placeBid",
       args: [creatorWallet.address, amountUsdc, message ?? "", isPrivate ?? false],
     });
-    // Use Circle SDK to wait for settlement then parse BidPlaced event log
+    // Quick poll for onChainBidId — stays within Vercel 10s timeout
     let onChainBidId: string | null = null;
-    try {
-      const { pollTransactionUntilSettled } = await import("@/lib/circle");
-      const settled = await pollTransactionUntilSettled(result.txId, 20, 3000);
-      if (settled.state === "SETTLED" && settled.txHash) {
-        console.log("Transaction settled:", settled.txHash);
-        const publicClient = createPublicClient({
-          chain: { id: parseInt(process.env.ARC_CHAIN_ID ?? "5042002"), name: "Arc Testnet", nativeCurrency: { decimals: 18, name: "USDC", symbol: "USDC" }, rpcUrls: { default: { http: ["https://rpc.testnet.arc.network"] } } },
-          transport: http("https://rpc.testnet.arc.network"),
-        });
-        const receipt = await publicClient.waitForTransactionReceipt({
-          hash: settled.txHash as `0x${string}`,
-          timeout: 30000,
-        });
-        // Parse BidPlaced event — bidId is indexed so it is in topics[1]
-        for (const log of receipt.logs) {
-          try {
-            const decoded = decodeEventLog({
-              abi: escrowAbi,
-              data: log.data,
-              topics: log.topics,
-            });
-            if (decoded.eventName === "BidPlaced") {
-              onChainBidId = (decoded.args as any).bidId.toString();
-              console.log("Got onChainBidId from BidPlaced event:", onChainBidId);
-              break;
-            }
-          } catch { /* ignore non-matching logs */ }
+    const publicClient = createPublicClient({
+      chain: { id: parseInt(process.env.ARC_CHAIN_ID ?? "5042002"), name: "Arc Testnet", nativeCurrency: { decimals: 18, name: "USDC", symbol: "USDC" }, rpcUrls: { default: { http: ["https://rpc.testnet.arc.network"] } } },
+      transport: http("https://rpc.testnet.arc.network"),
+    });
+    for (let attempt = 0; attempt < 3; attempt++) {
+      await new Promise(r => setTimeout(r, 2000));
+      try {
+        const bidIds = await publicClient.readContract({
+          address: escrowAddr as `0x${string}`,
+          abi: escrowAbi,
+          functionName: "getBidderBids",
+          args: [bidderWallet.address as `0x${string}`],
+        }) as bigint[];
+        const lastBidId = bidIds.at(-1);
+        if (lastBidId !== undefined) {
+          onChainBidId = lastBidId.toString();
+          console.log("Got onChainBidId on attempt " + (attempt + 1) + ": " + onChainBidId);
+          break;
         }
-        // Fallback: query getBidderBids if event parsing failed
-        if (!onChainBidId) {
-          const bidIds = await publicClient.readContract({
-            address: escrowAddr as `0x${string}`,
-            abi: escrowAbi,
-            functionName: "getBidderBids",
-            args: [bidderWallet.address as `0x${string}`],
-          }) as bigint[];
-          const lastBidId = bidIds.at(-1);
-          if (lastBidId !== undefined) {
-            onChainBidId = lastBidId.toString();
-            console.log("Got onChainBidId from getBidderBids fallback:", onChainBidId);
-          }
-        }
-      } else {
-        console.error("Transaction failed:", settled.state);
+      } catch (e) {
+        console.error("Attempt " + (attempt + 1) + " failed:", e);
       }
-    } catch (e) {
-      console.error("Failed to get onChainBidId:", e);
     }
     if (!onChainBidId) {
-      console.error("WARNING: Could not extract onChainBidId. Bid saved as pending.");
+      console.error("WARNING: onChainBidId not found within timeout — bid saved as pending");
     }
 
     const [bid] = await db.insert(bids).values({

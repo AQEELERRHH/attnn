@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -39,6 +39,22 @@ export function DashboardClient({
   const [walletFunded, setWalletFunded] = useState(false);
   const [editingBidder, setEditingBidder] = useState(false);
   const [autoAcceptThreshold, setAutoAcceptThreshold] = useState(profile?.autoAcceptThreshold ?? 0);
+
+  // Calculate actual daily spend using UTC to match blockchain timestamps
+  const dailySpend = useMemo(() => {
+    const today = new Date();
+    today.setUTCHours(0, 0, 0, 0);
+    if (!bids || !userId) return 0;
+    return bids
+      .filter(b => b.bidderUserId === userId && new Date(b.createdAt) >= today)
+      .reduce((sum, b) => {
+        const raw = b.amountUsdc || "0";
+        const amount = typeof raw === 'string' && raw.includes('.') ? parseFloat(raw) * 1_000_000 : Number(raw);
+        return sum + (amount / 1_000_000);
+      }, 0);
+  }, [bids, userId]);
+
+  const isBudgetExceeded = bidderConfig ? dailySpend >= Number(BigInt(bidderConfig.dailyBudget || "0")) / 1_000_000 : false;
   const [walletOpen, setWalletOpen] = useState(false);
   const [walletBalance, setWalletBalance] = useState<string | null>(null);
   const [balanceLoading, setBalanceLoading] = useState(false);
@@ -501,7 +517,8 @@ export function DashboardClient({
                   <Card>
                     <CardHeader className="pb-2"><CardTitle className="text-sm text-text-secondary">Daily Spend</CardTitle></CardHeader>
                     <CardContent>
-                      <div className="text-2xl font-display font-bold">{formatAmount(bidderConfig.dailyBudget)} <span className="text-xs text-text-secondary font-normal">/ day</span></div>
+                      <div className="text-2xl font-display font-bold">${dailySpend.toFixed(2)} <span className="text-xs text-text-secondary font-normal">/ {formatAmount(bidderConfig.dailyBudget)} budget</span></div>
+                      {isBudgetExceeded && <div className="text-xs text-red-400 mt-1">Daily limit reached.</div>}
                     </CardContent>
                   </Card>
                   <Card>

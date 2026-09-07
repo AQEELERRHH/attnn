@@ -823,7 +823,7 @@ function CreatorSetupForm({
 
 // ─── Bidder Setup Form (shown when no bidder config exists) ──────────────────
 
-function BidderSetupForm({ userId: _userId, onComplete, existingConfig }: { userId: string; onComplete: () => void; existingConfig?: Record<string, unknown> | null }) {
+function BidderSetupForm({ userId: _userId, onComplete, existingConfig }: { userId: string; onComplete: () => void; existingConfig?: BidderConfigData | null }) {
   const [goal, setGoal] = useState(existingConfig?.goal ?? "");
   const [dailyBudget, setDailyBudget] = useState(existingConfig?.dailyBudget ? (Number(BigInt(existingConfig.dailyBudget)) / 1_000_000).toString() : "50");
   const [searchTags, setSearchTags] = useState(existingConfig?.searchTags?.join(", ") ?? "");

@@ -91,7 +91,15 @@ export async function runBidderAgent(userId: string): Promise<AgentRunResult> {
       }
     }
 
-    creatorsFound = creatorsToScore.length;
+    // Filter out creators already bid on today (UTC) — no rebidding same profile in one day
+    const todayUTC = new Date();
+    todayUTC.setUTCHours(0, 0, 0, 0);
+    const todayBids = await db.select({ creatorUserId: bids.creatorUserId })
+      .from(bids)
+      .where(and(eq(bids.bidderUserId, userId), gte(bids.createdAt, todayUTC)));
+    const alreadyBidToday = new Set(todayBids.map(b => b.creatorUserId));
+    const filteredCreators = creatorsToScore.filter(ct => !alreadyBidToday.has(ct.profile.userId));
+    creatorsFound = filteredCreators.length;
 
     if (creatorsFound === 0) {
       await logAgentAction(userId, "creator_discovered", { count: 0 });
@@ -101,7 +109,7 @@ export async function runBidderAgent(userId: string): Promise<AgentRunResult> {
     // Score each creator
     const scored: { profile: typeof profiles.$inferSelect; address: string; score: number; bidAmount: string }[] = [];
 
-    for (const ct of creatorsToScore.slice(0, 10)) {
+    for (const ct of filteredCreators.slice(0, 10)) {
       try {
         const result = await evaluateCreatorForBidder(
           {

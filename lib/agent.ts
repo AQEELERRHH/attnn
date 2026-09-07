@@ -31,9 +31,9 @@ export async function runBidderAgent(userId: string): Promise<AgentRunResult> {
       return { bidsPlaced: 0, creatorsFound: 0, errors: ["Bidder config not active"], logId: "" };
     }
 
-    // Check daily budget
+    // Check daily budget — use UTC to match blockchain timestamps
     const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    today.setUTCHours(0, 0, 0, 0);
     const todaySpent = await db
       .select({ total: sql<string>`COALESCE(SUM(CAST(amount_usdc AS BIGINT)), '0')` })
       .from(bids)
@@ -41,7 +41,6 @@ export async function runBidderAgent(userId: string): Promise<AgentRunResult> {
         and(
           eq(bids.bidderUserId, userId),
           gte(bids.createdAt, today),
-          eq(bids.status, "accepted"),
         ),
       );
 

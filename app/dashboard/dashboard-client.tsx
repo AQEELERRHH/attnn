@@ -31,7 +31,7 @@ export function DashboardClient({
 }) {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState(profile?.isActive ? "bidder" : "creator");
-  const [dailyBudget, setDailyBudget] = useState(bidderConfig?.dailyBudget ?? "50000000");
+  const [dailyBudget, setDailyBudget] = useState(bidderConfig?.dailyBudget ? (Number(BigInt(bidderConfig.dailyBudget)) / 1_000_000).toString() : "50");
   const [minFitScore, setMinFitScore] = useState(bidderConfig?.minFitScore ?? 5);
   const [agentRunning, setAgentRunning] = useState(false);
   const [provisioning, setProvisioning] = useState(!wallet);
@@ -484,7 +484,7 @@ export function DashboardClient({
           {/* Bidder Tab */}
           <TabsContent value="bidder" className="space-y-6 mt-6">
             {(!bidderConfig || editingBidder) && (
-              <BidderSetupForm userId={userId} onComplete={() => { setEditingBidder(false); router.refresh(); }} />
+              <BidderSetupForm userId={userId} existingConfig={bidderConfig} onComplete={() => { setEditingBidder(false); router.refresh(); }} />
             )}
 
             {bidderConfig && (
@@ -823,12 +823,12 @@ function CreatorSetupForm({
 
 // ─── Bidder Setup Form (shown when no bidder config exists) ──────────────────
 
-function BidderSetupForm({ userId: _userId, onComplete }: { userId: string; onComplete: () => void }) {
-  const [goal, setGoal] = useState("");
-  const [dailyBudget, setDailyBudget] = useState("50");
-  const [searchTags, setSearchTags] = useState("");
-  const [minFitScore, setMinFitScore] = useState("5");
-  const [defaultMessage, setDefaultMessage] = useState("");
+function BidderSetupForm({ userId: _userId, onComplete, existingConfig }: { userId: string; onComplete: () => void; existingConfig?: any }) {
+  const [goal, setGoal] = useState(existingConfig?.goal ?? "");
+  const [dailyBudget, setDailyBudget] = useState(existingConfig?.dailyBudget ? (Number(BigInt(existingConfig.dailyBudget)) / 1_000_000).toString() : "50");
+  const [searchTags, setSearchTags] = useState(existingConfig?.searchTags?.join(", ") ?? "");
+  const [minFitScore, setMinFitScore] = useState(existingConfig?.minFitScore != null ? existingConfig.minFitScore.toString() : "5");
+  const [defaultMessage, setDefaultMessage] = useState(existingConfig?.defaultMessage ?? "");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 

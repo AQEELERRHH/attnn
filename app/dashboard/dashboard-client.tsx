@@ -581,11 +581,6 @@ export function DashboardClient({
                         </div>
                         <div className="flex items-center gap-3">
                           {bid.reply && <p className="text-text-dim text-xs max-w-xs truncate">Reply: {bid.reply}</p>}
-                          {bid.settlementTxHash && (
-                            <a href={`https://testnet.arcscan.app/tx/${bid.settlementTxHash}`} target="_blank" rel="noopener noreferrer" className="text-xs text-arc-purple hover:underline">
-                              View on ArcScan ↗
-                            </a>
-                          )}
                         </div>
                       </Card>
                     ))}

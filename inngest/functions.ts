@@ -168,6 +168,13 @@ export const runActiveBidders = inngest.createFunction(
       activeBidders.map((cfg: any) =>
         step.run(`run-bidder-${cfg.userId}`, async () => {
           try {
+            // Re-check isActive in case user paused after this run started
+            const { bidderConfigs: bc } = await import("@/lib/db/schema");
+            const { eq: eqFresh } = await import("drizzle-orm");
+            const fresh = await db.select().from(bc).where(eqFresh(bc.userId, cfg.userId)).limit(1);
+            if (!fresh[0] || !fresh[0].isActive) {
+              return { userId: cfg.userId, skipped: true, reason: "Agent paused" };
+            }
             const r = await runBidderAgent(cfg.userId);
             return { userId: cfg.userId, ...r };
           } catch (err) {

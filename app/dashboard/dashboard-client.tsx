@@ -608,7 +608,7 @@ export function DashboardClient({
             {(() => {
               const creatorsFound = Math.max(...logs.filter(l => l.action === "creator_discovered").map(l => l.data?.count ?? 0), 0);
               const bidsPlaced = logs.filter(l => l.action === "bid_placed").length;
-              const accepted = localBids.filter(b => b.bidderUserId === userId && b.status === "accepted").length;
+              const accepted = localBids.filter(b => (b.bidderUserId === userId || b.creatorUserId === userId) && b.status === "accepted").length;
               const totalBidValue = localBids.filter(b => b.bidderUserId === userId).reduce((sum, b) => sum + Number(BigInt(b.amountUsdc || "0")) / 1_000_000, 0);
               return (
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
@@ -643,7 +643,7 @@ export function DashboardClient({
             {/* Activity Feed */}
             <div className="space-y-2">
               {(activityFilter === "accepted"
-                ? localBids.filter(b => b.bidderUserId === userId && b.status === "accepted").map(b => ({
+                ? localBids.filter(b => (b.bidderUserId === userId || b.creatorUserId === userId) && b.status === "accepted").map(b => ({
                     id: b.id,
                     action: "bid_accepted",
                     data: { creator: b.creatorAddress.slice(0,6) + "..." + b.creatorAddress.slice(-4), amount: b.amountUsdc, reply: b.reply },

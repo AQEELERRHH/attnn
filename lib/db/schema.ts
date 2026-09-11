@@ -179,6 +179,8 @@ export const bids = pgTable("bids", {
     .notNull(),
   settledAt: timestamp("settled_at", { withTimezone: true }),
   counterOfferAmount: text("counter_offer_amount"),
+  onChainTxHash: text("on_chain_tx_hash"),
+  settlementOnChainTxHash: text("settlement_on_chain_tx_hash"),
 });
 
 export const bidsRelations = relations(bids, ({ one }) => ({

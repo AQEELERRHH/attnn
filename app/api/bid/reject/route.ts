@@ -8,6 +8,7 @@ import { bids, wallets } from "@/lib/db/schema";
 import { executeContractCall } from "@/lib/circle";
 import { escrowAbi } from "@/lib/arc";
 import { eq } from "drizzle-orm";
+import { inngest } from "@/lib/inngest";
 
 export async function POST(req: NextRequest) {
   try {
@@ -65,6 +66,13 @@ export async function POST(req: NextRequest) {
     });
 
     await db.update(bids).set({ status: "rejected", settlementTxHash: result.txId, settledAt: new Date() }).where(eq(bids.id, bidId));
+
+    // Fire settlement engine — gets real 0x hash in background
+    await inngest.send({
+      name: "attnn/transaction.pending",
+      data: { bidId, circleTxId: result.txId, type: "reject" },
+    }).catch(() => {});
+
     return NextResponse.json({ success: true, txId: result.txId });
   } catch (err: any) {
     return NextResponse.json({ error: err.message ?? "Failed" }, { status: 500 });

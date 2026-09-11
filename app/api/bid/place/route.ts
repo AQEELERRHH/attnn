@@ -45,34 +45,8 @@ export async function POST(req: NextRequest) {
       functionName: "placeBid",
       args: [creatorWallet.address, amountUsdc, message ?? "", isPrivate ?? false],
     });
-    // Quick poll for onChainBidId — stays within Vercel 10s timeout
-    let onChainBidId: string | null = null;
-    const publicClient = createPublicClient({
-      chain: { id: parseInt(process.env.ARC_CHAIN_ID ?? "5042002"), name: "Arc Testnet", nativeCurrency: { decimals: 18, name: "USDC", symbol: "USDC" }, rpcUrls: { default: { http: ["https://rpc.testnet.arc.network"] } } },
-      transport: http("https://rpc.testnet.arc.network"),
-    });
-    for (let attempt = 0; attempt < 3; attempt++) {
-      await new Promise(r => setTimeout(r, 2000));
-      try {
-        const bidIds = await publicClient.readContract({
-          address: escrowAddr as `0x${string}`,
-          abi: escrowAbi,
-          functionName: "getBidderBids",
-          args: [bidderWallet.address as `0x${string}`],
-        }) as bigint[];
-        const lastBidId = bidIds.at(-1);
-        if (lastBidId !== undefined) {
-          onChainBidId = lastBidId.toString();
-          console.log("Got onChainBidId on attempt " + (attempt + 1) + ": " + onChainBidId);
-          break;
-        }
-      } catch (e) {
-        console.error("Attempt " + (attempt + 1) + " failed:", e);
-      }
-    }
-    if (!onChainBidId) {
-      console.error("WARNING: onChainBidId not found within timeout — bid saved as pending");
-    }
+    // Fire and forget — Inngest settleTransaction handles on-chain confirmation
+    const onChainBidId: string | null = null;
 
     const [bid] = await db.insert(bids).values({
       bidderUserId: session.user.id, creatorUserId: creatorProfile.userId,
@@ -90,7 +64,13 @@ export async function POST(req: NextRequest) {
       await inngest.send({
         name: "attnn/bid.placed",
         data: { bidId: bid.id, creatorUserId: creatorProfile.userId },
-      }).catch(() => {}); // non-fatal if Inngest is unavailable
+      }).catch(() => {});
+
+      // Fire settlement engine — gets real 0x hash and onChainBidId in background
+      await inngest.send({
+        name: "attnn/transaction.pending",
+        data: { bidId: bid.id, circleTxId: result.txId, type: "place" },
+      }).catch(() => {});
     }
 
     return NextResponse.json({ bid, success: true, txId: result.txId, autoAccepted });

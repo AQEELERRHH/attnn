@@ -207,13 +207,17 @@ export const creatorAgentTriage = inngest.createFunction(
       const bid = await db.query.bids.findFirst({ where: eq(bids.id, bidId) });
       const profile = await db.query.profiles.findFirst({ where: eq(profiles.userId, creatorUserId) });
       const wallet = await db.query.wallets.findFirst({ where: eq(wallets.userId, creatorUserId) });
-      const queueDepth = await db.select().from(bids).where(
+      const allPendingBids = await db.select().from(bids).where(
         eq(bids.creatorUserId, creatorUserId)
-      ).then(r => r.filter(b => b.status === "pending").length);
-      return { bid, profile, wallet, queueDepth };
+      ).then(r => r.filter(b => b.status === "pending"));
+      const queueDepth = allPendingBids.length;
+      const highestBidAmount = allPendingBids.reduce((max, b) => {
+        return BigInt(b.amountUsdc) > BigInt(max) ? b.amountUsdc : max;
+      }, "0");
+      return { bid, profile, wallet, queueDepth, highestBidAmount };
     });
 
-    const { bid, profile, wallet, queueDepth } = bidData;
+    const { bid, profile, wallet, queueDepth, highestBidAmount } = bidData;
     if (!bid || !profile || !wallet) return { message: "Missing data — skipping triage" };
     if (bid.status !== "pending") return { message: "Bid already processed" };
 
@@ -229,11 +233,32 @@ export const creatorAgentTriage = inngest.createFunction(
           autoAcceptThreshold: profile.autoAcceptThreshold ?? 0,
           autoReplyTemplate: profile.autoReplyTemplate,
           queueDepth,
-        }
+        },
+        highestBidAmount
       );
     });
 
-    if (triageResult.decision === "accept" && triageResult.draftedReply) {
+    if (triageResult.decision === "counter_offer" && triageResult.counterOfferAmount) {
+      await step.run("auto-counter-offer", async () => {
+        const { bids: bidsTable } = await import("@/lib/db/schema");
+        await db.update(bidsTable).set({
+          status: "counter_offered",
+          counterOfferAmount: triageResult.counterOfferAmount,
+        }).where(eq(bids.id, bidId));
+
+        // Fire event so bidder agent can respond
+        await inngest.send({
+          name: "attnn/counter.received",
+          data: {
+            bidId,
+            bidderUserId: bid.bidderUserId,
+            counterOfferAmount: triageResult.counterOfferAmount,
+          },
+        });
+
+        return { countered: true, amount: triageResult.counterOfferAmount };
+      });
+    } else if (triageResult.decision === "accept" && triageResult.draftedReply) {
       await step.run("auto-accept-bid", async () => {
         const { executeContractCall } = await import("@/lib/circle");
         const { escrowAbi } = await import("@/lib/arc");

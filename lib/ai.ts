@@ -171,15 +171,17 @@ Be authentic, professional, and engaging. Return JSON: { "reply": string }`;
 
 // ─── Creator Agent Triage ─────────────────────────────────────────────────────
 export interface TriageResult {
-  decision: "accept" | "surface" | "reject";
+  decision: "accept" | "surface" | "reject" | "counter_offer";
   score: number;
   reason: string;
   draftedReply?: string;
+  counterOfferAmount?: string;
 }
 
 export async function triageBidForCreator(
   bid: BidData & { message: string },
   creatorProfile: CreatorProfile & { autoAcceptThreshold: number; autoReplyTemplate: string | null; queueDepth: number },
+  highestBidAmount?: string,
 ): Promise<TriageResult> {
   const systemPrompt = `You are a creator-side AI agent on an attention marketplace.
 Triage an incoming bid on a scale of 0-10 based on:
@@ -201,8 +203,28 @@ Return JSON: { "score": number, "decision": "accept"|"surface"|"reject", "reason
     const raw = await callAI(prompt, systemPrompt);
     const parsed = safeJsonParse(raw);
     const score = typeof parsed.score === "number" ? Math.min(10, Math.max(0, parsed.score)) : 5;
-    const decision = score >= 8 ? "accept" as const : score >= 5 ? "surface" as const : "reject" as const;
     const reason = typeof parsed.reason === "string" ? parsed.reason : "AI triage completed.";
+
+    // Counter-offer logic — mid-range score + higher bid exists in queue
+    let decision: "accept" | "surface" | "reject" | "counter_offer";
+    let counterOfferAmount: string | undefined;
+
+    if (score >= 8) {
+      decision = "accept";
+    } else if (score >= 5) {
+      if (highestBidAmount && BigInt(highestBidAmount) > BigInt(bid.amountUsdc)) {
+        // There is a higher bid — counter-offer at 85% of highest bid
+        const highest = BigInt(highestBidAmount);
+        const counter = highest * BigInt(85) / BigInt(100);
+        const minBid = BigInt(5_000_000);
+        counterOfferAmount = (counter > minBid ? counter : minBid).toString();
+        decision = "counter_offer";
+      } else {
+        decision = "surface";
+      }
+    } else {
+      decision = "reject";
+    }
 
     let draftedReply: string | undefined;
     if (decision === "accept") {
@@ -210,17 +232,30 @@ Return JSON: { "score": number, "decision": "accept"|"surface"|"reject", "reason
         await draftReply(bid.message, { handle: creatorProfile.handle, bio: creatorProfile.bio });
     }
 
-    return { decision, score, reason, draftedReply };
+    return { decision, score, reason, draftedReply, counterOfferAmount };
   } catch {
     const bidAmount = BigInt(bid.amountUsdc);
     const minBid = BigInt(creatorProfile.minBid);
     const score = bidAmount >= minBid * BigInt(2) ? 8 : bidAmount >= minBid ? 5 : 3;
-    const decision = score >= 8 ? "accept" as const : score >= 5 ? "surface" as const : "reject" as const;
+    let decisionFallback: "accept" | "surface" | "reject" | "counter_offer";
+    let counterOfferAmountFallback: string | undefined;
+    if (score >= 8) {
+      decisionFallback = "accept";
+    } else if (score >= 5 && highestBidAmount && BigInt(highestBidAmount) > BigInt(bid.amountUsdc)) {
+      const counter = BigInt(highestBidAmount) * BigInt(85) / BigInt(100);
+      counterOfferAmountFallback = (counter > BigInt(5_000_000) ? counter : BigInt(5_000_000)).toString();
+      decisionFallback = "counter_offer";
+    } else if (score >= 5) {
+      decisionFallback = "surface";
+    } else {
+      decisionFallback = "reject";
+    }
     return {
-      decision,
+      decision: decisionFallback,
       score,
       reason: "Fallback triage — AI unavailable.",
-      draftedReply: decision === "accept" ? (creatorProfile.autoReplyTemplate ?? undefined) : undefined,
+      draftedReply: decisionFallback === "accept" ? (creatorProfile.autoReplyTemplate ?? undefined) : undefined,
+      counterOfferAmount: counterOfferAmountFallback,
     };
   }
 }

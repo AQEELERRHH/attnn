@@ -649,6 +649,11 @@ export function DashboardClient({
                         </div>
                         <div className="flex items-center gap-3">
                           {bid.reply && <p className="text-text-dim text-xs max-w-xs truncate">Reply: {bid.reply}</p>}
+                          {bid.status === "counter_offered" && bid.counterOfferAmount && (
+                            <div className="text-xs text-arc-gold font-medium">
+                              Counter: {formatAmount(bid.counterOfferAmount)} — Agent evaluating...
+                            </div>
+                          )}
                         </div>
                       </Card>
                     ))}

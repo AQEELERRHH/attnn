@@ -291,4 +291,89 @@ export const creatorAgentTriage = inngest.createFunction(
   }
 );
 
-export const functions = [autoRefund, activityFeed, bidExpiryNotification, runActiveBidders, creatorAgentTriage];
+
+// Counter-Offer Handler — bidder agent evaluates and responds to counter-offers
+export const handleCounterOffer = inngest.createFunction(
+  { id: "handle-counter-offer", name: "Handle Counter Offer" },
+  { event: "attnn/counter.received" },
+  async ({ event, step }: { event: any; step: any }) => {
+    const { bidId, bidderUserId, counterOfferAmount } = event.data;
+
+    const data = await step.run("fetch-counter-data", async () => {
+      const { bids: bidsTable, bidderConfigs, wallets, profiles } = await import("@/lib/db/schema");
+      const { eq } = await import("drizzle-orm");
+      const bid = await db.query.bids.findFirst({ where: eq(bidsTable.id, bidId) });
+      const config = await db.query.bidderConfigs.findFirst({ where: eq(bidderConfigs.userId, bidderUserId) });
+      const bidderWallet = await db.query.wallets.findFirst({ where: eq(wallets.userId, bidderUserId) });
+      const creatorProfile = await db.query.profiles.findFirst({ where: eq(profiles.userId, bid?.creatorUserId ?? "") });
+      return { bid, config, bidderWallet, creatorProfile };
+    });
+
+    const { bid, config, bidderWallet, creatorProfile } = data;
+    if (!bid || !config || !bidderWallet || !creatorProfile) {
+      return { skipped: true, reason: "Missing data" };
+    }
+
+    const counterAmount = BigInt(counterOfferAmount);
+    const dailyBudget = BigInt(config.dailyBudget);
+
+    // Check remaining daily budget
+    const today = new Date();
+    today.setUTCHours(0, 0, 0, 0);
+    const { sql, gte, and, eq: eqCheck } = await import("drizzle-orm");
+    const { bids: bidsTable2 } = await import("@/lib/db/schema");
+    const todaySpent = await db
+      .select({ total: sql<string>`COALESCE(SUM(CAST(amount_usdc AS BIGINT)), '0')` })
+      .from(bidsTable2)
+      .where(and(eqCheck(bidsTable2.bidderUserId, bidderUserId), gte(bidsTable2.createdAt, today)));
+    const spent = BigInt(todaySpent[0]?.total ?? "0");
+    const remaining = dailyBudget - spent;
+
+    if (counterAmount > remaining) {
+      return { decision: "reject", reason: "Counter offer exceeds remaining daily budget" };
+    }
+
+    // Accept — place a new bid at the counter offer amount
+    await step.run("place-counter-bid", async () => {
+      const { executeContractCall } = await import("@/lib/circle");
+      const { escrowAbi, usdcAbi, USDC_ADDRESS } = await import("@/lib/arc");
+      const escrowAddr = process.env.ATTN_ESCROW_CONTRACT as string;
+
+      await executeContractCall({
+        walletId: bidderWallet.circleWalletId,
+        contractAddress: USDC_ADDRESS,
+        abi: usdcAbi as any,
+        functionName: "approve",
+        args: [escrowAddr, counterAmount],
+      });
+
+      const result = await executeContractCall({
+        walletId: bidderWallet.circleWalletId,
+        contractAddress: escrowAddr,
+        abi: escrowAbi as any,
+        functionName: "placeBid",
+        args: [creatorProfile.walletAddress ?? bid.creatorAddress, counterAmount, "I accept your counter offer.", false],
+      });
+
+      const { bids: bidsTable3 } = await import("@/lib/db/schema");
+      await db.insert(bidsTable3).values({
+        bidderUserId,
+        creatorUserId: bid.creatorUserId,
+        bidderAddress: bidderWallet.address,
+        creatorAddress: bid.creatorAddress,
+        amountUsdc: counterAmount.toString(),
+        message: "I accept your counter offer.",
+        isPrivate: false,
+        status: "pending" as const,
+        bidTxHash: result.txId,
+        onChainBidId: null,
+      });
+
+      return { accepted: true, txId: result.txId };
+    });
+
+    return { decision: "accept" };
+  }
+);
+
+export const functions = [autoRefund, activityFeed, bidExpiryNotification, runActiveBidders, creatorAgentTriage, handleCounterOffer];

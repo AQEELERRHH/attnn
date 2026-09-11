@@ -15,7 +15,7 @@ import { LogOut, Wallet, Play, Square, MessageCircle, Check, X, Activity, Zap, B
 interface WalletData { id: string; address: string; circleWalletId: string; blockchain: string; state: string; }
 interface ProfileData { id: string; handle: string; minBid: string; tags: string[]; bio: string | null; autoAcceptThreshold: number | null; autoReplyTemplate: string | null; isActive: boolean; }
 interface BidderConfigData { id: string; goal: string | null; dailyBudget: string; maxBidPerCreator: string; minFitScore: number; searchTags: string[]; defaultMessage: string | null; isActive: boolean; }
-interface BidData { id: string; onChainBidId: string | null; bidderUserId: string; creatorUserId: string; bidderAddress: string; creatorAddress: string; amountUsdc: string; message: string | null; status: string; score: number | null; reply: string | null; bidTxHash: string | null; settlementTxHash: string | null; createdAt: string; settledAt: string | null; }
+interface BidData { id: string; onChainBidId: string | null; bidderUserId: string; creatorUserId: string; bidderAddress: string; creatorAddress: string; amountUsdc: string; message: string | null; status: string; score: number | null; reply: string | null; bidTxHash: string | null; settlementTxHash: string | null; createdAt: string; settledAt: string | null; counterOfferAmount: string | null; }
 interface LogData { id: string; action: string; data: any; txHash: string | null; createdAt: string; }
 
 export function DashboardClient({
@@ -199,6 +199,40 @@ export function DashboardClient({
       }
     } catch (err) {
       toast({ title: "Error", variant: "destructive" });
+    }
+  };
+
+  const [counterBidId, setCounterBidId] = useState<string | null>(null);
+  const [counterAmount, setCounterAmount] = useState("");
+  const [counterLoading, setCounterLoading] = useState(false);
+
+  const handleCounterOffer = async () => {
+    if (!counterBidId || !counterAmount) return;
+    const amountUsdc = Math.round(parseFloat(counterAmount) * 1_000_000);
+    if (isNaN(amountUsdc) || amountUsdc < 5_000_000) {
+      toast({ title: "Minimum counter offer is $5 USDC", variant: "destructive" });
+      return;
+    }
+    setCounterLoading(true);
+    try {
+      const res = await fetch("/api/bid/counter", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ bidId: counterBidId, counterOfferAmount: amountUsdc }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast({ title: "Counter offer sent! The bidder agent will evaluate it.", variant: "success" });
+        setLocalBids(prev => prev.map(b => b.id === counterBidId ? { ...b, status: "counter_offered" } : b));
+        setCounterBidId(null);
+        setCounterAmount("");
+      } else {
+        toast({ title: data.error ?? "Failed to send counter offer", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Something went wrong", variant: "destructive" });
+    } finally {
+      setCounterLoading(false);
     }
   };
 
@@ -484,12 +518,46 @@ export function DashboardClient({
                           <div className="flex gap-2 ml-4">
                             <Button size="sm" variant="default" onClick={() => handleAcceptBid(bid.id)}><Check className="w-4 h-4" /></Button>
                             <Button size="sm" variant="destructive" onClick={() => handleRejectBid(bid.id)}><X className="w-4 h-4" /></Button>
+                            <Button size="sm" variant="outline" onClick={() => { setCounterBidId(bid.id); setCounterAmount(""); }} className="text-arc-gold border-arc-gold hover:bg-arc-gold hover:text-black">↕</Button>
+                          </div>
+                        )}
+                        {bid.status === "counter_offered" && (
+                          <div className="ml-4">
+                            <Badge variant="outline" className="text-arc-gold border-arc-gold">Counter sent</Badge>
                           </div>
                         )}
                       </Card>
                     ))}
                     {localBids.filter(b => b.creatorUserId === userId && b.status === "pending").length === 0 && (
                       <p className="text-sm text-text-dim text-center py-8">No bids yet. Share your handle: <code className="text-arc-gold">attnn.vercel.app/c/{profile.handle}</code></p>
+                    )}
+
+                    {/* Counter Offer Modal */}
+                    {counterBidId && (
+                      <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+                        <div className="bg-surface border border-border rounded-xl p-6 w-full max-w-sm mx-4">
+                          <h3 className="text-lg font-display font-bold mb-2">Send Counter Offer</h3>
+                          <p className="text-sm text-text-secondary mb-4">Enter the amount you want to receive in USDC. The bidder agent will evaluate your counter offer automatically.</p>
+                          <div className="mb-4">
+                            <label className="text-xs text-text-secondary mb-1 block">Counter offer amount (USDC)</label>
+                            <input
+                              type="number"
+                              min="5"
+                              step="1"
+                              placeholder="e.g. 10"
+                              value={counterAmount}
+                              onChange={e => setCounterAmount(e.target.value)}
+                              className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-arc-gold"
+                            />
+                          </div>
+                          <div className="flex gap-3">
+                            <Button variant="outline" className="flex-1" onClick={() => { setCounterBidId(null); setCounterAmount(""); }}>Cancel</Button>
+                            <Button variant="default" className="flex-1 bg-arc-gold text-black hover:bg-arc-gold/90" onClick={handleCounterOffer} disabled={counterLoading}>
+                              {counterLoading ? "Sending..." : "Send Counter"}
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
                     )}
                   </div>
                 </div>

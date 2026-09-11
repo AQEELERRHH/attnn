@@ -23,6 +23,7 @@ export const bidStatusEnum = pgEnum("bid_status", [
   "accepted",
   "rejected",
   "refunded",
+  "counter_offered",
 ]);
 export const agentLogActionEnum = pgEnum("agent_log_action", [
   "bid_placed",
@@ -177,6 +178,7 @@ export const bids = pgTable("bids", {
     .defaultNow()
     .notNull(),
   settledAt: timestamp("settled_at", { withTimezone: true }),
+  counterOfferAmount: text("counter_offer_amount"),
 });
 
 export const bidsRelations = relations(bids, ({ one }) => ({

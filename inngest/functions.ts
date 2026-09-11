@@ -381,7 +381,7 @@ export const handleCounterOffer = inngest.createFunction(
       });
 
       const { bids: bidsTable3 } = await import("@/lib/db/schema");
-      await db.insert(bidsTable3).values({
+      const [newBid] = await db.insert(bidsTable3).values({
         bidderUserId,
         creatorUserId: bid.creatorUserId,
         bidderAddress: bidderWallet.address,
@@ -392,7 +392,13 @@ export const handleCounterOffer = inngest.createFunction(
         status: "pending" as const,
         bidTxHash: result.txId,
         onChainBidId: null,
-      });
+      }).returning();
+
+      // Fire settlement engine to get real 0x hash and onChainBidId
+      await inngest.send({
+        name: "attnn/transaction.pending",
+        data: { bidId: newBid[0].id, circleTxId: result.txId, type: "place" },
+      }).catch(() => {});
 
       return { accepted: true, txId: result.txId };
     });

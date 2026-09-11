@@ -5,7 +5,6 @@ import { bids, wallets, profiles } from "@/lib/db/schema";
 import { executeContractCall } from "@/lib/circle";
 import { escrowAbi, usdcAbi, USDC_ADDRESS } from "@/lib/arc";
 import { eq } from "drizzle-orm";
-import { createPublicClient, http } from "viem";
 import { inngest } from "@/lib/inngest";
 
 export async function POST(req: NextRequest) {

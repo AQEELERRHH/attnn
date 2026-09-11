@@ -15,7 +15,7 @@ import { LogOut, Wallet, Play, Square, MessageCircle, Check, X, Activity, Zap, B
 interface WalletData { id: string; address: string; circleWalletId: string; blockchain: string; state: string; }
 interface ProfileData { id: string; handle: string; minBid: string; tags: string[]; bio: string | null; autoAcceptThreshold: number | null; autoReplyTemplate: string | null; isActive: boolean; }
 interface BidderConfigData { id: string; goal: string | null; dailyBudget: string; maxBidPerCreator: string; minFitScore: number; searchTags: string[]; defaultMessage: string | null; isActive: boolean; }
-interface BidData { id: string; onChainBidId: string | null; bidderUserId: string; creatorUserId: string; bidderAddress: string; creatorAddress: string; amountUsdc: string; message: string | null; status: string; score: number | null; reply: string | null; bidTxHash: string | null; settlementTxHash: string | null; createdAt: string; settledAt: string | null; counterOfferAmount: string | null; }
+interface BidData { id: string; onChainBidId: string | null; bidderUserId: string; creatorUserId: string; bidderAddress: string; creatorAddress: string; amountUsdc: string; message: string | null; status: string; score: number | null; reply: string | null; bidTxHash: string | null; settlementTxHash: string | null; createdAt: string; settledAt: string | null; counterOfferAmount: string | null; onChainTxHash: string | null; settlementOnChainTxHash: string | null; }
 interface LogData { id: string; action: string; data: any; txHash: string | null; createdAt: string; }
 
 export function DashboardClient({
@@ -653,6 +653,16 @@ export function DashboardClient({
                             <div className="text-xs text-arc-gold font-medium">
                               Counter: {formatAmount(bid.counterOfferAmount)} — Agent evaluating...
                             </div>
+                          )}
+                          {bid.onChainTxHash && (
+                            <a href={`https://testnet.arcscan.app/tx/${bid.onChainTxHash}`} target="_blank" rel="noopener noreferrer" className="text-xs text-arc-purple hover:underline">
+                              Bid ↗
+                            </a>
+                          )}
+                          {bid.settlementOnChainTxHash && (
+                            <a href={`https://testnet.arcscan.app/tx/${bid.settlementOnChainTxHash}`} target="_blank" rel="noopener noreferrer" className="text-xs text-arc-purple hover:underline">
+                              Settlement ↗
+                            </a>
                           )}
                         </div>
                       </Card>

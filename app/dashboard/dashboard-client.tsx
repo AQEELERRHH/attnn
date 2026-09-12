@@ -930,6 +930,7 @@ function BidderSetupForm({ userId: _userId, onComplete, existingConfig }: { user
   const [dailyBudget, setDailyBudget] = useState(existingConfig?.dailyBudget ? (Number(BigInt(existingConfig.dailyBudget)) / 1_000_000).toString() : "50");
   const [searchTags, setSearchTags] = useState(existingConfig?.searchTags?.join(", ") ?? "");
   const [minFitScore, setMinFitScore] = useState(existingConfig?.minFitScore != null ? existingConfig.minFitScore.toString() : "5");
+  const [maxBidPerCreator, setMaxBidPerCreator] = useState(existingConfig?.maxBidPerCreator ? (Number(BigInt(existingConfig.maxBidPerCreator)) / 1_000_000).toString() : "20");
   const [defaultMessage, setDefaultMessage] = useState(existingConfig?.defaultMessage ?? "");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -947,6 +948,7 @@ function BidderSetupForm({ userId: _userId, onComplete, existingConfig }: { user
           dailyBudget: (parseFloat(dailyBudget) * 1_000_000).toString(),
           searchTags: searchTags.split(",").map(t => t.trim()).filter(Boolean),
           minFitScore: parseInt(minFitScore),
+          maxBidPerCreator: (parseFloat(maxBidPerCreator) * 1_000_000).toString(),
           defaultMessage: defaultMessage || null,
         }),
       });
@@ -1002,6 +1004,18 @@ function BidderSetupForm({ userId: _userId, onComplete, existingConfig }: { user
               required
             />
           </div>
+        </div>
+        <div>
+          <label className="text-sm text-text-secondary mb-1 block">Max Bid Per Creator (USDC)</label>
+          <Input
+            type="number"
+            step="0.01"
+            min="5"
+            placeholder="20"
+            value={maxBidPerCreator}
+            onChange={e => setMaxBidPerCreator(e.target.value)}
+            required
+          />
         </div>
         <div>
           <label className="text-sm text-text-secondary mb-1 block">Search Tags (comma-separated)</label>

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db/client";
 import { bids } from "@/lib/db/schema";
-import { eq, and, isNull } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { decodeEventLog } from "viem";
 import { escrowAbi } from "@/lib/arc";
 
@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
       const matchingBid = await db.query.bids.findFirst({
         where: (b, { eq, and, isNull }) => and(
           eq(b.bidderAddress, bidderAddress),
-          eq(b.amountUsdc, amount),
+          eq(b.amountUsdc, amount ?? "0"),
           isNull(b.onChainBidId),
         ),
       });

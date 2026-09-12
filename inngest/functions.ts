@@ -394,11 +394,6 @@ export const handleCounterOffer = inngest.createFunction(
         onChainBidId: null,
       }).returning();
 
-      // Fire settlement engine to get real 0x hash and onChainBidId
-      await inngest.send({
-        name: "attnn/transaction.pending",
-        data: { bidId: newBid?.id ?? "", circleTxId: result.txId, type: "place" },
-      }).catch(() => {});
 
       return { accepted: true, txId: result.txId };
     });
@@ -408,95 +403,4 @@ export const handleCounterOffer = inngest.createFunction(
 );
 
 
-// ─── Transaction Settlement Engine ───────────────────────────────────────────
-// Fired after every on-chain action. Polls Circle until settled, gets real
-// 0x hash, parses event logs, updates DB. No timeout limits in Inngest.
-export const settleTransaction = inngest.createFunction(
-  { id: "settle-transaction", name: "Settle Transaction", retries: 3 },
-  { event: "attnn/transaction.pending" },
-  async ({ event, step }: { event: any; step: any }) => {
-    const { bidId, circleTxId, type } = event.data;
-
-    // Step 1: Poll Circle until transaction is SETTLED
-    const settled = await step.run("wait-for-circle", async () => {
-      const { pollTransactionUntilSettled } = await import("@/lib/circle");
-      return pollTransactionUntilSettled(circleTxId, 60, 5000);
-    });
-
-    if (settled.state !== "SETTLED" || !settled.txHash) {
-      throw new Error(`Transaction ${circleTxId} did not settle: ${settled.state}`);
-    }
-
-    const realTxHash = settled.txHash as `0x${string}`;
-    console.log(`Transaction settled: ${realTxHash}`);
-
-    // Step 2: Get receipt from Arc blockchain
-    const receipt = await step.run("get-receipt", async () => {
-      const { createPublicClient, http } = await import("viem");
-      const client = createPublicClient({
-        chain: { id: parseInt(process.env.ARC_CHAIN_ID ?? "5042002"), name: "Arc Testnet", nativeCurrency: { decimals: 18, name: "USDC", symbol: "USDC" }, rpcUrls: { default: { http: ["https://rpc.testnet.arc.network"] } } },
-        transport: http("https://rpc.testnet.arc.network"),
-      });
-      return client.getTransactionReceipt({ hash: realTxHash });
-    });
-
-    // Step 3: Parse event logs to find BidPlaced / BidAccepted / BidRejected
-    let onChainBidId: string | null = null;
-    let eventFound: string | null = null;
-
-    await step.run("parse-events", async () => {
-      const { decodeEventLog } = await import("viem");
-      const { escrowAbi } = await import("@/lib/arc");
-      for (const log of receipt.logs) {
-        try {
-          const decoded = decodeEventLog({ abi: escrowAbi, data: log.data, topics: log.topics });
-          if (decoded.eventName === "BidPlaced") {
-            onChainBidId = (decoded.args as any).bidId.toString();
-            eventFound = "BidPlaced";
-            break;
-          } else if (decoded.eventName === "BidAccepted") {
-            eventFound = "BidAccepted";
-            break;
-          } else if (decoded.eventName === "BidRejected") {
-            eventFound = "BidRejected";
-            break;
-          }
-        } catch { /* ignore non-matching logs */ }
-      }
-      return { onChainBidId, eventFound };
-    });
-
-    // Step 4: Update DB with real on-chain data
-    await step.run("update-db", async () => {
-      const { bids: bidsTable } = await import("@/lib/db/schema");
-      const { eq } = await import("drizzle-orm");
-
-      if (type === "place") {
-        await db.update(bidsTable).set({
-          onChainTxHash: realTxHash,
-          onChainBidId: onChainBidId,
-          status: "pending",
-        }).where(eq(bidsTable.id, bidId));
-        console.log(`Bid ${bidId} placed on-chain. BidId: ${onChainBidId}, Hash: ${realTxHash}`);
-      } else if (type === "accept") {
-        await db.update(bidsTable).set({
-          settlementOnChainTxHash: realTxHash,
-          status: "accepted",
-        }).where(eq(bidsTable.id, bidId));
-        console.log(`Bid ${bidId} accepted on-chain. Hash: ${realTxHash}`);
-      } else if (type === "reject") {
-        await db.update(bidsTable).set({
-          settlementOnChainTxHash: realTxHash,
-          status: "rejected",
-        }).where(eq(bidsTable.id, bidId));
-        console.log(`Bid ${bidId} rejected on-chain. Hash: ${realTxHash}`);
-      }
-
-      return { realTxHash, onChainBidId, eventFound };
-    });
-
-    return { settled: true, realTxHash, onChainBidId, eventFound, type };
-  }
-);
-
-export const functions = [autoRefund, activityFeed, bidExpiryNotification, runActiveBidders, creatorAgentTriage, handleCounterOffer, settleTransaction];
+export const functions = [autoRefund, activityFeed, bidExpiryNotification, runActiveBidders, creatorAgentTriage, handleCounterOffer];

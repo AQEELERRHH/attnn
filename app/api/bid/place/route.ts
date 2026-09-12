@@ -65,11 +65,6 @@ export async function POST(req: NextRequest) {
         data: { bidId: bid.id, creatorUserId: creatorProfile.userId },
       }).catch(() => {});
 
-      // Fire settlement engine — gets real 0x hash and onChainBidId in background
-      await inngest.send({
-        name: "attnn/transaction.pending",
-        data: { bidId: bid.id, circleTxId: result.txId, type: "place" },
-      }).catch(() => {});
     }
 
     return NextResponse.json({ bid, success: true, txId: result.txId, autoAccepted });

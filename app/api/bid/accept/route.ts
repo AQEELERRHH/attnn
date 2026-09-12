@@ -8,7 +8,6 @@ import { bids, wallets } from "@/lib/db/schema";
 import { executeContractCall } from "@/lib/circle";
 import { escrowAbi } from "@/lib/arc";
 import { eq } from "drizzle-orm";
-import { inngest } from "@/lib/inngest";
 
 export async function POST(req: NextRequest) {
   try {

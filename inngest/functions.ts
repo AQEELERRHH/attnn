@@ -381,7 +381,7 @@ export const handleCounterOffer = inngest.createFunction(
       });
 
       const { bids: bidsTable3 } = await import("@/lib/db/schema");
-      const [newBid] = await db.insert(bidsTable3).values({
+      await db.insert(bidsTable3).values({
         bidderUserId,
         creatorUserId: bid.creatorUserId,
         bidderAddress: bidderWallet.address,
@@ -392,7 +392,7 @@ export const handleCounterOffer = inngest.createFunction(
         status: "pending" as const,
         bidTxHash: result.txId,
         onChainBidId: null,
-      }).returning();
+      });
 
 
       return { accepted: true, txId: result.txId };

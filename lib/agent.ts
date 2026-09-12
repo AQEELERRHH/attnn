@@ -150,8 +150,19 @@ export async function runBidderAgent(userId: string): Promise<AgentRunResult> {
     const escrowAddr = process.env.ATTN_ESCROW_CONTRACT as `0x${string}`;
 
     for (const tc of topCreators) {
-      const remaining = budget - spent;
+      // Re-check budget before each bid — prevents overspending in loop
+      const freshSpent = await db
+        .select({ total: sql<string>`COALESCE(SUM(CAST(amount_usdc AS BIGINT)), '0')` })
+        .from(bids)
+        .where(and(eq(bids.bidderUserId, userId), gte(bids.createdAt, today)));
+      const currentSpent = BigInt(freshSpent[0]?.total ?? "0");
+      const remaining = budget - currentSpent;
       const bidAmount = BigInt(tc.bidAmount);
+
+      if (currentSpent >= budget) {
+        await logAgentAction(userId, "agent_stopped", { reason: "Daily budget exhausted mid-run" });
+        break; // Stop immediately — no more bids
+      }
 
       if (bidAmount > remaining) {
         errors.push(`Skipping ${tc.profile.handle}: bid exceeds remaining budget`);

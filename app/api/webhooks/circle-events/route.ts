@@ -38,7 +38,9 @@ export async function POST(req: NextRequest) {
           eq(b.bidderAddress, bidderAddress),
           eq(b.amountUsdc, amount ?? "0"),
           isNull(b.onChainBidId),
+          eq(b.status, "pending"),
         ),
+        orderBy: (b, { desc }) => [desc(b.createdAt)],
       });
 
       if (matchingBid) {

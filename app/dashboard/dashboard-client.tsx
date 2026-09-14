@@ -368,11 +368,11 @@ export function DashboardClient({
         </div>
       </header>
 
-      <div className="max-w-7xl mx-auto px-6 py-8">
+      <div className="max-w-7xl mx-auto px-4 md:px-6 py-4 md:py-8 pb-24 md:pb-8">
         {/* Tabs */}
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="mb-8">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="mb-4 md:mb-8">
           <div className="flex gap-6">
-            <TabsList className="flex flex-col h-auto w-44 shrink-0 gap-1 bg-arc-bg-2 p-2 rounded-xl self-start sticky top-24">
+            <TabsList className="hidden md:flex flex-col h-auto w-44 shrink-0 gap-1 bg-arc-bg-2 p-2 rounded-xl self-start sticky top-24">
               <TabsTrigger value="creator" className="w-full justify-start flex items-center gap-2 px-3 py-2.5 text-sm">
                 <Users className="w-4 h-4" /> Creator
               </TabsTrigger>
@@ -792,6 +792,37 @@ export function DashboardClient({
             </div>
           </div>
         </Tabs>
+
+        {/* Mobile Bottom Navigation */}
+        <div className="fixed bottom-0 left-0 right-0 z-50 md:hidden bg-arc-bg-1 border-t border-border">
+          <div className="flex items-center justify-around px-2 py-2">
+            <button onClick={() => setActiveTab("creator")} className={`flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-lg transition-colors ${activeTab === "creator" ? "text-arc-gold" : "text-text-dim"}`}>
+              <Users className="w-5 h-5" />
+              <span className="text-xs">Creator</span>
+            </button>
+            <button onClick={() => setActiveTab("offers")} className={`flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-lg transition-colors relative ${activeTab === "offers" ? "text-arc-gold" : "text-text-dim"}`}>
+              <MessageCircle className="w-5 h-5" />
+              <span className="text-xs">Offers</span>
+              {localBids.filter(b => b.creatorUserId === userId && (b.status === "pending" || b.status === "counter_offered")).length > 0 && (
+                <span className="absolute top-0 right-1 bg-arc-gold text-black text-xs font-bold w-4 h-4 rounded-full flex items-center justify-center">
+                  {localBids.filter(b => b.creatorUserId === userId && (b.status === "pending" || b.status === "counter_offered")).length}
+                </span>
+              )}
+            </button>
+            <button onClick={() => setActiveTab("bidder")} className={`flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-lg transition-colors ${activeTab === "bidder" ? "text-arc-gold" : "text-text-dim"}`}>
+              <Bot className="w-5 h-5" />
+              <span className="text-xs">Bidder</span>
+            </button>
+            <button onClick={() => setActiveTab("bids")} className={`flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-lg transition-colors ${activeTab === "bids" ? "text-arc-gold" : "text-text-dim"}`}>
+              <Coins className="w-5 h-5" />
+              <span className="text-xs">Bids</span>
+            </button>
+            <button onClick={() => setActiveTab("activity")} className={`flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-lg transition-colors ${activeTab === "activity" ? "text-arc-gold" : "text-text-dim"}`}>
+              <Activity className="w-5 h-5" />
+              <span className="text-xs">Activity</span>
+            </button>
+          </div>
+        </div>
       </div>
       </>
       )}

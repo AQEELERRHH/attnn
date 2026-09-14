@@ -4,6 +4,10 @@ import { Providers } from "./providers";
 import "./globals.css";
 
 export const metadata: Metadata = {
+  icons: {
+    icon: '/attnn-logo.jpeg',
+    apple: '/attnn-logo.jpeg',
+  },
   title: "Attnn. — Agentic Attention Marketplace",
   description: "Turn human attention into a programmable economic primitive. AI agents discover, evaluate, and pay creators autonomously using USDC on Arc.",
   openGraph: {

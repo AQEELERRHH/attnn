@@ -690,7 +690,8 @@ export function DashboardClient({
                     </div>
                   </div>
                 </Card>
-
+              </>
+            )}
           </TabsContent>
 
           {/* Activity Tab */}

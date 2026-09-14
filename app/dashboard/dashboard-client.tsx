@@ -527,6 +527,7 @@ export function DashboardClient({
                       </div>
                       {bid.message && <p className="text-sm text-text-secondary">{bid.message}</p>}
                       <p className="text-xs text-text-dim mt-1">From: {bid.bidderAddress.slice(0, 6)}...{bid.bidderAddress.slice(-4)}</p>
+                      <p className="text-xs text-text-dim mt-0.5">{new Date(bid.createdAt).toLocaleString()}{bid.settledAt && <span className="ml-2 text-text-dim">· Settled: {new Date(bid.settledAt).toLocaleString()}</span>}</p>
                       {bid.status === "counter_offered" && bid.counterOfferAmount && (
                         <p className="text-xs text-arc-gold mt-1">Counter sent: {formatAmount(bid.counterOfferAmount)} — Agent evaluating...</p>
                       )}
@@ -594,6 +595,7 @@ export function DashboardClient({
                       <span className="text-text-secondary">→ {bid.creatorAddress.slice(0, 6)}...</span>
                     </div>
                     <div className="flex items-center gap-3">
+                      <span className="text-text-dim text-xs">{bid.settledAt ? new Date(bid.settledAt).toLocaleString() : new Date(bid.createdAt).toLocaleString()}</span>
                       {bid.reply && <p className="text-text-dim text-xs max-w-xs truncate">Reply: {bid.reply}</p>}
                       {bid.status === "counter_offered" && bid.counterOfferAmount && (
                         <div className="text-xs text-arc-gold font-medium">

@@ -10,7 +10,7 @@ import { FundWalletCard } from "./fund-wallet-card";
 import { Slider } from "@/components/ui/slider";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/hooks/use-toast";
-import { LogOut, Wallet, Play, Square, MessageCircle, Check, X, Activity, Zap, Bot, Users } from "lucide-react";
+import { LogOut, Wallet, Play, Square, MessageCircle, Check, X, Activity, Zap, Bot, Users, Coins } from "lucide-react";
 
 interface WalletData { id: string; address: string; circleWalletId: string; blockchain: string; state: string; }
 interface ProfileData { id: string; handle: string; minBid: string; tags: string[]; bio: string | null; autoAcceptThreshold: number | null; autoReplyTemplate: string | null; isActive: boolean; }

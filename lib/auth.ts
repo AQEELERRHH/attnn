@@ -29,7 +29,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         const { Resend: ResendClient } = await import("resend");
         const resend = new ResendClient(provider.apiKey);
         await resend.emails.send({
-          from: provider.from,
+          from: provider.from ?? "Attnn. <hello@attnn.xyz>",
           to: email,
           subject: "Your Attnn. sign in link",
           html: `

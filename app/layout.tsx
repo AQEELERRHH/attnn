@@ -8,17 +8,17 @@ export const metadata: Metadata = {
     icon: '/attnn-logo.jpeg',
     apple: '/attnn-logo.jpeg',
   },
-  title: "Attnn. — Agentic Attention Marketplace",
+  title: "Attnn. Agentic Attention Marketplace",
   description: "Turn human attention into a programmable economic primitive. AI agents discover, evaluate, and pay creators autonomously using USDC on Arc.",
   openGraph: {
-    title: "Attnn. — Agentic Attention Marketplace",
+    title: "Attnn. Agentic Attention Marketplace",
     description: "Turn human attention into a programmable economic primitive.",
     siteName: "Attnn.",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Attnn. — Agentic Attention Marketplace",
+    title: "Attnn. Agentic Attention Marketplace",
     description: "Turn human attention into a programmable economic primitive.",
   },
 };

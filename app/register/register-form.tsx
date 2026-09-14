@@ -3,10 +3,34 @@ import { useState } from "react";
 import { signIn } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Mail } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 
 export default function RegisterForm() {
   const [isLoading, setIsLoading] = useState(false);
+
+  const [email, setEmail] = useState("");
+  const [emailLoading, setEmailLoading] = useState(false);
+  const [emailSent, setEmailSent] = useState(false);
+
+  const handleEmailSignIn = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email) return;
+    setEmailLoading(true);
+    try {
+      const res = await signIn("resend", { email, redirect: false, callbackUrl: "/dashboard" });
+      if (res?.ok) {
+        setEmailSent(true);
+        toast({ title: "Magic link sent!", description: "Check your email for the sign in link.", variant: "success" });
+      } else {
+        toast({ title: "Failed to send magic link", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Something went wrong", variant: "destructive" });
+    }
+    setEmailLoading(false);
+  };
 
   const handleGoogleSignIn = async () => {
     setIsLoading(true);
@@ -19,7 +43,8 @@ export default function RegisterForm() {
   };
 
   return (
-    <Card className="p-8">
+    <Card className="p-8 space-y-4">
+      {/* Google Sign In */}
       <Button
         type="button"
         variant="outline"
@@ -37,6 +62,39 @@ export default function RegisterForm() {
         )}
         {isLoading ? "Signing in..." : "Continue with Google"}
       </Button>
+
+      {/* Divider */}
+      <div className="flex items-center gap-3">
+        <div className="flex-1 h-px bg-border" />
+        <span className="text-xs text-text-dim">or</span>
+        <div className="flex-1 h-px bg-border" />
+      </div>
+
+      {/* Email Magic Link */}
+      {emailSent ? (
+        <div className="text-center py-4">
+          <Mail className="w-8 h-8 text-arc-gold mx-auto mb-2" />
+          <p className="text-sm font-medium">Check your email</p>
+          <p className="text-xs text-text-secondary mt-1">We sent a magic link to <strong>{email}</strong></p>
+        </div>
+      ) : (
+        <form onSubmit={handleEmailSignIn} className="space-y-3">
+          <div className="relative">
+            <Mail className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-text-dim" />
+            <Input
+              type="email"
+              placeholder="Enter your email"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              className="pl-9"
+              required
+            />
+          </div>
+          <Button type="submit" variant="outline" className="w-full" disabled={emailLoading}>
+            {emailLoading ? "Sending..." : "Continue with Email"}
+          </Button>
+        </form>
+      )}
     </Card>
   );
 }

@@ -20,7 +20,7 @@ export default async function CreatorsPage() {
       <nav className="fixed top-0 w-full z-50 border-b border-border bg-arc-bg-0/80 backdrop-blur-xl">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2">
-            <span className="w-8 h-8 rounded-lg bg-gradient-to-br from-arc-gold to-arc-purple flex items-center justify-center text-xs font-display font-bold text-arc-bg-0">A</span>
+            <img src="/attnn-logo.jpeg" alt="Attnn." className="w-8 h-8 rounded-lg object-cover" />
             <span className="font-display font-bold text-xl">attnn.</span>
           </Link>
           <div className="flex items-center gap-3">

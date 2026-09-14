@@ -278,7 +278,7 @@ export function DashboardClient({
       <header className="border-b border-border bg-arc-bg-1/80 backdrop-blur-xl sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-arc-gold to-arc-purple flex items-center justify-center text-xs font-display font-bold">A</div>
+            <img src="/attnn-logo.jpeg" alt="Attnn." className="w-8 h-8 rounded-lg object-cover" />
             <span className="font-display font-bold text-lg">attnn.</span>
           </div>
           <div className="flex items-center gap-4">

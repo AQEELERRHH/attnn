@@ -376,8 +376,19 @@ export function DashboardClient({
               <TabsTrigger value="creator" className="w-full justify-start flex items-center gap-2 px-3 py-2.5 text-sm">
                 <Users className="w-4 h-4" /> Creator
               </TabsTrigger>
+              <TabsTrigger value="offers" className="w-full justify-start flex items-center gap-2 px-3 py-2.5 text-sm">
+                <MessageCircle className="w-4 h-4" /> Offers
+                {localBids.filter(b => b.creatorUserId === userId && (b.status === "pending" || b.status === "counter_offered")).length > 0 && (
+                  <span className="ml-auto bg-arc-gold text-black text-xs font-bold px-1.5 py-0.5 rounded-full">
+                    {localBids.filter(b => b.creatorUserId === userId && (b.status === "pending" || b.status === "counter_offered")).length}
+                  </span>
+                )}
+              </TabsTrigger>
               <TabsTrigger value="bidder" className="w-full justify-start flex items-center gap-2 px-3 py-2.5 text-sm">
                 <Bot className="w-4 h-4" /> Bidder
+              </TabsTrigger>
+              <TabsTrigger value="bids" className="w-full justify-start flex items-center gap-2 px-3 py-2.5 text-sm">
+                <Coins className="w-4 h-4" /> Bids
               </TabsTrigger>
               <TabsTrigger value="activity" className="w-full justify-start flex items-center gap-2 px-3 py-2.5 text-sm">
                 <Activity className="w-4 h-4" /> Activity
@@ -496,73 +507,117 @@ export function DashboardClient({
                   />
                 </Card>
 
-                {/* Inbox */}
-                <div>
-                  <h2 className="text-xl font-display font-bold mb-4 flex items-center gap-2">
-                    <MessageCircle className="w-5 h-5 text-arc-gold" /> Inbox
-                    <span className="text-xs text-text-secondary font-normal">(AI-scored by bid amount)</span>
-                  </h2>
-                  <div className="space-y-3">
-                    {localBids.filter(b => b.creatorUserId === userId && b.status === "pending").map((bid) => (
-                      <Card key={bid.id} className="p-4 flex items-start justify-between">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-3 mb-1">
-                            <span className="font-display font-bold">{formatAmount(bid.amountUsdc)}</span>
-                            {statusBadge(bid.status)}
-                            {bid.score != null && <Badge variant="default">Score: {bid.score}/10</Badge>}
-                          </div>
-                          {bid.message && <p className="text-sm text-text-secondary">{bid.message}</p>}
-                          <p className="text-xs text-text-dim mt-1">From: {bid.bidderAddress.slice(0, 6)}...{bid.bidderAddress.slice(-4)}</p>
-                        </div>
-                        {bid.status === "pending" && (
-                          <div className="flex gap-2 ml-4">
-                            <Button size="sm" variant="default" onClick={() => handleAcceptBid(bid.id)}><Check className="w-4 h-4" /></Button>
-                            <Button size="sm" variant="destructive" onClick={() => handleRejectBid(bid.id)}><X className="w-4 h-4" /></Button>
-                            <Button size="sm" variant="outline" onClick={() => { setCounterBidId(bid.id); setCounterAmount(""); }} className="text-arc-gold border-arc-gold hover:bg-arc-gold hover:text-black">↕</Button>
-                          </div>
-                        )}
-                        {bid.status === "counter_offered" && (
-                          <div className="ml-4">
-                            <Badge variant="outline" className="text-arc-gold border-arc-gold">Counter sent</Badge>
-                          </div>
-                        )}
-                      </Card>
-                    ))}
-                    {localBids.filter(b => b.creatorUserId === userId && b.status === "pending").length === 0 && (
-                      <p className="text-sm text-text-dim text-center py-8">No bids yet. Share your handle: <code className="text-arc-gold">attnn.vercel.app/c/{profile.handle}</code></p>
-                    )}
-
-                    {/* Counter Offer Modal */}
-                    {counterBidId && (
-                      <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-                        <div className="bg-surface border border-border rounded-xl p-6 w-full max-w-sm mx-4">
-                          <h3 className="text-lg font-display font-bold mb-2">Send Counter Offer</h3>
-                          <p className="text-sm text-text-secondary mb-4">Enter the amount you want to receive in USDC. The bidder agent will evaluate your counter offer automatically.</p>
-                          <div className="mb-4">
-                            <label className="text-xs text-text-secondary mb-1 block">Counter offer amount (USDC)</label>
-                            <input
-                              type="number"
-                              min="5"
-                              step="1"
-                              placeholder="e.g. 10"
-                              value={counterAmount}
-                              onChange={e => setCounterAmount(e.target.value)}
-                              className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-arc-gold"
-                            />
-                          </div>
-                          <div className="flex gap-3">
-                            <Button variant="outline" className="flex-1" onClick={() => { setCounterBidId(null); setCounterAmount(""); }}>Cancel</Button>
-                            <Button variant="default" className="flex-1 bg-arc-gold text-black hover:bg-arc-gold/90" onClick={handleCounterOffer} disabled={counterLoading}>
-                              {counterLoading ? "Sending..." : "Send Counter"}
-                            </Button>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
               </>
             )}
+          </TabsContent>
+
+          {/* Offers Tab */}
+          <TabsContent value="offers" className="space-y-4 mt-6">
+            <div>
+              <h2 className="text-xl font-display font-bold mb-1">Offers</h2>
+              <p className="text-xs text-text-secondary mb-6">Bids waiting for your response. Accept, reject or counter.</p>
+              <div className="space-y-3">
+                {localBids.filter(b => b.creatorUserId === userId && (b.status === "pending" || b.status === "counter_offered")).map((bid) => (
+                  <Card key={bid.id} className="p-4 flex items-start justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-3 mb-1">
+                        <span className="font-display font-bold">{formatAmount(bid.amountUsdc)}</span>
+                        {statusBadge(bid.status)}
+                        {bid.score != null && <Badge variant="default">Score: {bid.score}/10</Badge>}
+                      </div>
+                      {bid.message && <p className="text-sm text-text-secondary">{bid.message}</p>}
+                      <p className="text-xs text-text-dim mt-1">From: {bid.bidderAddress.slice(0, 6)}...{bid.bidderAddress.slice(-4)}</p>
+                      {bid.status === "counter_offered" && bid.counterOfferAmount && (
+                        <p className="text-xs text-arc-gold mt-1">Counter sent: {formatAmount(bid.counterOfferAmount)} — Agent evaluating...</p>
+                      )}
+                    </div>
+                    {bid.status === "pending" && (
+                      <div className="flex gap-2 ml-4">
+                        <Button size="sm" variant="default" onClick={() => handleAcceptBid(bid.id)}><Check className="w-4 h-4" /></Button>
+                        <Button size="sm" variant="destructive" onClick={() => handleRejectBid(bid.id)}><X className="w-4 h-4" /></Button>
+                        <Button size="sm" variant="outline" onClick={() => { setCounterBidId(bid.id); setCounterAmount(""); }} className="text-arc-gold border-arc-gold hover:bg-arc-gold hover:text-black">↕</Button>
+                      </div>
+                    )}
+                    {bid.status === "counter_offered" && (
+                      <div className="ml-4">
+                        <Badge variant="outline" className="text-arc-gold border-arc-gold">Counter sent</Badge>
+                      </div>
+                    )}
+                  </Card>
+                ))}
+                {localBids.filter(b => b.creatorUserId === userId && (b.status === "pending" || b.status === "counter_offered")).length === 0 && (
+                  <p className="text-sm text-text-dim text-center py-12">No pending offers. Share your profile: <code className="text-arc-gold">attnn.xyz/c/{profile?.handle}</code></p>
+                )}
+              </div>
+            </div>
+
+            {/* Counter Offer Modal */}
+            {counterBidId && (
+              <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+                <div className="bg-surface border border-border rounded-xl p-6 w-full max-w-sm mx-4">
+                  <h3 className="text-lg font-display font-bold mb-2">Send Counter Offer</h3>
+                  <p className="text-sm text-text-secondary mb-4">Enter the amount you want to receive in USDC. The bidder agent will evaluate your counter offer automatically.</p>
+                  <div className="mb-4">
+                    <label className="text-xs text-text-secondary mb-1 block">Counter offer amount (USDC)</label>
+                    <input
+                      type="number"
+                      min="5"
+                      step="1"
+                      placeholder="e.g. 10"
+                      value={counterAmount}
+                      onChange={e => setCounterAmount(e.target.value)}
+                      className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-arc-gold"
+                    />
+                  </div>
+                  <div className="flex gap-3">
+                    <Button variant="outline" className="flex-1" onClick={() => { setCounterBidId(null); setCounterAmount(""); }}>Cancel</Button>
+                    <Button variant="default" className="flex-1 bg-arc-gold text-black hover:bg-arc-gold/90" onClick={handleCounterOffer} disabled={counterLoading}>
+                      {counterLoading ? "Sending..." : "Send Counter"}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </TabsContent>
+
+          {/* Bids Tab */}
+          <TabsContent value="bids" className="space-y-4 mt-6">
+            <div>
+              <h2 className="text-xl font-display font-bold mb-1">Bids</h2>
+              <p className="text-xs text-text-secondary mb-6">All bids placed by your agent and manually.</p>
+              <div className="space-y-2">
+                {localBids.filter(b => b.bidderUserId === userId).map((bid) => (
+                  <Card key={bid.id} className="p-3 flex items-center justify-between text-sm">
+                    <div className="flex items-center gap-3">
+                      {statusBadge(bid.status)}
+                      <span className="font-bold">{formatAmount(bid.amountUsdc)}</span>
+                      <span className="text-text-secondary">→ {bid.creatorAddress.slice(0, 6)}...</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      {bid.reply && <p className="text-text-dim text-xs max-w-xs truncate">Reply: {bid.reply}</p>}
+                      {bid.status === "counter_offered" && bid.counterOfferAmount && (
+                        <div className="text-xs text-arc-gold font-medium">
+                          Counter: {formatAmount(bid.counterOfferAmount)} — Agent evaluating...
+                        </div>
+                      )}
+                      {bid.onChainTxHash && (
+                        <a href={`https://testnet.arcscan.app/tx/${bid.onChainTxHash}`} target="_blank" rel="noopener noreferrer" className="text-xs text-arc-purple hover:underline">
+                          Bid ↗
+                        </a>
+                      )}
+                      {bid.settlementOnChainTxHash && (
+                        <a href={`https://testnet.arcscan.app/tx/${bid.settlementOnChainTxHash}`} target="_blank" rel="noopener noreferrer" className="text-xs text-arc-purple hover:underline">
+                          Settlement ↗
+                        </a>
+                      )}
+                    </div>
+                  </Card>
+                ))}
+                {localBids.filter(b => b.bidderUserId === userId).length === 0 && (
+                  <p className="text-sm text-text-dim text-center py-12">No bids placed yet. Activate your agent to start bidding.</p>
+                )}
+              </div>
+            </div>
           </TabsContent>
 
           {/* Bidder Tab */}
@@ -636,41 +691,6 @@ export function DashboardClient({
                   </div>
                 </Card>
 
-                {/* Bid History */}
-                <div>
-                  <h2 className="text-xl font-display font-bold mb-4">Bid History</h2>
-                  <div className="space-y-2">
-                    {localBids.filter(b => b.bidderUserId === userId).map((bid) => (
-                      <Card key={bid.id} className="p-3 flex items-center justify-between text-sm">
-                        <div className="flex items-center gap-3">
-                          {statusBadge(bid.status)}
-                          <span className="font-bold">{formatAmount(bid.amountUsdc)}</span>
-                          <span className="text-text-secondary">→ {bid.creatorAddress.slice(0, 6)}...</span>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          {bid.reply && <p className="text-text-dim text-xs max-w-xs truncate">Reply: {bid.reply}</p>}
-                          {bid.status === "counter_offered" && bid.counterOfferAmount && (
-                            <div className="text-xs text-arc-gold font-medium">
-                              Counter: {formatAmount(bid.counterOfferAmount)} — Agent evaluating...
-                            </div>
-                          )}
-                          {bid.onChainTxHash && (
-                            <a href={`https://testnet.arcscan.app/tx/${bid.onChainTxHash}`} target="_blank" rel="noopener noreferrer" className="text-xs text-arc-purple hover:underline">
-                              Bid ↗
-                            </a>
-                          )}
-                          {bid.settlementOnChainTxHash && (
-                            <a href={`https://testnet.arcscan.app/tx/${bid.settlementOnChainTxHash}`} target="_blank" rel="noopener noreferrer" className="text-xs text-arc-purple hover:underline">
-                              Settlement ↗
-                            </a>
-                          )}
-                        </div>
-                      </Card>
-                    ))}
-                  </div>
-                </div>
-              </>
-            )}
           </TabsContent>
 
           {/* Activity Tab */}

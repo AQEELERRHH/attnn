@@ -23,6 +23,12 @@ export default async function DashboardPage() {
     limit: 20,
   });
 
+
+  // Fetch agent names for all bidders in recent bids
+  const bidderIds = [...new Set(recentBids.map(b => b.bidderUserId))];
+  const bidderConfigsList = bidderIds.length > 0 ? await db.query.bidderConfigs.findMany() : [];
+  const agentNameMap: Record<string, string> = {};
+  for (const bc of bidderConfigsList) { if (bc.agentName) agentNameMap[bc.userId] = bc.agentName; }
   const logs = await db.query.agentLogs.findMany({
     where: eq(agentLogs.userId, userId),
     orderBy: desc(agentLogs.createdAt),

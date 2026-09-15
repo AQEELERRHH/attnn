@@ -79,7 +79,7 @@ export function FundWalletCard({
       </ol>
 
       <Button type="button" onClick={onFunded} className="w-full">
-        I have funded my wallet — Activate on Arc
+        Activate on Arc
       </Button>
     </Card>
   );

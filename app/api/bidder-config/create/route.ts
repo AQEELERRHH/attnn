@@ -10,7 +10,7 @@ export async function POST(req: NextRequest) {
     if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const body = await req.json();
-    const { goal, dailyBudget, searchTags, minFitScore, defaultMessage } = body;
+    const { goal, dailyBudget, searchTags, minFitScore, defaultMessage, agentName, maxBidPerCreator } = body;
 
     // Check if already exists
     const existing = await db.query.bidderConfigs.findFirst({ where: eq(bidderConfigs.userId, session.user.id) });
@@ -22,6 +22,8 @@ export async function POST(req: NextRequest) {
       if (searchTags !== undefined) updates.searchTags = searchTags;
       if (minFitScore !== undefined) updates.minFitScore = minFitScore;
       if (defaultMessage !== undefined) updates.defaultMessage = defaultMessage;
+      if (agentName !== undefined) updates.agentName = agentName;
+      if (maxBidPerCreator !== undefined) updates.maxBidPerCreator = maxBidPerCreator;
       await db.update(bidderConfigs).set(updates).where(eq(bidderConfigs.userId, session.user.id));
       return NextResponse.json({ success: true, updated: true });
     }
@@ -34,6 +36,8 @@ export async function POST(req: NextRequest) {
       searchTags: searchTags ?? [],
       minFitScore: minFitScore ?? 5,
       defaultMessage: defaultMessage ?? null,
+      agentName: agentName ?? null,
+      maxBidPerCreator: maxBidPerCreator ?? "20000000",
       isActive: false,
     }).returning();
 

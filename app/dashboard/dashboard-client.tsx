@@ -14,8 +14,8 @@ import { LogOut, Wallet, Play, Square, MessageCircle, Check, X, Activity, Zap, B
 
 interface WalletData { id: string; address: string; circleWalletId: string; blockchain: string; state: string; }
 interface ProfileData { id: string; handle: string; minBid: string; tags: string[]; bio: string | null; autoAcceptThreshold: number | null; autoReplyTemplate: string | null; isActive: boolean; }
-interface BidderConfigData { id: string; goal: string | null; dailyBudget: string; maxBidPerCreator: string; minFitScore: number; searchTags: string[]; defaultMessage: string | null; isActive: boolean; }
-interface BidData { id: string; onChainBidId: string | null; bidderUserId: string; creatorUserId: string; bidderAddress: string; creatorAddress: string; amountUsdc: string; message: string | null; status: string; score: number | null; reply: string | null; bidTxHash: string | null; settlementTxHash: string | null; createdAt: string; settledAt: string | null; counterOfferAmount: string | null; onChainTxHash: string | null; settlementOnChainTxHash: string | null; }
+interface BidderConfigData { id: string; goal: string | null; dailyBudget: string; maxBidPerCreator: string; minFitScore: number; searchTags: string[]; defaultMessage: string | null; isActive: boolean; agentName: string | null; }
+interface BidData { id: string; onChainBidId: string | null; bidderUserId: string; creatorUserId: string; bidderAddress: string; creatorAddress: string; amountUsdc: string; message: string | null; status: string; score: number | null; reply: string | null; bidTxHash: string | null; settlementTxHash: string | null; createdAt: string; settledAt: string | null; counterOfferAmount: string | null; onChainTxHash: string | null; settlementOnChainTxHash: string | null; agentName: string | null; }
 interface LogData { id: string; action: string; data: any; txHash: string | null; createdAt: string; }
 
 export function DashboardClient({
@@ -526,7 +526,13 @@ export function DashboardClient({
                         {bid.score != null && <Badge variant="default">Score: {bid.score}/10</Badge>}
                       </div>
                       {bid.message && <p className="text-sm text-text-secondary">{bid.message}</p>}
-                      <p className="text-xs text-text-dim mt-1">From: {bid.bidderAddress.slice(0, 6)}...{bid.bidderAddress.slice(-4)}</p>
+                      <p className="text-xs text-text-dim mt-1">
+                        {bid.agentName ? (
+                          <span>🤖 <span className="text-white font-medium">{bid.agentName}</span> · {bid.bidderAddress.slice(0, 6)}...{bid.bidderAddress.slice(-4)}</span>
+                        ) : (
+                          <span>From: {bid.bidderAddress.slice(0, 6)}...{bid.bidderAddress.slice(-4)}</span>
+                        )}
+                      </p>
                       <p className="text-xs text-text-dim mt-0.5">{new Date(bid.createdAt).toLocaleString()}{bid.settledAt && <span className="ml-2 text-text-dim">· Settled: {new Date(bid.settledAt).toLocaleString()}</span>}</p>
                       {bid.status === "counter_offered" && bid.counterOfferAmount && (
                         <p className="text-xs text-arc-gold mt-1">Counter sent: {formatAmount(bid.counterOfferAmount)} — Agent evaluating...</p>
@@ -985,6 +991,7 @@ function BidderSetupForm({ userId: _userId, onComplete, existingConfig }: { user
   const [searchTags, setSearchTags] = useState(existingConfig?.searchTags?.join(", ") ?? "");
   const [minFitScore, setMinFitScore] = useState(existingConfig?.minFitScore != null ? existingConfig.minFitScore.toString() : "5");
   const [maxBidPerCreator, setMaxBidPerCreator] = useState(existingConfig?.maxBidPerCreator ? (Number(BigInt(existingConfig.maxBidPerCreator)) / 1_000_000).toString() : "20");
+  const [agentName, setAgentName] = useState(existingConfig?.agentName ?? "");
   const [defaultMessage, setDefaultMessage] = useState(existingConfig?.defaultMessage ?? "");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -1003,6 +1010,7 @@ function BidderSetupForm({ userId: _userId, onComplete, existingConfig }: { user
           searchTags: searchTags.split(",").map(t => t.trim()).filter(Boolean),
           minFitScore: parseInt(minFitScore),
           maxBidPerCreator: (parseFloat(maxBidPerCreator) * 1_000_000).toString(),
+          agentName: agentName || null,
           defaultMessage: defaultMessage || null,
         }),
       });
@@ -1024,6 +1032,15 @@ function BidderSetupForm({ userId: _userId, onComplete, existingConfig }: { user
       <h3 className="font-display font-bold text-lg mb-2">Configure Bidder Agent</h3>
       <p className="text-sm text-text-secondary mb-6">Set your budget and criteria for discovering creators.</p>
       <form onSubmit={handleSubmit} className="space-y-4">
+        <div>
+          <label className="text-sm text-text-secondary mb-1 block">Agent Name</label>
+          <Input
+            placeholder="e.g. Aqeelerh Scout"
+            value={agentName}
+            onChange={e => setAgentName(e.target.value)}
+          />
+          <p className="text-xs text-text-dim mt-1">This is how creators will see your agent. e.g. "Aqeelerh Scout operated by @aqeelerh"</p>
+        </div>
         <div>
           <label className="text-sm text-text-secondary mb-1 block">Goal (what are you looking for?)</label>
           <Input

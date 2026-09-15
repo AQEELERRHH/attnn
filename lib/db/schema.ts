@@ -133,6 +133,7 @@ export const bidderConfigs = pgTable("bidder_configs", {
   goal: text("goal"),
   dailyBudget: text("daily_budget").default("50000000").notNull(),
   maxBidPerCreator: text("max_bid_per_creator").default("5000000").notNull(),
+  agentName: text("agent_name"),
   minFitScore: integer("min_fit_score").default(5).notNull(),
   searchTags: text("search_tags").array().default([]).notNull(),
   defaultMessage: text("default_message"),

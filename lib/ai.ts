@@ -112,7 +112,7 @@ Respond with JSON: { "score": number, "recommendation": "accept"|"reject"|"revie
     const raw = await callAI(prompt, systemPrompt);
     const parsed = safeJsonParse(raw);
     return ScoreForCreatorSchema.parse(parsed);
-  } catch (err) {
+  } catch {
     const bidAmount = BigInt(bid.amountUsdc);
     const minBid = BigInt(creatorProfile.minBid);
     const score = bidAmount >= minBid * BigInt(2) ? 7 : bidAmount >= minBid ? 5 : 2;
@@ -138,7 +138,7 @@ Return JSON: { "score": number, "bidAmount": string (USDC with 6 decimals), "rea
     const raw = await callAI(prompt, systemPrompt);
     const parsed = safeJsonParse(raw);
     return EvaluateCreatorForBidderSchema.parse(parsed);
-  } catch (err) {
+  } catch {
     return {
       score: 5,
       bidAmount: "1000000",
@@ -163,7 +163,7 @@ Be authentic, professional, and engaging. Return JSON: { "reply": string }`;
     const parsed = safeJsonParse(raw);
     const result = DraftReplySchema.parse(parsed);
     return result.reply;
-  } catch (err) {
+  } catch {
     return `Thanks for reaching out! I appreciate your bid on my attention and would be happy to discuss further.`;
   }
 }

@@ -23,14 +23,14 @@ export async function POST(_req: NextRequest) {
     const result = await executeContractCall({
       walletId: wallet.circleWalletId,
       contractAddress: registryAddr,
-      abi: registryAbi as any,
+      abi: registryAbi,
       functionName: "registerCreator",
       args: [profile.handle, profile.minBid, profile.tags, profile.profileURI ?? ""],
     });
 
     await db.update(profiles).set({ isActive: true, onChainTx: result.txId }).where(eq(profiles.userId, session.user.id));
     return NextResponse.json({ success: true, txId: result.txId });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message ?? "Failed" }, { status: 500 });
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : "Failed" }, { status: 500 });
   }
 }

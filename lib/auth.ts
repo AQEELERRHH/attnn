@@ -7,10 +7,12 @@ import { accounts, sessions, users, verificationTokens } from "./db/schema";
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   adapter: DrizzleAdapter(db, {
-  usersTable: users as any,
+  usersTable: users,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- custom accounts schema doesn't match the adapter's table shape; fixing needs a schema change
     accountsTable: accounts as any,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- custom sessions schema doesn't match the adapter's table shape; fixing needs a schema change
     sessionsTable: sessions as any,
-    verificationTokensTable: verificationTokens as any,
+    verificationTokensTable: verificationTokens,
   }),
   session: { strategy: "database" },
   pages: {
@@ -50,7 +52,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     async session({ session, user }) {
       if (session.user && user) {
         session.user.id = user.id;
-        session.user.role = (user as any).role ?? "bidder";
+        session.user.role = (user as { role?: string }).role ?? "bidder";
       }
       return session;
     },

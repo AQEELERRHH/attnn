@@ -55,10 +55,10 @@ export async function POST(req: NextRequest) {
       message: "Access granted (simulated)",
       // Include payment request challenge if no signature
     });
-  } catch (err: any) {
+  } catch (err) {
     console.error("x402 access error:", err);
     return NextResponse.json(
-      { error: err.message ?? "Internal server error" },
+      { error: err instanceof Error ? err.message : "Internal server error" },
       { status: 500 }
     );
   }

@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
     }).catch(() => {});
 
     return NextResponse.json({ success: true, bidId, counterOfferAmount });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message ?? "Failed" }, { status: 500 });
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : "Failed" }, { status: 500 });
   }
 }

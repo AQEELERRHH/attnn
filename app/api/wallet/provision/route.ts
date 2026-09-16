@@ -62,10 +62,10 @@ export async function POST(_req: NextRequest) {
       },
       success: true,
     });
-  } catch (err: any) {
+  } catch (err) {
     console.error("Wallet provision error:", err);
     return NextResponse.json(
-      { error: err.message ?? "Failed to provision wallet" },
+      { error: err instanceof Error ? err.message : "Failed to provision wallet" },
       { status: 500 },
     );
   }

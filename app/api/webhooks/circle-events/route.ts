@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db/client";
 import { bids } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
-import { decodeEventLog } from "viem";
+import { decodeEventLog, type DecodeEventLogReturnType } from "viem";
 import { escrowAbi } from "@/lib/arc";
 
 export async function POST(req: NextRequest) {
@@ -15,7 +15,7 @@ export async function POST(req: NextRequest) {
     if (blockchain !== "ARC-TESTNET") return NextResponse.json({ ok: true });
     console.log("Circle event:", eventName, txHash);
 
-    let decoded: any;
+    let decoded: DecodeEventLogReturnType<typeof escrowAbi>;
     try {
       decoded = decodeEventLog({
         abi: escrowAbi,
@@ -28,9 +28,9 @@ export async function POST(req: NextRequest) {
     }
 
     if (decoded.eventName === "BidPlaced") {
-      const onChainBidId = (decoded.args as any).bidId?.toString();
-      const bidderAddress = (decoded.args as any).bidder?.toLowerCase();
-      const amount = (decoded.args as any).amount?.toString();
+      const onChainBidId = decoded.args.bidId?.toString();
+      const bidderAddress = decoded.args.bidder?.toLowerCase();
+      const amount = decoded.args.amount?.toString();
       if (!onChainBidId || !bidderAddress) return NextResponse.json({ ok: true });
 
       const matchingBid = await db.query.bids.findFirst({
@@ -53,7 +53,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (decoded.eventName === "BidAccepted") {
-      const onChainBidId = (decoded.args as any).bidId?.toString();
+      const onChainBidId = decoded.args.bidId?.toString();
       if (!onChainBidId) return NextResponse.json({ ok: true });
       const matchingBid = await db.query.bids.findFirst({
         where: (b, { eq }) => eq(b.onChainBidId, onChainBidId),
@@ -68,7 +68,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (decoded.eventName === "BidRejected") {
-      const onChainBidId = (decoded.args as any).bidId?.toString();
+      const onChainBidId = decoded.args.bidId?.toString();
       if (!onChainBidId) return NextResponse.json({ ok: true });
       const matchingBid = await db.query.bids.findFirst({
         where: (b, { eq }) => eq(b.onChainBidId, onChainBidId),
@@ -83,7 +83,7 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json({ ok: true });
-  } catch (err: any) {
+  } catch (err) {
     console.error("Webhook error:", err);
     return NextResponse.json({ ok: true });
   }

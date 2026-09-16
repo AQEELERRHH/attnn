@@ -176,7 +176,7 @@ export async function runBidderAgent(userId: string): Promise<AgentRunResult> {
         await executeContractCall({
           walletId: bidderWallet.circleWalletId,
           contractAddress: usdcAddr,
-          abi: usdcAbi as any,
+          abi: usdcAbi,
           functionName: "approve",
           args: [escrowAddr, tc.bidAmount],
         });
@@ -188,7 +188,7 @@ export async function runBidderAgent(userId: string): Promise<AgentRunResult> {
         const result = await executeContractCall({
           walletId: bidderWallet.circleWalletId,
           contractAddress: escrowAddr,
-          abi: escrowAbi as any,
+          abi: escrowAbi,
           functionName: "placeBid",
           args: [tc.address, tc.bidAmount, config.defaultMessage ?? "AI-discovered opportunity", false],
         });
@@ -275,7 +275,7 @@ export async function autoAcceptBid(bidId: string, creatorUserId: string): Promi
       const result = await executeContractCall({
         walletId: creatorWallet.circleWalletId,
         contractAddress: escrowAddr,
-        abi: escrowAbi as any,
+        abi: escrowAbi,
         functionName: "acceptBid",
         args: [BigInt(bid.onChainBidId ?? "0"), reply],
       });
@@ -310,13 +310,13 @@ export async function autoAcceptBid(bidId: string, creatorUserId: string): Promi
 
 async function logAgentAction(
   userId: string,
-  action: string,
+  action: (typeof agentLogs.$inferInsert)["action"],
   data: Record<string, unknown> = {},
 ): Promise<void> {
   try {
     await db.insert(agentLogs).values({
       userId,
-      action: action as any,
+      action,
       data,
     });
   } catch (err) {

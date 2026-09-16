@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
     const result = await executeContractCall({
       walletId: wallet.circleWalletId,
       contractAddress: escrowAddr,
-      abi: escrowAbi as any,
+      abi: escrowAbi,
       functionName: "rejectBid",
       args: [onChainBidId],
     });
@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
     await db.update(bids).set({ status: "rejected", settlementTxHash: result.txId, settledAt: new Date() }).where(eq(bids.id, bidId));
 
     return NextResponse.json({ success: true, txId: result.txId });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message ?? "Failed" }, { status: 500 });
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : "Failed" }, { status: 500 });
   }
 }

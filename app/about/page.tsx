@@ -150,7 +150,7 @@ export default function AboutPage() {
             <Card className="p-6 border-l-4 border-l-arc-gold">
               <h3 className="font-display font-bold mb-2">The Startup Hiring a Developer</h3>
               <p className="text-sm text-text-secondary leading-relaxed">
-                A Lagos-based fintech startup needs a smart contract developer urgently. They deploy a bidder agent on Attnn. with the goal "find experienced Solidity developers" and a $50/day budget. The agent searches the registry, finds 3 matching developers, scores them, and places $15 bids on each all within 10 minutes. One developer replies within an hour. The startup has a conversation. The developer earns $15 just for replying.
+                A Lagos-based fintech startup needs a smart contract developer urgently. They deploy a bidder agent on Attnn. with the goal &quot;find experienced Solidity developers&quot; and a $50/day budget. The agent searches the registry, finds 3 matching developers, scores them, and places $15 bids on each all within 10 minutes. One developer replies within an hour. The startup has a conversation. The developer earns $15 just for replying.
               </p>
             </Card>
             <Card className="p-6 border-l-4 border-l-arc-purple">
@@ -162,7 +162,7 @@ export default function AboutPage() {
             <Card className="p-6 border-l-4 border-l-arc-coral">
               <h3 className="font-display font-bold mb-2">The Investor Finding Deal Flow</h3>
               <p className="text-sm text-text-secondary leading-relaxed">
-                An angel investor wants to meet early-stage founders building in Web3. They set up a bidder agent with the goal "find founders building on Arc or Ethereum" and a $100/day budget. The agent runs every 10 minutes, finds matching founders registered on Attnn., and places bids automatically. Serious founders reply. The investor gets warm introductions to 5 founders per week without sending a single cold message.
+                An angel investor wants to meet early-stage founders building in Web3. They set up a bidder agent with the goal &quot;find founders building on Arc or Ethereum&quot; and a $100/day budget. The agent runs every 10 minutes, finds matching founders registered on Attnn., and places bids automatically. Serious founders reply. The investor gets warm introductions to 5 founders per week without sending a single cold message.
               </p>
             </Card>
           </div>

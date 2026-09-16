@@ -38,7 +38,7 @@ export async function GET(req: NextRequest) {
           }
           // Send keepalive
           controller.enqueue(encoder.encode("data: {\"type\":\"ping\"}\n\n"));
-        } catch (err) {
+        } catch {
           // Connection closed, ignore
         }
       }, 3000);

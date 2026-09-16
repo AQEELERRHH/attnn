@@ -9,7 +9,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const result = await runBidderAgent(body.userId ?? session.user.id);
     return NextResponse.json({ result, success: true });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message ?? "Agent run failed" }, { status: 500 });
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : "Agent run failed" }, { status: 500 });
   }
 }

@@ -18,7 +18,7 @@ export async function POST(req: NextRequest) {
 
     const bid = await db.query.bids.findFirst({ where: eq(bids.id, bidId) });
     if (!bid) return NextResponse.json({ error: "Bid not found" }, { status: 404 });
-    if (bid.creatorUserId !== session.user.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (bid.creatorUserId !== session.user.id) return NextResponse.json({ error: "Only the creator can counter this bid" }, { status: 403 });
     if (bid.status !== "pending") return NextResponse.json({ error: "Bid already processed" }, { status: 400 });
 
     const minBid = 5_000_000;

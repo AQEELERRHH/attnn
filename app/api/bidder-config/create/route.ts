@@ -16,7 +16,7 @@ export async function POST(req: NextRequest) {
     const existing = await db.query.bidderConfigs.findFirst({ where: eq(bidderConfigs.userId, session.user.id) });
     if (existing) {
       // Update instead
-      const updates: any = {};
+      const updates: Record<string, unknown> = {};
       if (goal !== undefined) updates.goal = goal;
       if (dailyBudget !== undefined) updates.dailyBudget = dailyBudget;
       if (searchTags !== undefined) updates.searchTags = searchTags;
@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
     }).returning();
 
     return NextResponse.json({ config, success: true });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message ?? "Failed to create bidder config" }, { status: 500 });
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : "Failed to create bidder config" }, { status: 500 });
   }
 }

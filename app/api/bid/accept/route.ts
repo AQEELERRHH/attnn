@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
     const result = await executeContractCall({
       walletId: wallet.circleWalletId,
       contractAddress: escrowAddr,
-      abi: escrowAbi as any,
+      abi: escrowAbi,
       functionName: "acceptBid",
       args: [onChainBidId, reply],
     });
@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
     
 
     return NextResponse.json({ success: true, txId: result.txId, reply });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message ?? "Failed" }, { status: 500 });
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : "Failed" }, { status: 500 });
   }
 }

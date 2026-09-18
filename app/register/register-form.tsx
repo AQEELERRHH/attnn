@@ -36,7 +36,7 @@ export default function RegisterForm() {
     setIsLoading(true);
     try {
       await signIn("google", { callbackUrl: "/dashboard" });
-    } catch (err) {
+    } catch {
       toast({ title: "Error", description: "Google sign in failed", variant: "destructive" });
     }
     setIsLoading(false);

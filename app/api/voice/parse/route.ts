@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
     const cleaned = raw.replace(/```json?/g, "").replace(/```/g, "").trim();
     const parsed = JSON.parse(cleaned);
     return NextResponse.json({ ...parsed, success: true });
-  } catch (err: any) {
-    return NextResponse.json({ action: "unknown", params: {}, confidence: 0, error: err.message, success: false });
+  } catch (err) {
+    return NextResponse.json({ action: "unknown", params: {}, confidence: 0, error: err instanceof Error ? err.message : undefined, success: false });
   }
 }

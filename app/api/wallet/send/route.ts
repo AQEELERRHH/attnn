@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
     const result = await transferUSDC(wallet.circleWalletId, to, atomicAmount);
 
     return NextResponse.json({ success: true, txId: result.txId });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message ?? "Failed to send" }, { status: 500 });
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : "Failed to send" }, { status: 500 });
   }
 }

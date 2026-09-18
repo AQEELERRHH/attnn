@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
     await executeContractCall({
       walletId: bidderWallet.circleWalletId,
       contractAddress: USDC_ADDRESS,
-      abi: usdcAbi as any,
+      abi: usdcAbi,
       functionName: "approve",
       args: [escrowAddr, amountUsdc],
     });
@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
     const result = await executeContractCall({
       walletId: bidderWallet.circleWalletId,
       contractAddress: escrowAddr,
-      abi: escrowAbi as any,
+      abi: escrowAbi,
       functionName: "placeBid",
       args: [creatorWallet.address, amountUsdc, message ?? "", isPrivate ?? false],
     });
@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
       bidTxHash: result.txId, onChainBidId,
     }).returning();
     // Auto-accept logic — runs after bid is inserted
-    let autoAccepted = false;
+    const autoAccepted = false;
     if (!bid) return NextResponse.json({ success: true, txId: result.txId, autoAccepted });
     // Auto-accept is handled by Inngest creatorAgentTriage — not here
 
@@ -68,7 +68,7 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json({ bid, success: true, txId: result.txId, autoAccepted });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message ?? "Failed" }, { status: 500 });
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : "Failed" }, { status: 500 });
   }
 }

@@ -23,7 +23,7 @@ export async function GET() {
     const res = await client.getWalletTokenBalance({ id: wallet.circleWalletId });
     const tokenBalances = res?.data?.tokenBalances ?? [];
     const usdcBalance = tokenBalances.find(
-      (t: any) => t.token?.symbol === "USDC" || t.token?.name?.includes("USD")
+      (t) => t.token?.symbol === "USDC" || t.token?.name?.includes("USD")
     );
 
     return NextResponse.json({
@@ -31,7 +31,7 @@ export async function GET() {
       balance: usdcBalance?.amount ?? "0",
       symbol: "USDC",
     });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message ?? "Failed" }, { status: 500 });
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : "Failed" }, { status: 500 });
   }
 }

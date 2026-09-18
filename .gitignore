@@ -45,6 +45,10 @@ next-env.d.ts
 .env.local
 .env*.local
 .env.production
+!.env.example
+
+# Private local notes (e.g. KNOWN_ISSUES.local.md) - never commit
+*.local.md
 
 # Circle recovery files
 recovery/

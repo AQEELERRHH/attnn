@@ -1,7 +1,7 @@
 import {
   CircleDeveloperControlledWalletsClient,
 } from "@circle-fin/developer-controlled-wallets";
-import { type Abi, type Hex } from "viem";
+import { type Abi, type AbiFunction, type Hex } from "viem";
 import { usdcAbi, USDC_ADDRESS } from "./arc";
 
 function getSDK(): CircleDeveloperControlledWalletsClient {
@@ -118,8 +118,8 @@ export async function executeContractCall(params: {
     walletId: params.walletId,
     contractAddress: params.contractAddress,
     abiFunctionSignature: `${params.functionName}(${params.abi
-      .filter((f: any) => f.type === "function" && f.name === params.functionName)
-      .flatMap((f: any) => f.inputs?.map((i: any) => i.type) ?? [])
+      .filter((f): f is AbiFunction => f.type === "function" && f.name === params.functionName)
+      .flatMap((f) => f.inputs?.map((i) => i.type) ?? [])
       .join(",")})`,
     abiParameters: params.args as Record<string, unknown>[],
     fee: { type: "level" as const, config: { feeLevel: "MEDIUM" as const } },

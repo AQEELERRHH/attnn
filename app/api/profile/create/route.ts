@@ -58,7 +58,7 @@ export async function POST(req: NextRequest) {
     }).returning();
 
     return NextResponse.json({ profile, success: true });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message ?? "Failed to create profile" }, { status: 500 });
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : "Failed to create profile" }, { status: 500 });
   }
 }

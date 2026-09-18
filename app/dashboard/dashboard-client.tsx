@@ -16,6 +16,7 @@ interface WalletData { id: string; address: string; circleWalletId: string; bloc
 interface ProfileData { id: string; handle: string; minBid: string; tags: string[]; bio: string | null; autoAcceptThreshold: number | null; autoReplyTemplate: string | null; isActive: boolean; }
 interface BidderConfigData { id: string; goal: string | null; dailyBudget: string; maxBidPerCreator: string; minFitScore: number; searchTags: string[]; defaultMessage: string | null; isActive: boolean; agentName: string | null; }
 interface BidData { id: string; onChainBidId: string | null; bidderUserId: string; creatorUserId: string; bidderAddress: string; creatorAddress: string; amountUsdc: string; message: string | null; status: string; score: number | null; reply: string | null; bidTxHash: string | null; settlementTxHash: string | null; createdAt: string; settledAt: string | null; counterOfferAmount: string | null; onChainTxHash: string | null; settlementOnChainTxHash: string | null; agentName: string | null; }
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- agent_logs.data is untyped jsonb whose shape varies by action
 interface LogData { id: string; action: string; data: any; txHash: string | null; createdAt: string; }
 
 export function DashboardClient({
@@ -87,7 +88,7 @@ export function DashboardClient({
             setProvisioning(false);
           }
         }
-      } catch (err) {
+      } catch {
         if (!cancelled) {
           toast({ title: "Wallet provisioning error", variant: "destructive" });
           setProvisioning(false);
@@ -97,6 +98,7 @@ export function DashboardClient({
     return () => { cancelled = true; };
   }, []); // run once on mount
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- agent_logs.data is untyped jsonb whose shape varies by action
   const formatLogData = (action: string, data: any): string => {
     if (!data || Object.keys(data).length === 0) return "";
     try {
@@ -169,7 +171,7 @@ export function DashboardClient({
       } else {
         toast({ title: "Agent error", description: data.error ?? "Unknown error", variant: "destructive" });
       }
-    } catch (err) {
+    } catch {
       toast({ title: "Error", description: "Failed to run agent", variant: "destructive" });
     }
     setAgentRunning(false);
@@ -197,7 +199,7 @@ export function DashboardClient({
       } else {
         toast({ title: "Error", description: data.error ?? "Failed to accept", variant: "destructive" });
       }
-    } catch (err) {
+    } catch {
       toast({ title: "Error", variant: "destructive" });
     }
   };
@@ -248,7 +250,7 @@ export function DashboardClient({
         setLocalBids(prev => prev.map(b => b.id === bidId ? { ...b, status: "rejected" } : b));
         router.refresh();
       }
-    } catch (err) {
+    } catch {
       toast({ title: "Error", variant: "destructive" });
     }
   };
@@ -901,7 +903,7 @@ function CreatorSetupForm({
           setError(data.error ?? "Failed to create profile");
         }
       }
-    } catch (err) {
+    } catch {
       setError("Something went wrong");
     }
     setLoading(false);
@@ -1021,7 +1023,7 @@ function BidderSetupForm({ userId: _userId, onComplete, existingConfig }: { user
       } else {
         setError(data.error ?? "Failed to configure agent");
       }
-    } catch (err) {
+    } catch {
       setError("Something went wrong");
     }
     setLoading(false);
@@ -1039,7 +1041,7 @@ function BidderSetupForm({ userId: _userId, onComplete, existingConfig }: { user
             value={agentName}
             onChange={e => setAgentName(e.target.value)}
           />
-          <p className="text-xs text-text-dim mt-1">This is how creators will see your agent. e.g. "Aqeelerh Scout operated by @aqeelerh"</p>
+          <p className="text-xs text-text-dim mt-1">This is how creators will see your agent. e.g. &quot;Aqeelerh Scout operated by @aqeelerh&quot;</p>
         </div>
         <div>
           <label className="text-sm text-text-secondary mb-1 block">Goal (what are you looking for?)</label>

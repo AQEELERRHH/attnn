@@ -17,6 +17,8 @@ export async function POST(req: NextRequest) {
 
     const bid = await db.query.bids.findFirst({ where: eq(bids.id, bidId) });
     if (!bid) return NextResponse.json({ error: "Bid not found" }, { status: 404 });
+    if (bid.creatorUserId !== session.user.id) return NextResponse.json({ error: "Only the creator can reject this bid" }, { status: 403 });
+    if (bid.status !== "pending") return NextResponse.json({ error: "Bid already processed" }, { status: 400 });
 
     const wallet = await db.query.wallets.findFirst({ where: eq(wallets.userId, session.user.id) });
     if (!wallet) return NextResponse.json({ error: "Wallet not found" }, { status: 404 });

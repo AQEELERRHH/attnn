@@ -214,7 +214,12 @@ export async function runBidderAgent(userId: string): Promise<AgentRunResult> {
 
         bidsPlaced++;
       } catch (err) {
-        errors.push(`Failed to place bid on ${tc.profile.handle}: ${err}`);
+        const errMsg = `Failed to place bid on ${tc.profile.handle}: ${err}`;
+        errors.push(errMsg);
+        await logAgentAction(userId, "bid_error", {
+          creator: tc.profile.handle,
+          error: String(err),
+        });
       }
     }
 

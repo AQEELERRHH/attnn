@@ -66,19 +66,21 @@ app/
     inngest/                           Inngest serve endpoint
     webhooks/circle-events             Circle contract event logs → syncs on-chain bid IDs/status (important)
     webhooks/circle, webhooks/arc      store events for idempotency; mostly no-ops beyond that
+                                       all three verify the sender before acting (see Webhooks)
 inngest/functions.ts                   all Inngest functions (see below)
 lib/
   agent.ts      runBidderAgent() (bidder agent) + legacy autoAcceptBid() (unused)
   ai.ts         callAI, evaluateCreatorForBidder, triageBidForCreator, scoreBidForCreator, draftReply
   arc.ts        arcTestnet chain, usdcAbi/registryAbi/escrowAbi, publicClient, parseUsdc/formatUsdc
   circle.ts     getSDK (fresh client per call), provisionUserWallet, executeContractCall, transferUSDC
+  circle-webhook.ts  verifyCircleSignature(): ECDSA verification of Circle notifications
   x402.ts       gate(): 402 challenge + BatchFacilitatorClient verify/settle
   auth.ts       NextAuth config + Session type augmentation
   db/           schema.ts (10 tables), client.ts (global-cached connection in dev)
   profiles.ts   getFullProfileByHandle
   inngest.ts    Inngest client (id "attnn")
 components/ui/  Radix/shadcn primitives
-contracts/      git submodule link with NO .gitmodules, so the Solidity sources are not in this repo
+contracts/      Foundry project: src/AttnnEscrow.sol, src/AttnnRegistry.sol, test/, script/Deploy.s.sol
 ```
 
 ## Data model essentials
@@ -149,3 +151,14 @@ Triggered by `attnn/counter.received`. If the counter amount fits the bidder's r
 3. It returns `{ handle, unlocked, payer, profile: { handle, bio, tags, minBid, isActive } }`. Payment settles **before** the profile lookup, so an unknown handle returns 404 after the charge. The computed `paymentResponseHeader` isn't attached to the response. There's no idempotency yet (planned).
 
 `/api/x402/access` is a separate stub that only simulates access.
+
+## Webhooks
+
+All three webhook routes authenticate the caller before touching the DB, and all three read the **raw body first**, because both schemes sign the exact bytes. Never switch them back to `req.json()`.
+
+- **Circle** (`/api/webhooks/circle`, `/api/webhooks/circle-events`): `verifyCircleSignature(rawBody, signature, keyId)` from `lib/circle-webhook.ts`. Circle v2 notifications are ECDSA_SHA_256-signed: the base64 DER signature arrives in `X-Circle-Signature` and the signing key's id in `X-Circle-Key-Id`. The helper fetches that key from `GET {CIRCLE_API_BASE_URL or https://api.circle.com}/v2/notifications/publicKey/{keyId}` with `Authorization: Bearer $CIRCLE_API_KEY`, imports the base64 DER SPKI key, and verifies with `crypto.createVerify("SHA256")`. W3S serves testnet and mainnet keys from the same host, so the `CIRCLE_API_BASE_URL` override is rarely needed. Keys are cached in a module-level `Map` by key id, since a key is static for its id. A key whose reported `algorithm` isn't `ECDSA_SHA_256` only logs a warning, because the verification step catches a genuinely wrong key by itself and a relabelled one must not stop bid syncing. The helper never throws: a missing header, a failed fetch or a bad signature logs the reason and returns `false`, and the route then returns **401** before parsing anything. There is no `CIRCLE_WEBHOOK_SECRET`; verification depends on `CIRCLE_API_KEY`.
+
+  Both Circle routes also de-duplicate: `circle` keys `webhook_events` on the payload's `id`/`eventId`, and `circle-events` on `notificationId` with source `circle-events`, returning early when the row already exists (a verified notification is still replayable). A `circle-events` payload with no `notificationId` is processed anyway, with a warning.
+- **Arc/Alchemy** (`/api/webhooks/arc`): HMAC-SHA256 hex digest of the raw body keyed by `ALCHEMY_WEBHOOK_SECRET`, taken from `x-alchemy-signature` or `x-hub-signature-256`. It **fails closed**: a missing secret returns 500 ("Webhook not configured"), and a mismatch returns 401. The comparison checks lengths before `crypto.timingSafeEqual`, which throws on unequal buffers.
+
+Event handling past verification is unchanged: `circle-events` decodes escrow logs and syncs `onChainBidId` and settlement status, while `circle` and `arc` mostly record events for idempotency.

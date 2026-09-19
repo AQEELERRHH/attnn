@@ -182,7 +182,7 @@ export async function runBidderAgent(userId: string): Promise<AgentRunResult> {
         });
 
         // Wait for approval to settle on Arc
-        await new Promise(r => setTimeout(r, 4000));
+        await new Promise(r => setTimeout(r, 15000));
 
         // Step 2: Place the bid
         const result = await executeContractCall({

@@ -151,7 +151,7 @@ export const bidExpiryNotification = inngest.createFunction(
 // Runs every 10 minutes for every active bidder config.
 export const runActiveBidders = inngest.createFunction(
   { id: "run-active-bidders", name: "Run Active Bidder Agents" },
-  { cron: "*/10 * * * *" },
+  { cron: "*/30 * * * *" },
   async ({ step }: { step: any }) => {
     const { bidderConfigs } = await import("@/lib/db/schema");
     const { runBidderAgent } = await import("@/lib/agent");

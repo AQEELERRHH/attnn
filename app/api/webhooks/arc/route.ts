@@ -7,17 +7,26 @@ import crypto from "crypto";
 function verifySignature(payload: string, signature: string, secret: string): boolean {
   const hmac = crypto.createHmac("sha256", secret);
   hmac.update(payload);
-  const expected = hmac.digest("hex");
-  return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature));
+  const expected = Buffer.from(hmac.digest("hex"));
+  const provided = Buffer.from(signature);
+  // timingSafeEqual throws on length mismatch, so compare lengths first.
+  if (expected.length !== provided.length) return false;
+  return crypto.timingSafeEqual(expected, provided);
 }
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.text();
     const signature = req.headers.get("x-alchemy-signature") ?? req.headers.get("x-hub-signature-256") ?? "";
-    const secret = process.env.ALCHEMY_WEBHOOK_SECRET ?? "";
+    const secret = process.env.ALCHEMY_WEBHOOK_SECRET;
 
-    if (secret && !verifySignature(body, signature, secret)) {
+    // Fail closed: without a secret there is no way to authenticate the caller.
+    if (!secret) {
+      console.error("Arc webhook: ALCHEMY_WEBHOOK_SECRET is not configured");
+      return NextResponse.json({ error: "Webhook not configured" }, { status: 500 });
+    }
+
+    if (!verifySignature(body, signature, secret)) {
       return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
     }
 

@@ -3,21 +3,18 @@ import { db } from "@/lib/db/client";
 import { webhookEvents, bids } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import crypto from "crypto";
-
-function verifySignature(payload: string, signature: string, secret: string): boolean {
-  const hmac = crypto.createHmac("sha256", secret);
-  hmac.update(payload);
-  const expected = hmac.digest("hex");
-  return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature));
-}
+import { verifyCircleSignature } from "@/lib/circle-webhook";
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.text();
-    const signature = req.headers.get("x-circle-signature") ?? "";
-    const secret = process.env.CIRCLE_WEBHOOK_SECRET ?? "";
 
-    if (secret && !verifySignature(body, signature, secret)) {
+    const verified = await verifyCircleSignature(
+      body,
+      req.headers.get("x-circle-signature"),
+      req.headers.get("x-circle-key-id"),
+    );
+    if (!verified) {
       return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
     }
 

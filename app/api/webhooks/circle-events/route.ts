@@ -1,13 +1,47 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db/client";
-import { bids } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { bids, webhookEvents } from "@/lib/db/schema";
+import { and, eq } from "drizzle-orm";
 import { decodeEventLog, type DecodeEventLogReturnType } from "viem";
 import { escrowAbi } from "@/lib/arc";
+import { verifyCircleSignature } from "@/lib/circle-webhook";
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
+    const rawBody = await req.text();
+
+    const verified = await verifyCircleSignature(
+      rawBody,
+      req.headers.get("x-circle-signature"),
+      req.headers.get("x-circle-key-id"),
+    );
+    if (!verified) {
+      return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+    }
+
+    const body = JSON.parse(rawBody);
+
+    // Replay protection: a verified notification is still replayable, so each
+    // notificationId is processed once.
+    const notificationId = body.notificationId;
+    if (notificationId) {
+      const seen = await db.query.webhookEvents.findFirst({
+        where: and(
+          eq(webhookEvents.source, "circle-events"),
+          eq(webhookEvents.eventId, notificationId),
+        ),
+      });
+      if (seen) return NextResponse.json({ ok: true });
+
+      await db.insert(webhookEvents).values({
+        source: "circle-events",
+        eventId: notificationId,
+        payload: body,
+      });
+    } else {
+      console.warn("Circle events webhook: notification has no notificationId, processing without replay check");
+    }
+
     if (body.notificationType !== "contracts.eventLog") {
       return NextResponse.json({ ok: true });
     }

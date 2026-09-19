@@ -82,7 +82,7 @@ export function PublicProfileClient({
         <div className="flex items-start justify-between mb-6">
           <div>
             <h1 className="text-2xl font-display font-bold">@{handle}</h1>
-            <p className="text-text-secondary text-sm mt-1">Creator on Attnn.</p>
+            <p className="text-text-secondary text-sm mt-1">Verified on Attnn.</p>
           </div>
           <div className={`flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full ${isActive ? "bg-green/10 text-green" : "bg-border text-text-dim"}`}>
             <span className={`w-1.5 h-1.5 rounded-full ${isActive ? "bg-green" : "bg-text-dim"}`} />
@@ -194,23 +194,20 @@ export function PublicProfileClient({
                 <span className="text-text-primary">{avail.label}</span>
               </div>
 
-              {/* Tags */}
-              {tags.length > 0 && (
+              {/* About & Interests */}
+              {(bio || tags.length > 0) && (
                 <div>
-                  <div className="text-xs text-text-dim mb-2">Interests</div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {tags.map(tag => (
-                      <Badge key={tag} variant="secondary">{tag}</Badge>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Bio */}
-              {bio && (
-                <div>
-                  <div className="text-xs text-text-dim mb-2">About</div>
-                  <p className="text-sm text-text-secondary leading-relaxed">{bio}</p>
+                  <div className="text-xs text-text-dim uppercase tracking-wider mb-3">About & Interests</div>
+                  {bio && (
+                    <p className="text-sm text-text-secondary leading-relaxed mb-3">{bio}</p>
+                  )}
+                  {tags.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {tags.map(tag => (
+                        <Badge key={tag} variant="secondary">{tag}</Badge>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
 

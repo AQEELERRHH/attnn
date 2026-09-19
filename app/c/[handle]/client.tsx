@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/hooks/use-toast";
-import { Lock, Coins, MessageCircle } from "lucide-react";
+import { Lock, Coins } from "lucide-react";
 
 function availabilityLabel(status: string) {
   if (status === "limited") return { emoji: "🟡", label: "Limited availability" };
@@ -13,7 +13,7 @@ function availabilityLabel(status: string) {
 }
 
 export function PublicProfileClient({
-  handle, bio, tags, minBid, isActive, availabilityStatus, openTo, highestBid, pendingOfferCount,
+  handle, bio, tags, minBid, isActive, availabilityStatus, openTo,
 }: {
   handle: string; bio: string | null; tags: string[]; minBid: string;
   isActive: boolean; profileURI: string | null; availabilityStatus: string;
@@ -78,8 +78,8 @@ export function PublicProfileClient({
     <div className="min-h-screen bg-arc-bg-0">
       <div className="max-w-lg mx-auto px-4 py-8">
 
-        {/* Profile Header — always free */}
-        <div className="flex items-start justify-between mb-6">
+        {/* Profile Header — always visible */}
+        <div className="flex items-start justify-between mb-8">
           <div>
             <h1 className="text-2xl font-display font-bold">@{handle}</h1>
             <p className="text-text-secondary text-sm mt-1">Verified on Attnn.</p>
@@ -90,95 +90,6 @@ export function PublicProfileClient({
           </div>
         </div>
 
-        {/* Stats — always free */}
-        <div className="grid grid-cols-4 gap-3 mb-6">
-          <div className="bg-arc-bg-2 rounded-xl p-3 text-center">
-            <div className="text-lg font-bold text-arc-gold">4.9</div>
-            <div className="text-xs text-text-dim mt-0.5">Reputation</div>
-          </div>
-          <div className="bg-arc-bg-2 rounded-xl p-3 text-center">
-            <div className="text-lg font-bold">94%</div>
-            <div className="text-xs text-text-dim mt-0.5">Response</div>
-          </div>
-          <div className="bg-arc-bg-2 rounded-xl p-3 text-center">
-            <div className="text-lg font-bold">~7h</div>
-            <div className="text-xs text-text-dim mt-0.5">Avg reply</div>
-          </div>
-          <div className="bg-arc-bg-2 rounded-xl p-3 text-center">
-            <div className="text-lg font-bold">42</div>
-            <div className="text-xs text-text-dim mt-0.5">Deals</div>
-          </div>
-        </div>
-
-        {/* Attention Market — always free */}
-        <div className="bg-arc-bg-2 rounded-xl p-4 mb-6">
-          <div className="text-xs text-text-dim uppercase tracking-wider mb-3">Attention Market</div>
-          <div className="grid grid-cols-2 gap-4 mb-3">
-            <div>
-              <div className="text-xs text-text-dim mb-1">Minimum bid</div>
-              <div className="text-xl font-bold">${minBid} <span className="text-sm text-text-secondary font-normal">USDC</span></div>
-            </div>
-            <div>
-              <div className="text-xs text-text-dim mb-1">Current top offer</div>
-              <div className="text-xl font-bold text-arc-gold">
-                {highestBid ? `$${highestBid}` : "—"} <span className="text-sm font-normal">USDC</span>
-              </div>
-            </div>
-          </div>
-          {pendingOfferCount > 0 && (
-            <div className="flex items-center gap-1.5 text-xs text-text-secondary">
-              <MessageCircle className="w-3.5 h-3.5" />
-              {pendingOfferCount} offer{pendingOfferCount > 1 ? "s" : ""} in queue
-            </div>
-          )}
-        </div>
-
-        {/* Bid Button — always visible */}
-        {!showBidForm ? (
-          <Button
-            className="w-full mb-6 bg-arc-gold text-arc-bg-0 hover:bg-arc-gold/90 font-bold text-base py-5"
-            onClick={() => setShowBidForm(true)}
-            disabled={!isActive}
-          >
-            <Coins className="w-4 h-4 mr-2" />
-            Make a Bid — from ${minBid}
-          </Button>
-        ) : (
-          <div className="bg-arc-bg-2 rounded-xl p-4 mb-6 space-y-3">
-            <div className="text-xs text-text-dim uppercase tracking-wider mb-2">Make an Offer</div>
-            <input
-              type="number"
-              placeholder={`Minimum $${minBid} USDC`}
-              value={bidAmount}
-              onChange={e => setBidAmount(e.target.value)}
-              min={minBid}
-              step="1"
-              className="w-full text-sm px-3 py-2.5 rounded-lg border border-border bg-arc-bg-0 text-text-primary placeholder:text-text-dim focus:outline-none focus:ring-1 focus:ring-arc-gold"
-            />
-            <textarea
-              placeholder="Why do you want their attention? (min 10 characters)"
-              value={bidMessage}
-              onChange={e => setBidMessage(e.target.value)}
-              rows={3}
-              className="w-full text-sm px-3 py-2.5 rounded-lg border border-border bg-arc-bg-0 text-text-primary placeholder:text-text-dim focus:outline-none focus:ring-1 focus:ring-arc-gold resize-none"
-            />
-            <div className="bg-arc-bg-0 rounded-lg p-3 text-center border border-border">
-              <div className="text-xs text-text-dim">🔒 ${bidAmount || "0"} USDC → Escrow</div>
-              <div className="text-xs text-text-dim mt-0.5">No reply in 14 days → automatic refund</div>
-            </div>
-            <div className="flex gap-2">
-              <Button variant="outline" className="flex-1" onClick={() => setShowBidForm(false)}>Cancel</Button>
-              <Button
-                className="flex-1 bg-arc-gold text-arc-bg-0 hover:bg-arc-gold/90 font-bold"
-                disabled={bidLoading || !bidAmount || !bidMessage || bidMessage.length < 10}
-                onClick={handlePlaceBid}
-              >
-                {bidLoading ? "Placing..." : `Place $${bidAmount || "0"} Bid`}
-              </Button>
-            </div>
-          </div>
-        )}
-
         {/* Gated Section */}
         <div className="border border-border rounded-xl overflow-hidden">
           <div className="px-4 py-3 border-b border-border bg-arc-bg-2 flex items-center justify-between">
@@ -186,8 +97,13 @@ export function PublicProfileClient({
             {!accessGranted && <Lock className="w-3.5 h-3.5 text-text-dim" />}
           </div>
 
-          {accessGranted ? (
+          {!isActive ? (
+            <div className="p-8 text-center text-text-secondary text-sm">
+              This creator is currently inactive.
+            </div>
+          ) : accessGranted ? (
             <div className="p-4 space-y-4">
+
               {/* Availability Status */}
               <div className="flex items-center gap-2 text-sm">
                 <span>{avail.emoji}</span>
@@ -229,10 +145,57 @@ export function PublicProfileClient({
                 <div className="text-xs text-text-secondary">✓ x402 enabled · Any AI agent can bid</div>
                 <div className="text-xs text-text-dim mt-1 font-mono">attnn.xyz/api/c/{handle}</div>
               </div>
+
+              {/* Bid Form */}
+              <div className="border-t border-border pt-4">
+                <div className="text-xs text-text-dim uppercase tracking-wider mb-3">Make an Offer</div>
+                {!showBidForm ? (
+                  <Button
+                    className="w-full bg-arc-gold text-arc-bg-0 hover:bg-arc-gold/90 font-bold"
+                    onClick={() => setShowBidForm(true)}
+                  >
+                    <Coins className="w-4 h-4 mr-2" />
+                    Make a Bid — from ${minBid}
+                  </Button>
+                ) : (
+                  <div className="space-y-3">
+                    <input
+                      type="number"
+                      placeholder={`Minimum $${minBid} USDC`}
+                      value={bidAmount}
+                      onChange={e => setBidAmount(e.target.value)}
+                      min={minBid}
+                      step="1"
+                      className="w-full text-sm px-3 py-2.5 rounded-lg border border-border bg-arc-bg-0 text-text-primary placeholder:text-text-dim focus:outline-none focus:ring-1 focus:ring-arc-gold"
+                    />
+                    <textarea
+                      placeholder="Why do you want their attention? (min 10 characters)"
+                      value={bidMessage}
+                      onChange={e => setBidMessage(e.target.value)}
+                      rows={3}
+                      className="w-full text-sm px-3 py-2.5 rounded-lg border border-border bg-arc-bg-0 text-text-primary placeholder:text-text-dim focus:outline-none focus:ring-1 focus:ring-arc-gold resize-none"
+                    />
+                    <div className="bg-arc-bg-0 rounded-lg p-3 text-center border border-border">
+                      <div className="text-xs text-text-dim">🔒 ${bidAmount || "0"} USDC → Escrow</div>
+                      <div className="text-xs text-text-dim mt-0.5">No reply in 14 days → automatic refund</div>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button variant="outline" className="flex-1" onClick={() => setShowBidForm(false)}>Cancel</Button>
+                      <Button
+                        className="flex-1 bg-arc-gold text-arc-bg-0 hover:bg-arc-gold/90 font-bold"
+                        disabled={bidLoading || !bidAmount || !bidMessage || bidMessage.length < 10}
+                        onClick={handlePlaceBid}
+                      >
+                        {bidLoading ? "Placing..." : `Place $${bidAmount || "0"} Bid`}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
             </div>
           ) : (
             <div className="p-6 text-center">
-              {/* Blurred preview */}
               <div className="blur-sm select-none pointer-events-none mb-4 space-y-2">
                 <div className="text-sm text-text-secondary">🟢 Available for new opportunities</div>
                 <div className="flex flex-wrap gap-1.5 justify-center">

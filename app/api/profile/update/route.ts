@@ -20,6 +20,8 @@ export async function POST(req: NextRequest) {
     if (updates.profileURI !== undefined) profileUpdates.profileURI = updates.profileURI;
     if (updates.autoAcceptThreshold !== undefined) profileUpdates.autoAcceptThreshold = updates.autoAcceptThreshold;
     if (updates.autoReplyTemplate !== undefined) profileUpdates.autoReplyTemplate = updates.autoReplyTemplate;
+    if (updates.availabilityStatus !== undefined) profileUpdates.availabilityStatus = updates.availabilityStatus;
+    if (updates.openTo !== undefined) profileUpdates.openTo = updates.openTo;
 
     if (Object.keys(profileUpdates).length > 0) {
       // Check handle uniqueness if changing handle

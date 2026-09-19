@@ -10,7 +10,7 @@ export async function POST(req: NextRequest) {
     if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const body = await req.json();
-    const { handle, minBid, tags, bio, profileURI } = body;
+    const { handle, minBid, tags, bio, profileURI, availabilityStatus, openTo } = body;
 
     if (!handle || !minBid) {
       return NextResponse.json({ error: "Handle and minBid are required" }, { status: 400 });
@@ -39,6 +39,8 @@ export async function POST(req: NextRequest) {
           tags: tags ?? [],
           bio: bio ?? null,
           profileURI: profileURI ?? null,
+          availabilityStatus: availabilityStatus ?? "available",
+          openTo: openTo ?? [],
         })
         .where(eq(profiles.userId, session.user.id))
         .returning();
@@ -54,6 +56,8 @@ export async function POST(req: NextRequest) {
       tags: tags ?? [],
       bio: bio ?? null,
       profileURI: profileURI ?? null,
+      availabilityStatus: availabilityStatus ?? "available",
+      openTo: openTo ?? [],
       isActive: false,
     }).returning();
 

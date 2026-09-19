@@ -13,7 +13,7 @@ import { toast } from "@/hooks/use-toast";
 import { LogOut, Wallet, Play, Square, MessageCircle, Check, X, Activity, Zap, Bot, Users, Coins } from "lucide-react";
 
 interface WalletData { id: string; address: string; circleWalletId: string; blockchain: string; state: string; }
-interface ProfileData { id: string; handle: string; minBid: string; tags: string[]; bio: string | null; autoAcceptThreshold: number | null; autoReplyTemplate: string | null; isActive: boolean; }
+interface ProfileData { id: string; handle: string; minBid: string; tags: string[]; bio: string | null; autoAcceptThreshold: number | null; autoReplyTemplate: string | null; isActive: boolean; availabilityStatus: string; openTo: string[]; }
 interface BidderConfigData { id: string; goal: string | null; dailyBudget: string; maxBidPerCreator: string; minFitScore: number; searchTags: string[]; defaultMessage: string | null; isActive: boolean; agentName: string | null; }
 interface BidData { id: string; onChainBidId: string | null; bidderUserId: string; creatorUserId: string; bidderAddress: string; creatorAddress: string; amountUsdc: string; message: string | null; status: string; score: number | null; reply: string | null; bidTxHash: string | null; settlementTxHash: string | null; createdAt: string; settledAt: string | null; counterOfferAmount: string | null; onChainTxHash: string | null; settlementOnChainTxHash: string | null; agentName: string | null; }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- agent_logs.data is untyped jsonb whose shape varies by action
@@ -857,6 +857,8 @@ function CreatorSetupForm({
   const [tags, setTags] = useState(existingProfile?.tags?.join(", ") ?? "");
   const [bio, setBio] = useState(existingProfile?.bio ?? "");
   const [autoReplyTemplate, setAutoReplyTemplate] = useState(existingProfile?.autoReplyTemplate ?? "Thanks for reaching out! I've reviewed your bid and I'm happy to connect. Looking forward to hearing more — reach out on WhatsApp: +2319023XXXXXXX");
+  const [availabilityStatus, setAvailabilityStatus] = useState(existingProfile?.availabilityStatus ?? "available");
+  const [openTo, setOpenTo] = useState(existingProfile?.openTo?.join(", ") ?? "");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -873,7 +875,7 @@ function CreatorSetupForm({
         const res = await fetch("/api/profile/update", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ handle, minBid: minBidRaw, tags: tagsArr, bio: bio || null, autoReplyTemplate: autoReplyTemplate || null }),
+          body: JSON.stringify({ handle, minBid: minBidRaw, tags: tagsArr, bio: bio || null, autoReplyTemplate: autoReplyTemplate || null, availabilityStatus, openTo: openTo.split(",").map((t: string) => t.trim()).filter(Boolean) }),
         });
         const data = await res.json();
         if (data.success) {
@@ -887,7 +889,7 @@ function CreatorSetupForm({
         const res = await fetch("/api/profile/create", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ handle, minBid: minBidRaw, tags: tagsArr, bio: bio || null, autoReplyTemplate: autoReplyTemplate || null }),
+          body: JSON.stringify({ handle, minBid: minBidRaw, tags: tagsArr, bio: bio || null, autoReplyTemplate: autoReplyTemplate || null, availabilityStatus, openTo: openTo.split(",").map((t: string) => t.trim()).filter(Boolean) }),
         });
         const data = await res.json();
         if (data.success) {
@@ -956,6 +958,26 @@ function CreatorSetupForm({
             placeholder="Tell the world what you do"
             value={bio}
             onChange={e => setBio(e.target.value)}
+          />
+        </div>
+        <div>
+          <label className="text-sm text-text-secondary mb-1 block">Availability Status</label>
+          <select
+            value={availabilityStatus}
+            onChange={e => setAvailabilityStatus(e.target.value)}
+            className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-arc-gold"
+          >
+            <option value="available">🟢 Available for new opportunities</option>
+            <option value="limited">🟡 Limited availability</option>
+            <option value="not_accepting">🔴 Not accepting offers</option>
+          </select>
+        </div>
+        <div>
+          <label className="text-sm text-text-secondary mb-1 block">Open To (comma-separated)</label>
+          <Input
+            placeholder="Partnerships, Developer work, Research, Speaking"
+            value={openTo}
+            onChange={e => setOpenTo(e.target.value)}
           />
         </div>
         <div>

@@ -139,13 +139,6 @@ export function PublicProfileClient({
                 </div>
               )}
 
-              {/* Agent Access */}
-              <div className="bg-arc-bg-2 rounded-lg p-3">
-                <div className="text-xs text-arc-purple mb-1">Agent Access</div>
-                <div className="text-xs text-text-secondary">✓ x402 enabled · Any AI agent can bid</div>
-                <div className="text-xs text-text-dim mt-1 font-mono">attnn.xyz/api/c/{handle}</div>
-              </div>
-
               {/* Bid Form */}
               <div className="border-t border-border pt-4">
                 <div className="text-xs text-text-dim uppercase tracking-wider mb-3">Make an Offer</div>
@@ -155,7 +148,7 @@ export function PublicProfileClient({
                     onClick={() => setShowBidForm(true)}
                   >
                     <Coins className="w-4 h-4 mr-2" />
-                    Make a Bid — from ${minBid}
+                    Place a Bid
                   </Button>
                 ) : (
                   <div className="space-y-3">

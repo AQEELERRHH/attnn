@@ -1,18 +1,23 @@
 "use client";
 
 import { useState } from "react";
-import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
 import { toast } from "@/hooks/use-toast";
-import { Lock, Unlock, Coins } from "lucide-react";
+import { Lock, Coins, MessageCircle } from "lucide-react";
+
+function availabilityLabel(status: string) {
+  if (status === "limited") return { emoji: "🟡", label: "Limited availability" };
+  if (status === "not_accepting") return { emoji: "🔴", label: "Not accepting offers" };
+  return { emoji: "🟢", label: "Available for new opportunities" };
+}
 
 export function PublicProfileClient({
-  handle, bio, tags, minBid, isActive,
+  handle, bio, tags, minBid, isActive, availabilityStatus, openTo, highestBid, pendingOfferCount,
 }: {
   handle: string; bio: string | null; tags: string[]; minBid: string;
-  isActive: boolean; profileURI: string | null;
+  isActive: boolean; profileURI: string | null; availabilityStatus: string;
+  openTo: string[]; highestBid: string | null; pendingOfferCount: number;
 }) {
   const [accessGranted, setAccessGranted] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -24,9 +29,7 @@ export function PublicProfileClient({
   async function handleAccess() {
     setLoading(true);
     try {
-      const res = await fetch(`/api/c/${handle}`, {
-        method: "GET",
-      });
+      const res = await fetch(`/api/c/${handle}`, { method: "GET" });
       const data = await res.json();
       if (res.ok && data.unlocked) {
         setAccessGranted(true);
@@ -40,141 +43,220 @@ export function PublicProfileClient({
     }
   }
 
+  async function handlePlaceBid() {
+    setBidLoading(true);
+    try {
+      const res = await fetch("/api/bid/place", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          creatorHandle: handle,
+          amountUsdc: Math.round(parseFloat(bidAmount) * 1_000_000).toString(),
+          message: bidMessage,
+          isPrivate: false,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast({ title: "Bid placed!", description: `$${bidAmount} USDC bid sent to @${handle}`, variant: "success" });
+        setShowBidForm(false);
+        setBidAmount("");
+        setBidMessage("");
+      } else {
+        toast({ title: "Failed", description: data.error ?? "Could not place bid", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Error", variant: "destructive" });
+    } finally {
+      setBidLoading(false);
+    }
+  }
+
+  const avail = availabilityLabel(availabilityStatus);
+
   return (
-    <div className="max-w-2xl mx-auto px-6 py-12">
-      <Card className="p-8">
-        {/* Always visible — handle only */}
+    <div className="min-h-screen bg-arc-bg-0">
+      <div className="max-w-lg mx-auto px-4 py-8">
+
+        {/* Profile Header — always free */}
         <div className="flex items-start justify-between mb-6">
           <div>
-            <h1 className="text-3xl font-display font-bold">@{handle}</h1>
-            <p className="text-text-secondary mt-1 text-sm">Creator on Attnn.</p>
+            <h1 className="text-2xl font-display font-bold">@{handle}</h1>
+            <p className="text-text-secondary text-sm mt-1">Creator on Attnn.</p>
           </div>
-          <div className="flex items-center gap-2 text-sm text-text-dim">
-            <Lock className="w-4 h-4" />
-            <span>Profile locked</span>
+          <div className={`flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full ${isActive ? "bg-green/10 text-green" : "bg-border text-text-dim"}`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${isActive ? "bg-green" : "bg-text-dim"}`} />
+            {isActive ? "Active" : "Inactive"}
           </div>
         </div>
 
-        <Separator className="my-6" />
+        {/* Stats — always free */}
+        <div className="grid grid-cols-4 gap-3 mb-6">
+          <div className="bg-arc-bg-2 rounded-xl p-3 text-center">
+            <div className="text-lg font-bold text-arc-gold">4.9</div>
+            <div className="text-xs text-text-dim mt-0.5">Reputation</div>
+          </div>
+          <div className="bg-arc-bg-2 rounded-xl p-3 text-center">
+            <div className="text-lg font-bold">94%</div>
+            <div className="text-xs text-text-dim mt-0.5">Response</div>
+          </div>
+          <div className="bg-arc-bg-2 rounded-xl p-3 text-center">
+            <div className="text-lg font-bold">~7h</div>
+            <div className="text-xs text-text-dim mt-0.5">Avg reply</div>
+          </div>
+          <div className="bg-arc-bg-2 rounded-xl p-3 text-center">
+            <div className="text-lg font-bold">42</div>
+            <div className="text-xs text-text-dim mt-0.5">Deals</div>
+          </div>
+        </div>
 
-        {/* Gated content */}
-        {!isActive ? (
-          <div className="text-center py-8 text-text-secondary">
-            This creator is currently inactive.
-          </div>
-        ) : accessGranted ? (
-          <div>
-            {/* Full profile revealed after payment */}
-            <div className="flex items-center gap-2 mb-4">
-              <Unlock className="w-4 h-4 text-arc-gold" />
-              <span className="text-xs text-arc-gold uppercase tracking-wider">Profile Unlocked</span>
+        {/* Attention Market — always free */}
+        <div className="bg-arc-bg-2 rounded-xl p-4 mb-6">
+          <div className="text-xs text-text-dim uppercase tracking-wider mb-3">Attention Market</div>
+          <div className="grid grid-cols-2 gap-4 mb-3">
+            <div>
+              <div className="text-xs text-text-dim mb-1">Minimum bid</div>
+              <div className="text-xl font-bold">${minBid} <span className="text-sm text-text-secondary font-normal">USDC</span></div>
             </div>
-            {bio && (
-              <p className="text-text-secondary mb-4">{bio}</p>
-            )}
-            {tags.length > 0 && (
-              <div className="flex flex-wrap gap-2 mb-6">
-                {tags.map((tag) => (
-                  <Badge key={tag} variant="secondary">{tag}</Badge>
-                ))}
+            <div>
+              <div className="text-xs text-text-dim mb-1">Current top offer</div>
+              <div className="text-xl font-bold text-arc-gold">
+                {highestBid ? `$${highestBid}` : "—"} <span className="text-sm font-normal">USDC</span>
               </div>
-            )}
-            <div className="flex items-center gap-2 mb-6 text-sm">
-              <Coins className="w-4 h-4 text-arc-gold" />
-              <span className="font-mono text-arc-gold">{minBid} USDC minimum bid</span>
             </div>
-            {!showBidForm ? (
-              <Button className="w-full" onClick={() => setShowBidForm(true)}>
-                Place a Bid on @{handle}
-              </Button>
-            ) : (
-              <div className="space-y-3 mt-2">
-                <p className="text-sm font-medium">Place a bid on @{handle}</p>
-                <input
-                  type="number"
-                  placeholder={`Minimum ${minBid} USDC`}
-                  value={bidAmount}
-                  onChange={e => setBidAmount(e.target.value)}
-                  min={minBid}
-                  step="0.01"
-                  className="w-full text-sm px-3 py-2 rounded border border-border bg-arc-bg-2 text-text-primary placeholder:text-text-dim focus:outline-none focus:ring-1 focus:ring-arc-gold"
-                />
-                <textarea
-                  placeholder="Write your message (min 10 characters)..."
-                  value={bidMessage}
-                  onChange={e => setBidMessage(e.target.value)}
-                  rows={3}
-                  className="w-full text-sm px-3 py-2 rounded border border-border bg-arc-bg-2 text-text-primary placeholder:text-text-dim focus:outline-none focus:ring-1 focus:ring-arc-gold resize-none"
-                />
-                <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    className="flex-1"
-                    onClick={() => setShowBidForm(false)}
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    className="flex-1"
-                    disabled={bidLoading || !bidAmount || !bidMessage || bidMessage.length < 10}
-                    onClick={async () => {
-                      setBidLoading(true);
-                      try {
-                        const res = await fetch("/api/bid/place", {
-                          method: "POST",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({
-                            creatorHandle: handle,
-                            amountUsdc: Math.round(parseFloat(bidAmount) * 1_000_000).toString(),
-                            message: bidMessage,
-                            isPrivate: false,
-                          }),
-                        });
-                        const data = await res.json();
-                        if (data.success) {
-                          toast({ title: "Bid placed!", description: `$${bidAmount} USDC bid sent to @${handle}`, variant: "success" });
-                          setShowBidForm(false);
-                          setBidAmount("");
-                          setBidMessage("");
-                        } else {
-                          toast({ title: "Failed", description: data.error ?? "Could not place bid", variant: "destructive" });
-                        }
-                      } catch {
-                        toast({ title: "Error", variant: "destructive" });
-                      } finally {
-                        setBidLoading(false);
-                      }
-                    }}
-                  >
-                    {bidLoading ? "Placing..." : "Confirm Bid"}
-                  </Button>
-                </div>
-              </div>
-            )}
           </div>
+          {pendingOfferCount > 0 && (
+            <div className="flex items-center gap-1.5 text-xs text-text-secondary">
+              <MessageCircle className="w-3.5 h-3.5" />
+              {pendingOfferCount} offer{pendingOfferCount > 1 ? "s" : ""} in queue
+            </div>
+          )}
+        </div>
+
+        {/* Bid Button — always visible */}
+        {!showBidForm ? (
+          <Button
+            className="w-full mb-6 bg-arc-gold text-arc-bg-0 hover:bg-arc-gold/90 font-bold text-base py-5"
+            onClick={() => setShowBidForm(true)}
+            disabled={!isActive}
+          >
+            <Coins className="w-4 h-4 mr-2" />
+            Make a Bid — from ${minBid}
+          </Button>
         ) : (
-          <div className="text-center py-8">
-            {/* Blurred teaser */}
-            <div className="mb-6 blur-sm select-none pointer-events-none">
-              <p className="text-text-secondary mb-3">Bio and contact details hidden</p>
-              <div className="flex flex-wrap gap-2 justify-center mb-3">
-                <Badge variant="secondary">••••••</Badge>
-                <Badge variant="secondary">••••</Badge>
-                <Badge variant="secondary">•••••••</Badge>
-              </div>
-              <p className="text-arc-gold font-mono text-sm">$•.•• USDC minimum</p>
+          <div className="bg-arc-bg-2 rounded-xl p-4 mb-6 space-y-3">
+            <div className="text-xs text-text-dim uppercase tracking-wider mb-2">Make an Offer</div>
+            <input
+              type="number"
+              placeholder={`Minimum $${minBid} USDC`}
+              value={bidAmount}
+              onChange={e => setBidAmount(e.target.value)}
+              min={minBid}
+              step="1"
+              className="w-full text-sm px-3 py-2.5 rounded-lg border border-border bg-arc-bg-0 text-text-primary placeholder:text-text-dim focus:outline-none focus:ring-1 focus:ring-arc-gold"
+            />
+            <textarea
+              placeholder="Why do you want their attention? (min 10 characters)"
+              value={bidMessage}
+              onChange={e => setBidMessage(e.target.value)}
+              rows={3}
+              className="w-full text-sm px-3 py-2.5 rounded-lg border border-border bg-arc-bg-0 text-text-primary placeholder:text-text-dim focus:outline-none focus:ring-1 focus:ring-arc-gold resize-none"
+            />
+            <div className="bg-arc-bg-0 rounded-lg p-3 text-center border border-border">
+              <div className="text-xs text-text-dim">🔒 ${bidAmount || "0"} USDC → Escrow</div>
+              <div className="text-xs text-text-dim mt-0.5">No reply in 14 days → automatic refund</div>
             </div>
-            <Lock className="w-10 h-10 mx-auto mb-4 text-text-secondary" />
-            <h2 className="text-lg font-display font-semibold mb-2">Profile Locked</h2>
-            <p className="text-text-secondary text-sm mb-6">
-              Pay $0.001 USDC to unlock this creator&apos;s full profile: bio, tags, and contact details.
-            </p>
-            <Button onClick={handleAccess} disabled={loading} className="w-full">
-              {loading ? "Processing..." : "Unlock for $0.001 USDC"}
-            </Button>
+            <div className="flex gap-2">
+              <Button variant="outline" className="flex-1" onClick={() => setShowBidForm(false)}>Cancel</Button>
+              <Button
+                className="flex-1 bg-arc-gold text-arc-bg-0 hover:bg-arc-gold/90 font-bold"
+                disabled={bidLoading || !bidAmount || !bidMessage || bidMessage.length < 10}
+                onClick={handlePlaceBid}
+              >
+                {bidLoading ? "Placing..." : `Place $${bidAmount || "0"} Bid`}
+              </Button>
+            </div>
           </div>
         )}
-      </Card>
+
+        {/* Gated Section */}
+        <div className="border border-border rounded-xl overflow-hidden">
+          <div className="px-4 py-3 border-b border-border bg-arc-bg-2 flex items-center justify-between">
+            <div className="text-xs text-text-dim uppercase tracking-wider">Full Profile</div>
+            {!accessGranted && <Lock className="w-3.5 h-3.5 text-text-dim" />}
+          </div>
+
+          {accessGranted ? (
+            <div className="p-4 space-y-4">
+              {/* Availability Status */}
+              <div className="flex items-center gap-2 text-sm">
+                <span>{avail.emoji}</span>
+                <span className="text-text-primary">{avail.label}</span>
+              </div>
+
+              {/* Tags */}
+              {tags.length > 0 && (
+                <div>
+                  <div className="text-xs text-text-dim mb-2">Interests</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {tags.map(tag => (
+                      <Badge key={tag} variant="secondary">{tag}</Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Bio */}
+              {bio && (
+                <div>
+                  <div className="text-xs text-text-dim mb-2">About</div>
+                  <p className="text-sm text-text-secondary leading-relaxed">{bio}</p>
+                </div>
+              )}
+
+              {/* Open To */}
+              {openTo.length > 0 && (
+                <div>
+                  <div className="text-xs text-text-dim mb-2">Open to</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {openTo.map(item => (
+                      <Badge key={item} variant="outline" className="text-arc-purple border-arc-purple">{item}</Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Agent Access */}
+              <div className="bg-arc-bg-2 rounded-lg p-3">
+                <div className="text-xs text-arc-purple mb-1">Agent Access</div>
+                <div className="text-xs text-text-secondary">✓ x402 enabled · Any AI agent can bid</div>
+                <div className="text-xs text-text-dim mt-1 font-mono">attnn.xyz/api/c/{handle}</div>
+              </div>
+            </div>
+          ) : (
+            <div className="p-6 text-center">
+              {/* Blurred preview */}
+              <div className="blur-sm select-none pointer-events-none mb-4 space-y-2">
+                <div className="text-sm text-text-secondary">🟢 Available for new opportunities</div>
+                <div className="flex flex-wrap gap-1.5 justify-center">
+                  <Badge variant="secondary">••••••</Badge>
+                  <Badge variant="secondary">••••</Badge>
+                  <Badge variant="secondary">•••••••</Badge>
+                </div>
+                <div className="text-sm text-text-secondary">Open to: Partnerships · Dev work · Research</div>
+              </div>
+              <p className="text-sm text-text-secondary mb-4">
+                Pay $0.001 USDC to unlock availability status, interests, bio, and contact details.
+              </p>
+              <Button onClick={handleAccess} disabled={loading} variant="outline" className="w-full">
+                {loading ? "Processing..." : "Unlock for $0.001 USDC"}
+              </Button>
+              <div className="text-xs text-text-dim mt-2">x402 · Circle Gateway · Instant access</div>
+            </div>
+          )}
+        </div>
+
+      </div>
     </div>
   );
 }

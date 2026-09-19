@@ -105,6 +105,8 @@ export const profiles = pgTable("profiles", {
   autoAcceptThreshold: integer("auto_accept_threshold").default(0),
   autoReplyTemplate: text("auto_reply_template").default("Thanks for reaching out! I've reviewed your bid and I'm happy to connect. Looking forward to hearing more — reach out on WhatsApp: +2319023XXXXXXX"),
   onChainTx: text("on_chain_tx"),
+  availabilityStatus: text("availability_status").default("available").notNull(),
+  openTo: text("open_to").array().default([]).notNull(),
   isActive: boolean("is_active").default(false).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()

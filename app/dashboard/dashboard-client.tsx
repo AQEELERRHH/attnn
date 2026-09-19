@@ -519,7 +519,7 @@ export function DashboardClient({
               <h2 className="text-xl font-display font-bold mb-1">Offers</h2>
               <p className="text-xs text-text-secondary mb-6">Bids waiting for your response. Accept, reject or counter.</p>
               <div className="space-y-3">
-                {localBids.filter(b => b.creatorUserId === userId && (b.status === "pending" || b.status === "counter_offered")).map((bid) => (
+                {localBids.filter(b => b.creatorUserId === userId && (b.status === "pending" || b.status === "counter_offered")).sort((a, b) => Number(BigInt(b.amountUsdc) - BigInt(a.amountUsdc))).map((bid) => (
                   <Card key={bid.id} className="p-4 flex items-start justify-between">
                     <div className="flex-1">
                       <div className="flex items-center gap-3 mb-1">
@@ -756,8 +756,8 @@ export function DashboardClient({
               ))}
             </div>
 
-            {/* Activity Feed */}
-            <div className="space-y-2">
+            {/* Activity Feed — Conversational */}
+            <div className="space-y-0 divide-y divide-border">
               {(activityFilter === "accepted"
                 ? localBids.filter(b => (b.bidderUserId === userId || b.creatorUserId === userId) && b.status === "accepted").map(b => ({
                     id: b.id,
@@ -771,26 +771,58 @@ export function DashboardClient({
                     return true;
                   })
               ).map((log) => {
-                const isBid = log.action === "bid_placed";
-                const isAccepted = log.action === "bid_accepted";
-                const isRejected = log.action === "bid_rejected";
-                const iconColor = isBid ? "text-arc-gold" : isAccepted ? "text-green" : isRejected ? "text-arc-coral" : "text-arc-purple";
-                const borderColor = isBid ? "border-l-arc-gold" : isAccepted ? "border-l-green" : isRejected ? "border-l-arc-coral" : "border-l-arc-purple";
+                const iconMap: Record<string, string> = {
+                  creator_discovered: "🔎",
+                  creator_scored: "🧠",
+                  bid_placed: "💰",
+                  bid_accepted: "✅",
+                  bid_rejected: "❌",
+                  auto_accept: "✅",
+                  counter_received: "↩️",
+                  webhook_received: "📡",
+                  agent_started: "▶️",
+                  agent_stopped: "⏸️",
+                  refund_claimed: "💸",
+                  error: "⚠️",
+                };
+                const icon = iconMap[log.action] ?? "📋";
+
+                const buildMessage = (action: string, data: any): string => {
+                  const agentName = data?.agentName ?? "Your agent";
+                  switch (action) {
+                    case "creator_discovered":
+                      return `${agentName} discovered ${data?.count ?? 0} creator${data?.count !== 1 ? "s" : ""}${data?.scored ? `, scored ${data.scored}` : ""}${data?.bidsPlaced ? `, placed ${data.bidsPlaced} bid${data.bidsPlaced !== 1 ? "s" : ""}` : ""}.`;
+                    case "bid_placed":
+                      return `${agentName} placed ${data?.amount ? formatAmount(data.amount) : ""} bid${data?.creator ? ` on @${data.creator}` : ""}${data?.score !== undefined ? ` · fit score ${data.score}/10` : ""}.`;
+                    case "bid_accepted":
+                      return `Bid accepted${data?.creator ? ` by @${data.creator}` : ""}${data?.amount ? ` · ${formatAmount(data.amount)}` : ""}.`;
+                    case "bid_rejected":
+                      return `Bid rejected${data?.creator ? ` by @${data.creator}` : ""}.`;
+                    case "auto_accept":
+                      return `Auto-accepted bid${data?.amount ? ` of ${formatAmount(data.amount)}` : ""}${data?.bidder ? ` from ${data.bidder}` : ""}.`;
+                    case "agent_stopped":
+                      return `${agentName} stopped · ${data?.reason ?? "unknown reason"}`;
+                    case "agent_started":
+                      return `${agentName} started.`;
+                    case "refund_claimed":
+                      return `Refund processed for bid ${data?.bidId ? data.bidId.slice(0,8) + "..." : ""}.`;
+                    case "webhook_received":
+                      return `On-chain event received · bid ID ${data?.bidId ?? "unknown"}.`;
+                    case "error":
+                      return `Error: ${data?.error ?? "unknown"}`;
+                    default:
+                      return formatLogData(action, data);
+                  }
+                };
+
                 return (
-                  <Card key={log.id} className={`p-3 border-l-2 ${borderColor}`}>
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex items-start gap-3 flex-1">
-                        <Activity className={`w-4 h-4 mt-0.5 shrink-0 ${iconColor}`} />
-                        <div className="flex-1 min-w-0">
-                          <span className="font-medium text-sm capitalize">{log.action.replace(/_/g, " ")}</span>
-                          {log.data && Object.keys(log.data).length > 0 && (
-                            <p className="text-xs text-text-secondary mt-0.5">{formatLogData(log.action, log.data)}</p>
-                          )}
-                        </div>
-                      </div>
-                      <span className="text-xs text-text-dim shrink-0">{new Date(log.createdAt).toLocaleString()}</span>
+                  <div key={log.id} className="flex gap-3 py-3 px-1">
+                    <div className="text-base shrink-0 mt-0.5">{icon}</div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-text-primary leading-relaxed">{buildMessage(log.action, log.data)}</p>
                     </div>
-                  </Card>
+                    <span className="text-xs text-text-dim shrink-0 mt-0.5">{new Date(log.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+                  </div>
                 );
               })}
               {logs.length === 0 && <p className="text-text-dim text-center py-8">No activity yet. Run your agent to get started.</p>}

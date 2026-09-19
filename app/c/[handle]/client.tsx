@@ -13,11 +13,12 @@ function availabilityLabel(status: string) {
 }
 
 export function PublicProfileClient({
-  handle, bio, tags, minBid, isActive, availabilityStatus, openTo,
+  handle, bio, tags, minBid, isActive, availabilityStatus, openTo, bidderAgentName, bidderHandle,
 }: {
   handle: string; bio: string | null; tags: string[]; minBid: string;
   isActive: boolean; profileURI: string | null; availabilityStatus: string;
   openTo: string[]; highestBid: string | null; pendingOfferCount: number;
+  bidderAgentName: string | null; bidderHandle: string | null;
 }) {
   const [accessGranted, setAccessGranted] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -142,6 +143,16 @@ export function PublicProfileClient({
               {/* Bid Form */}
               <div className="border-t border-border pt-4">
                 <div className="text-xs text-text-dim uppercase tracking-wider mb-3">Make an Offer</div>
+                {bidderAgentName && (
+                  <div className="bg-arc-bg-2 rounded-lg p-3 mb-3 flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-arc-purple to-arc-gold flex items-center justify-center text-sm flex-shrink-0">🤖</div>
+                    <div>
+                      <div className="text-xs text-text-dim">Bidding as</div>
+                      <div className="text-sm font-semibold">{bidderAgentName}</div>
+                      {bidderHandle && <div className="text-xs text-text-dim">Operated by @{bidderHandle}</div>}
+                    </div>
+                  </div>
+                )}
                 {!showBidForm ? (
                   <Button
                     className="w-full bg-arc-gold text-arc-bg-0 hover:bg-arc-gold/90 font-bold"

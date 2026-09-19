@@ -1,9 +1,10 @@
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db/client";
-import { profiles, bids } from "@/lib/db/schema";
+import { profiles, bids, bidderConfigs } from "@/lib/db/schema";
 import { eq, and, count, max } from "drizzle-orm";
 import { PublicProfileClient } from "./client";
 import { formatUsdc } from "@/lib/arc";
+import { auth } from "@/lib/auth";
 
 export default async function PublicProfilePage({ params }: { params: Promise<{ handle: string }> }) {
   const { handle } = await params;
@@ -28,6 +29,19 @@ export default async function PublicProfilePage({ params }: { params: Promise<{ 
   const pendingOfferCount = Number(pendingCountResult[0]?.count ?? 0);
   const minBidAmount = BigInt(profile.minBid);
 
+  // Get logged-in user's agent name if available
+  const session = await auth();
+  let bidderAgentName: string | null = null;
+  let bidderHandle: string | null = null;
+  if (session?.user?.id) {
+    const [bidderConfig, bidderProfile] = await Promise.all([
+      db.query.bidderConfigs.findFirst({ where: eq(bidderConfigs.userId, session.user.id) }),
+      db.query.profiles.findFirst({ where: eq(profiles.userId, session.user.id) }),
+    ]);
+    bidderAgentName = bidderConfig?.agentName ?? null;
+    bidderHandle = bidderProfile?.handle ?? null;
+  }
+
   return (
     <PublicProfileClient
       handle={profile.handle}
@@ -40,6 +54,8 @@ export default async function PublicProfilePage({ params }: { params: Promise<{ 
       openTo={profile.openTo}
       highestBid={highestBid ? formatUsdc(BigInt(highestBid)) : null}
       pendingOfferCount={pendingOfferCount}
+      bidderAgentName={bidderAgentName}
+      bidderHandle={bidderHandle}
     />
   );
 }

@@ -17,18 +17,22 @@ export default async function CreatorsPage() {
   // Fetch highest bid and pending count for each creator
   const creatorStats = await Promise.all(
     activeCreators.map(async (creator) => {
-      const [highestBidResult, pendingCountResult] = await Promise.all([
+      const [highestBidResult, pendingCountResult, dealCountResult] = await Promise.all([
         db.select({ max: max(bids.amountUsdc) })
           .from(bids)
           .where(and(eq(bids.creatorUserId, creator.userId), eq(bids.status, "pending"))),
         db.select({ count: count() })
           .from(bids)
           .where(and(eq(bids.creatorUserId, creator.userId), eq(bids.status, "pending"))),
+        db.select({ count: count() })
+          .from(bids)
+          .where(and(eq(bids.creatorUserId, creator.userId), eq(bids.status, "accepted"))),
       ]);
       return {
         id: creator.id,
         highestBid: highestBidResult[0]?.max ?? null,
         pendingCount: Number(pendingCountResult[0]?.count ?? 0),
+        dealCount: Number(dealCountResult[0]?.count ?? 0),
       };
     })
   );
@@ -84,6 +88,7 @@ export default async function CreatorsPage() {
               const stats = statsMap[creator.id];
               const highestBid = stats?.highestBid ? formatUsdc(BigInt(stats.highestBid)) : null;
               const pendingCount = stats?.pendingCount ?? 0;
+              const dealCount = stats?.dealCount ?? 0;
 
               return (
                 <div key={creator.id} className="bg-arc-bg-1 border border-border rounded-xl p-5 hover:border-arc-gold/40 transition-colors flex flex-col gap-4">
@@ -115,7 +120,7 @@ export default async function CreatorsPage() {
                       <div className="text-xs text-text-dim">Avg</div>
                     </div>
                     <div className="text-center">
-                      <div className="text-sm font-bold">42</div>
+                      <div className="text-sm font-bold">{dealCount}</div>
                       <div className="text-xs text-text-dim">Deals</div>
                     </div>
                   </div>

@@ -787,6 +787,7 @@ export function DashboardClient({
                 };
                 const icon = iconMap[log.action] ?? "📋";
 
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any -- agent log data shape varies by action
                 const buildMessage = (action: string, data: any): string => {
                   const agentName = data?.agentName ?? "Your agent";
                   switch (action) {

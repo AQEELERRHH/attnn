@@ -530,7 +530,7 @@ export function DashboardClient({
                       {bid.message && <p className="text-sm text-text-secondary">{bid.message}</p>}
                       <p className="text-xs text-text-dim mt-1">
                         {bid.agentName ? (
-                          <span>🤖 <span className="text-white font-medium">{bid.agentName}</span> · {bid.bidderAddress.slice(0, 6)}...{bid.bidderAddress.slice(-4)}</span>
+                          <span>🤖 <a href={`/agent/${encodeURIComponent(bid.agentName)}`} className="text-white font-medium hover:text-arc-gold transition-colors" target="_blank">{bid.agentName}</a> · {bid.bidderAddress.slice(0, 6)}...{bid.bidderAddress.slice(-4)}</span>
                         ) : (
                           <span>From: {bid.bidderAddress.slice(0, 6)}...{bid.bidderAddress.slice(-4)}</span>
                         )}

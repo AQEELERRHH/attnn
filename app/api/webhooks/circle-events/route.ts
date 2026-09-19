@@ -101,6 +101,21 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    if (decoded.eventName === "BidRefunded") {
+      const onChainBidId = decoded.args.bidId?.toString();
+      if (!onChainBidId) return NextResponse.json({ ok: true });
+      const matchingBid = await db.query.bids.findFirst({
+        where: (b, { eq }) => eq(b.onChainBidId, onChainBidId),
+      });
+      if (matchingBid) {
+        await db.update(bids).set({
+          settlementOnChainTxHash: txHash,
+          status: "refunded",
+        }).where(eq(bids.id, matchingBid.id));
+        console.log("Bid refunded:", matchingBid.id, txHash);
+      }
+    }
+
     if (decoded.eventName === "BidRejected") {
       const onChainBidId = decoded.args.bidId?.toString();
       if (!onChainBidId) return NextResponse.json({ ok: true });

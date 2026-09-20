@@ -1,75 +1,194 @@
 import { inngest } from "@/lib/inngest";
 import { db } from "@/lib/db/client";
-import { bids } from "@/lib/db/schema";
-import { eq, and, lt, gt } from "drizzle-orm";
+import { bids, wallets } from "@/lib/db/schema";
+import { eq, and, lt, gt, isNull, isNotNull } from "drizzle-orm";
+import { executeContractCall, getTransactionStatus } from "@/lib/circle";
+import { escrowAbi } from "@/lib/arc";
 
 // ─── Auto‑Refund Cron ─────────────────────────────────────────────────────────
-// Runs daily at 03:00 UTC, refunds pending bids older than 14 days
+// Runs daily at 03:00 UTC. Calls claimRefund() on-chain from the bidder's wallet for
+// pending bids past the escrow's 14-day refund window. The status flips to "refunded"
+// when the BidRefunded log arrives at /api/webhooks/circle-events, not here.
+const REFUND_PERIOD_MS = 14 * 24 * 60 * 60 * 1000;
+// The escrow stores createdAt when the bid lands on Arc, which is later than the DB row's
+// createdAt. Waiting an extra 2 hours avoids "refund period not passed" reverts.
+const REFUND_MARGIN_MS = 2 * 60 * 60 * 1000;
+// Circle transaction states that mean the claim will never land, so it can be retried.
+const FAILED_TX_STATES = new Set(["FAILED", "DENIED", "CANCELLED"]);
+
 export const autoRefund = inngest.createFunction(
   { id: "auto-refund", name: "Auto-Refund Expired Bids" },
   { cron: "0 3 * * *" },
-  async ({ step }: { step: any }) => {
-    const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+  async ({ step }) => {
+    const expiredBefore = new Date(Date.now() - REFUND_PERIOD_MS);
+    const claimableBefore = new Date(Date.now() - REFUND_PERIOD_MS - REFUND_MARGIN_MS);
 
-    // 1. Fetch pending bids older than 14 days from database
-    const expiredBids = await step.run("fetch-expired-bids", async () => {
-      const result = await db
+    // 0. Reconcile claims submitted by an earlier run. A settlementTxHash on a still-pending
+    //    bid means claimRefund was submitted but BidRefunded never arrived. If Circle says the
+    //    transaction failed, clear the hash so the claim step below retries it in this run.
+    const submittedClaims = await step.run("fetch-submitted-refund-claims", async () => {
+      return db
         .select()
         .from(bids)
         .where(
           and(
             eq(bids.status, "pending"),
-            lt(bids.createdAt, fourteenDaysAgo)
-          )
+            isNotNull(bids.onChainBidId),
+            isNotNull(bids.settlementTxHash),
+          ),
         )
-        .limit(100); // batch size
-      return result;
+        .limit(100);
     });
 
-    if (expiredBids.length === 0) {
-      return { message: "No expired bids to refund" };
-    }
+    const reconcileResults = await Promise.allSettled(
+      submittedClaims.map(async (bid) => {
+        return await step.run(`reconcile-bid-${bid.id}`, async () => {
+          const txId = bid.settlementTxHash;
+          if (!txId) return { bidId: bid.id, reset: false };
 
-    // 2. For each expired bid, call claimRefund on‑chain
-    const results = await Promise.allSettled(
-      expiredBids.map(async (bid: typeof bids.$inferSelect) => {
-        return await step.run(`refund-bid-${bid.id}`, async () => {
           try {
-            // Get escrow contract address from env
-            const escrowAddress = process.env.NEXT_PUBLIC_ESCROW_ADDRESS;
-            if (!escrowAddress) {
-              throw new Error("ESCROW_ADDRESS not configured");
+            const status = await getTransactionStatus(txId);
+            if (!FAILED_TX_STATES.has(status.state)) {
+              // Still in flight or already confirmed — leave it for the webhook.
+              return { bidId: bid.id, reset: false, state: status.state };
             }
 
-            // Call claimRefund on the escrow contract
-            // This would be done via a Circle Developer Controlled Wallet transaction
-            // For simplicity, we assume the refund is triggered via a web3 provider
-            // In production, use `executeContractCall` from lib/circle.ts
-            console.log(`Refunding bid ${bid.id} (${bid.amountUsdc} USDC)`);
-
-            // Update database status to "refunded"
             await db
               .update(bids)
-              .set({ status: "refunded" })
+              .set({ settlementTxHash: null })
               .where(eq(bids.id, bid.id));
 
-            return { bidId: bid.id, success: true };
+            const reason = [status.errorReason, status.errorDetails].filter(Boolean).join(" — ");
+            console.warn(
+              `Auto-refund: claim ${txId} for bid ${bid.id} ended in ${status.state}${reason ? `: ${reason}` : ""}; cleared settlementTxHash for retry`,
+            );
+            return { bidId: bid.id, reset: true, state: status.state, reason: reason || null };
           } catch (err) {
-            console.error(`Failed to refund bid ${bid.id}:`, err);
-            const error = err as Error;
-            return { bidId: bid.id, success: false, error: error.message };
+            const message = err instanceof Error ? err.message : String(err);
+            console.error(`Auto-refund: could not reconcile claim ${txId} for bid ${bid.id}: ${message}`);
+            return { bidId: bid.id, reset: false, error: message };
           }
         });
-      })
+      }),
+    );
+
+    const resetCount = reconcileResults.filter(
+      (r) => r.status === "fulfilled" && r.value.reset,
+    ).length;
+
+    // 1. Bids that can actually be claimed on-chain: synced to a bid id, no settlement
+    //    transaction submitted yet, and past the refund window plus the safety margin.
+    const refundableBids = await step.run("fetch-refundable-bids", async () => {
+      return db
+        .select()
+        .from(bids)
+        .where(
+          and(
+            eq(bids.status, "pending"),
+            isNotNull(bids.onChainBidId),
+            isNull(bids.settlementTxHash),
+            lt(bids.createdAt, claimableBefore),
+          ),
+        )
+        .limit(100); // batch size
+    });
+
+    // 2. Expired bids that never got an on-chain bid id. claimRefund() needs that id, so
+    //    these cannot be refunded automatically — report them for manual follow-up.
+    const unsyncedBids = await step.run("report-unsynced-expired-bids", async () => {
+      const rows = await db
+        .select()
+        .from(bids)
+        .where(
+          and(
+            eq(bids.status, "pending"),
+            isNull(bids.onChainBidId),
+            lt(bids.createdAt, expiredBefore),
+          ),
+        )
+        .limit(100);
+
+      for (const bid of rows) {
+        console.warn(
+          `Auto-refund: bid ${bid.id} (${bid.amountUsdc} USDC) is past the refund window but has no onChainBidId; skipping chain call, left pending`,
+        );
+      }
+      // bid_status has no "failed"/"expired" member, so the status is left as "pending".
+      return rows.map((bid) => ({ bidId: bid.id, amountUsdc: bid.amountUsdc }));
+    });
+
+    if (refundableBids.length === 0) {
+      return { message: "No refundable bids", resetCount, unsyncedCount: unsyncedBids.length, unsynced: unsyncedBids };
+    }
+
+    const escrowAddress = process.env.ATTN_ESCROW_CONTRACT;
+    if (!escrowAddress) {
+      console.error("Auto-refund: ATTN_ESCROW_CONTRACT is not configured, no refunds claimed");
+      return {
+        message: "ATTN_ESCROW_CONTRACT not configured",
+        refundableCount: refundableBids.length,
+        resetCount,
+        unsyncedCount: unsyncedBids.length,
+      };
+    }
+
+    // 3. Claim each refund from the bidder's own wallet — the escrow requires
+    //    msg.sender == bid.bidder.
+    const results = await Promise.allSettled(
+      refundableBids.map(async (bid) => {
+        return await step.run(`refund-bid-${bid.id}`, async () => {
+          try {
+            const onChainBidId = bid.onChainBidId;
+            if (!onChainBidId) {
+              return { bidId: bid.id, success: false, error: "Missing onChainBidId" };
+            }
+
+            const wallet = await db.query.wallets.findFirst({
+              where: and(eq(wallets.userId, bid.bidderUserId), eq(wallets.state, "active")),
+            });
+            if (!wallet) {
+              console.error(`Auto-refund: no active wallet for bidder ${bid.bidderUserId} (bid ${bid.id})`);
+              return { bidId: bid.id, success: false, error: "No active wallet for bidder" };
+            }
+
+            const result = await executeContractCall({
+              walletId: wallet.circleWalletId,
+              contractAddress: escrowAddress,
+              abi: escrowAbi,
+              functionName: "claimRefund",
+              args: [onChainBidId],
+            });
+
+            // Record the Circle transaction id only. The webhook sets status "refunded"
+            // when BidRefunded is emitted on-chain.
+            await db
+              .update(bids)
+              .set({ settlementTxHash: result.txId })
+              .where(eq(bids.id, bid.id));
+
+            console.log(
+              `Auto-refund: claimRefund submitted for bid ${bid.id} (${bid.amountUsdc} USDC), circle tx ${result.txId}`,
+            );
+            return { bidId: bid.id, success: true, txId: result.txId };
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            console.error(`Auto-refund: claimRefund failed for bid ${bid.id}: ${message}`);
+            return { bidId: bid.id, success: false, error: message };
+          }
+        });
+      }),
     );
 
     const succeeded = results.filter((r) => r.status === "fulfilled" && r.value.success);
     const failed = results.filter((r) => r.status === "rejected" || !r.value?.success);
 
     return {
-      message: `Processed ${expiredBids.length} expired bids`,
+      message: `Submitted ${succeeded.length} of ${refundableBids.length} refund claims`,
       succeeded: succeeded.length,
       failed: failed.length,
+      resetCount,
+      unsyncedCount: unsyncedBids.length,
+      unsynced: unsyncedBids,
       details: results.map((r) => r.status === "fulfilled" ? r.value : { error: r.reason }),
     };
   }

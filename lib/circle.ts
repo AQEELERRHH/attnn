@@ -148,6 +148,9 @@ export async function transferUSDC(
 export interface TransactionStatus {
   state: string;
   txHash?: string;
+  // Populated by Circle for failed transactions.
+  errorReason?: string;
+  errorDetails?: string;
 }
 
 export async function getTransactionStatus(txId: string): Promise<TransactionStatus> {
@@ -157,7 +160,12 @@ export async function getTransactionStatus(txId: string): Promise<TransactionSta
   const tx = data?.transaction;
   if (!tx) throw new Error("Transaction not found");
 
-  return { state: tx.state!, txHash: tx.txHash as Hex | undefined };
+  return {
+    state: tx.state!,
+    txHash: tx.txHash as Hex | undefined,
+    errorReason: tx.errorReason,
+    errorDetails: tx.errorDetails,
+  };
 }
 
 export async function pollTransactionUntilSettled(

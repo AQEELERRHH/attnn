@@ -314,8 +314,14 @@ export const runActiveBidders = inngest.createFunction(
 
 // ─── Creator Agent Triage ─────────────────────────────────────────────────────
 // Triggered when a new bid is placed. Scores and triages the bid on behalf of the creator.
+// How many times triage re-reads the bid waiting for the BidPlaced webhook to set
+// onChainBidId, sleeping 30s between checks (~4.5 minutes of waiting).
+const CHAIN_SYNC_ATTEMPTS = 10;
+
 export const creatorAgentTriage = inngest.createFunction(
-  { id: "creator-agent-triage", name: "Creator Agent Triage" },
+  // A burst of bids must not open unbounded runs — each one can sit in the chain-sync wait
+  // for minutes.
+  { id: "creator-agent-triage", name: "Creator Agent Triage", concurrency: 10 },
   { event: "attnn/bid.placed" },
   async ({ event, step }: { event: any; step: any }) => {
     const { bidId, creatorUserId } = event.data;
@@ -340,6 +346,39 @@ export const creatorAgentTriage = inngest.createFunction(
     if (!bid || !profile || !wallet) return { message: "Missing data — skipping triage" };
     if (bid.status !== "pending") return { message: "Bid already processed" };
 
+    // ── Wait for chain sync ──
+    // onChainBidId is filled in by the BidPlaced log at /api/webhooks/circle-events, which
+    // lands after this event fires. acceptBid/rejectBid need that id, so poll for it before
+    // triaging. Step ids are unique per iteration because Inngest memoises by id.
+    let onChainBidId: string | null = bid.onChainBidId ?? null;
+
+    for (let attempt = 0; attempt < CHAIN_SYNC_ATTEMPTS && !onChainBidId; attempt++) {
+      const sync = await step.run(`check-chain-sync-${attempt}`, async () => {
+        const fresh = await db.query.bids.findFirst({ where: eq(bids.id, bidId) });
+        return { onChainBidId: fresh?.onChainBidId ?? null, status: fresh?.status ?? null };
+      });
+
+      if (sync.status !== "pending") {
+        return { message: "Bid no longer pending during chain sync wait", status: sync.status };
+      }
+      if (sync.onChainBidId) {
+        onChainBidId = sync.onChainBidId;
+        break;
+      }
+      if (attempt < CHAIN_SYNC_ATTEMPTS - 1) {
+        await step.sleep(`wait-for-chain-sync-${attempt}`, "30s");
+      }
+    }
+
+    // Without an on-chain bid id the settlement calls would revert, so the AI still triages
+    // (the score is worth recording) but accept/reject are reported as skipped.
+    const chainSynced = Boolean(onChainBidId);
+    if (!chainSynced) {
+      console.error(
+        `Creator triage: bid ${bidId} still has no onChainBidId after ${CHAIN_SYNC_ATTEMPTS} checks over ~${(CHAIN_SYNC_ATTEMPTS - 1) * 30}s; on-chain accept/reject will be skipped`,
+      );
+    }
+
     const triageResult = await step.run("triage-bid", async () => {
       const { triageBidForCreator } = await import("@/lib/ai");
       return triageBidForCreator(
@@ -356,6 +395,9 @@ export const creatorAgentTriage = inngest.createFunction(
         highestBidAmount
       );
     });
+
+    // counter_offer is DB-only, so it runs whether or not the chain id synced.
+    let skippedReason: string | null = null;
 
     if (triageResult.decision === "counter_offer" && triageResult.counterOfferAmount) {
       await step.run("auto-counter-offer", async () => {
@@ -378,18 +420,20 @@ export const creatorAgentTriage = inngest.createFunction(
         return { countered: true, amount: triageResult.counterOfferAmount };
       });
     } else if (triageResult.decision === "accept" && triageResult.draftedReply) {
-      await step.run("auto-accept-bid", async () => {
+      if (!onChainBidId) {
+        skippedReason = "accept skipped: onChainBidId never synced, bid left pending for manual review";
+      } else await step.run("auto-accept-bid", async () => {
         const { executeContractCall } = await import("@/lib/circle");
         const { escrowAbi } = await import("@/lib/arc");
         const escrowAddr = process.env.ATTN_ESCROW_CONTRACT;
-        if (!escrowAddr || !bid.onChainBidId) return { skipped: true };
+        if (!escrowAddr || !onChainBidId) return { skipped: true };
 
         const result = await executeContractCall({
           walletId: wallet.circleWalletId,
           contractAddress: escrowAddr,
-          abi: escrowAbi as any,
+          abi: escrowAbi,
           functionName: "acceptBid",
-          args: [BigInt(bid.onChainBidId), triageResult.draftedReply],
+          args: [onChainBidId, triageResult.draftedReply],
         });
 
         await db.update(bids).set({
@@ -403,18 +447,20 @@ export const creatorAgentTriage = inngest.createFunction(
         return { accepted: true, txId: result.txId };
       });
     } else if (triageResult.decision === "reject") {
-      await step.run("auto-reject-bid", async () => {
+      if (!onChainBidId) {
+        skippedReason = "reject skipped: onChainBidId never synced, bid left pending for manual review";
+      } else await step.run("auto-reject-bid", async () => {
         const { executeContractCall } = await import("@/lib/circle");
         const { escrowAbi } = await import("@/lib/arc");
         const escrowAddr = process.env.ATTN_ESCROW_CONTRACT;
-        if (!escrowAddr || !bid.onChainBidId) return { skipped: true };
+        if (!escrowAddr || !onChainBidId) return { skipped: true };
 
         const result = await executeContractCall({
           walletId: wallet.circleWalletId,
           contractAddress: escrowAddr,
-          abi: escrowAbi as any,
+          abi: escrowAbi,
           functionName: "rejectBid",
-          args: [BigInt(bid.onChainBidId)],
+          args: [onChainBidId],
         });
 
         await db.update(bids).set({
@@ -431,7 +477,23 @@ export const creatorAgentTriage = inngest.createFunction(
       await db.update(bids).set({ score: triageResult.score }).where(eq(bids.id, bidId));
     }
 
-    return { decision: triageResult.decision, score: triageResult.score, reason: triageResult.reason };
+    if (skippedReason) {
+      // The bid stays pending, so record the score to surface it in the creator's inbox.
+      await step.run("record-score-chain-sync-skipped", async () => {
+        await db.update(bids).set({ score: triageResult.score }).where(eq(bids.id, bidId));
+        return { score: triageResult.score };
+      });
+      console.error(`Creator triage: bid ${bidId} — ${skippedReason}`);
+    }
+
+    return {
+      decision: triageResult.decision,
+      score: triageResult.score,
+      reason: triageResult.reason,
+      chainSynced,
+      onChainBidId,
+      ...(skippedReason ? { skipped: true, skippedReason } : {}),
+    };
   }
 );
 
@@ -459,6 +521,9 @@ export const handleCounterOffer = inngest.createFunction(
     }
 
     const counterAmount = BigInt(counterOfferAmount);
+    // Contract calls take the atomic amount as a string; BigInt is only for the budget maths
+    // below, since the Circle SDK can't JSON-serialise a BigInt.
+    const counterAmountStr = counterAmount.toString();
     const dailyBudget = BigInt(config.dailyBudget);
 
     // Check remaining daily budget
@@ -488,7 +553,7 @@ export const handleCounterOffer = inngest.createFunction(
         contractAddress: USDC_ADDRESS,
         abi: usdcAbi as any,
         functionName: "approve",
-        args: [escrowAddr, counterAmount],
+        args: [escrowAddr, counterAmountStr],
       });
 
       const result = await executeContractCall({
@@ -496,7 +561,7 @@ export const handleCounterOffer = inngest.createFunction(
         contractAddress: escrowAddr,
         abi: escrowAbi as any,
         functionName: "placeBid",
-        args: [creatorProfile.walletAddress ?? bid.creatorAddress, counterAmount, "I accept your counter offer.", false],
+        args: [creatorProfile.walletAddress ?? bid.creatorAddress, counterAmountStr, "I accept your counter offer.", false],
       });
 
       const { bids: bidsTable3 } = await import("@/lib/db/schema");
@@ -505,7 +570,7 @@ export const handleCounterOffer = inngest.createFunction(
         creatorUserId: bid.creatorUserId,
         bidderAddress: bidderWallet.address,
         creatorAddress: bid.creatorAddress,
-        amountUsdc: counterAmount.toString(),
+        amountUsdc: counterAmountStr,
         message: "I accept your counter offer.",
         isPrivate: false,
         status: "pending" as const,

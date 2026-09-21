@@ -93,6 +93,8 @@ contracts/      Foundry project: src/AttnnEscrow.sol, src/AttnnRegistry.sol, tes
 
 ## How on-chain writes work (Circle)
 
+**Pass `uint256` args as decimal strings, never `BigInt`.** The Circle SDK JSON-serialises `abiParameters`, and `JSON.stringify` throws on a `BigInt` unless something has patched `BigInt.prototype.toJSON` (the accept/reject API routes declare that patch at the top of their own files; nothing else does).
+
 `executeContractCall({ walletId, contractAddress, abi, functionName, args })` builds the `abiFunctionSignature` from the ABI and calls `createContractExecutionTransaction`. **It returns as soon as Circle accepts the transaction (Circle tx id + initial state). It does not wait for on-chain confirmation**, so DB updates that follow a call are optimistic. The SDK client is deliberately created fresh on every call, because a module-cached client broke on warm Vercel functions with a stale entity-secret ciphertext. Keep it that way.
 
 ## Escrow flow
@@ -123,20 +125,23 @@ Triggered by the `runActiveBidders` Inngest cron (`*/10 * * * *`, rechecks `isAc
 4. Scores up to 10 creators with `evaluateCreatorForBidder(creator, goal)`. It keeps those with `proceed && score >= minFitScore` and takes the top 5 by score.
 5. For each one it rechecks the budget, then runs `approve` → sleep **4 s** → `placeBid` (message = `defaultMessage`), inserts the `bids` row and logs `bid_placed` to `agent_logs`.
    - The bid amount comes from the AI. The fallback is `1000000` ($1). `maxBidPerCreator` is **not** enforced here.
-   - This path does **not** send `attnn/bid.placed`, so agent-placed bids don't get creator triage.
+   - It captures the new row's id with `.returning({ id })` and sends `attnn/bid.placed` with `{ bidId, creatorUserId }`, the same shape `/api/bid/place` sends, so agent-placed bids get creator triage too. The send is wrapped in try/catch: the bid is already on-chain, so a failed event is logged and the run continues.
 
 ### Creator agent (reactive): `creatorAgentTriage` in `inngest/functions.ts`
 
-Triggered by `attnn/bid.placed`.
+Triggered by `attnn/bid.placed`, capped at `concurrency: 10` because each run can sit in the chain-sync wait for minutes.
 
 1. Loads the bid, the creator's profile and wallet, and all of the creator's pending bids (`queueDepth`, `highestBidAmount`).
-2. `triageBidForCreator` (`lib/ai.ts`): the AI returns a 0–10 score. The decision thresholds are **hard-coded**:
+2. **Waits for chain sync.** `onChainBidId` is set by the `BidPlaced` webhook, which lands *after* this event fires, so triage polls for it: up to `CHAIN_SYNC_ATTEMPTS` (10) re-reads of the bid with a 30s `step.sleep` between them, roughly 4.5 minutes. Step ids carry the iteration number because Inngest memoises steps by id — never reuse one inside the loop. If the bid stops being `pending` during the wait (someone accepted it in the dashboard), triage returns early.
+3. `triageBidForCreator` (`lib/ai.ts`): the AI returns a 0–10 score. The decision thresholds are **hard-coded**:
    - `≥ 8` → `accept`, with `autoReplyTemplate` or else an AI `draftReply`.
    - `5–7` → `counter_offer` at 85% of the highest pending bid (floor $5) if a higher pending bid exists, otherwise `surface`.
    - `< 5` → `reject`.
    - The profile's `autoAcceptThreshold` is sent to the AI as context only and doesn't gate the decision.
    - Fallback when AISA fails: ≥ 2× minBid → 8, ≥ minBid → 5, else 3.
-3. Acts: `acceptBid` / `rejectBid` from the creator's wallet, or sets `counter_offered` and sends `attnn/counter.received`, or (surface) only stores the score. Accept and reject are **skipped silently if `onChainBidId` is still null**, which is likely right after placement because the ID arrives asynchronously via webhook.
+4. Acts: `acceptBid` / `rejectBid` from the creator's wallet, or sets `counter_offered` and sends `attnn/counter.received`, or (surface) only stores the score.
+   - If the wait ended with no `onChainBidId`, the AI still triages and the score is still recorded, but `accept` and `reject` are **not** attempted (they would revert). The run logs the reason and returns `skipped: true` with `skippedReason`, leaving the bid `pending` for manual review. `counter_offer` still runs, since it only touches the DB.
+   - The return value always carries `chainSynced` and `onChainBidId`, which is the first thing to check in the Inngest dashboard when a bid isn't settling.
 
 ### Counter-offer handler: `handleCounterOffer`
 

@@ -2,6 +2,7 @@ import { db } from "./db/client";
 import { bids, agentLogs, profiles, bidderConfigs, wallets } from "./db/schema";
 import { evaluateCreatorForBidder, draftReply, scoreBidForCreator } from "./ai";
 import { executeContractCall } from "./circle";
+import { inngest } from "./inngest";
 import { escrowAbi, registryAbi, publicClient } from "./arc";
 import { eq, and, gte, sql } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
@@ -193,7 +194,7 @@ export async function runBidderAgent(userId: string): Promise<AgentRunResult> {
           args: [tc.address, tc.bidAmount, config.defaultMessage ?? "AI-discovered opportunity", false],
         });
 
-        await db.insert(bids).values({
+        const [insertedBid] = await db.insert(bids).values({
           bidderUserId: userId,
           creatorUserId: tc.profile.userId,
           bidderAddress: bidderWallet.address,
@@ -203,7 +204,20 @@ export async function runBidderAgent(userId: string): Promise<AgentRunResult> {
           status: "pending",
           score: tc.score,
           bidTxHash: result.txId,
-        });
+        }).returning({ id: bids.id });
+
+        // Hand the bid to the creator's agent, same event shape as /api/bid/place.
+        // A failed send must not abort the run: the bid is already on-chain.
+        if (insertedBid) {
+          try {
+            await inngest.send({
+              name: "attnn/bid.placed",
+              data: { bidId: insertedBid.id, creatorUserId: tc.profile.userId },
+            });
+          } catch (err) {
+            console.error(`Failed to send attnn/bid.placed for bid ${insertedBid.id}:`, err);
+          }
+        }
 
         await logAgentAction(userId, "bid_placed", {
           creator: tc.profile.handle,

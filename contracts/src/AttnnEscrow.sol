@@ -50,8 +50,8 @@ contract AttnnEscrow is IAttnnEscrow {
     uint256 public constant MIN_BID = 5 * 10**6;
     // Maximum bid amount (1000 USDC, 6 decimals)
     uint256 public constant MAX_BID = 1000 * 10**6;
-    // Refund period (14 days in seconds)
-    uint256 public constant REFUND_PERIOD = 14 days;
+    // Refund period (3 days in seconds)
+    uint256 public constant REFUND_PERIOD = 3 days;
 
     constructor(address _usdc, address _registry) {
         require(_usdc != address(0), "AttnnEscrow: zero USDC address");

@@ -9,7 +9,7 @@ import { escrowAbi } from "@/lib/arc";
 // Runs daily at 03:00 UTC. Calls claimRefund() on-chain from the bidder's wallet for
 // pending bids past the escrow's 14-day refund window. The status flips to "refunded"
 // when the BidRefunded log arrives at /api/webhooks/circle-events, not here.
-const REFUND_PERIOD_MS = 14 * 24 * 60 * 60 * 1000;
+const REFUND_PERIOD_MS = 3 * 24 * 60 * 60 * 1000;
 // The escrow stores createdAt when the bid lands on Arc, which is later than the DB row's
 // createdAt. Waiting an extra 2 hours avoids "refund period not passed" reverts.
 const REFUND_MARGIN_MS = 2 * 60 * 60 * 1000;

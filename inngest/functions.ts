@@ -141,7 +141,7 @@ export const runActiveBidders = inngest.createFunction(
 // Triggered by attnn/bid.placed, which is now sent only after the bid is escrowed
 // on-chain (onChainBidId known), so there is no chain-sync wait any more.
 export const creatorAgentTriage = inngest.createFunction(
-  { id: "creator-agent-triage", name: "Creator Agent Triage", concurrency: 10 },
+  { id: "creator-agent-triage", name: "Creator Agent Triage", concurrency: 5 }, // Inngest plan max is 5; a higher value makes the whole app sync fail
   { event: "attnn/bid.placed" },
   async ({ event, step }) => {
     const { bidId, creatorUserId } = event.data as { bidId: string; creatorUserId: string };

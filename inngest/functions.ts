@@ -2,7 +2,7 @@ import { inngest } from "@/lib/inngest";
 import { db } from "@/lib/db/client";
 import { bids } from "@/lib/db/schema";
 import { eq, and, lt, gt, isNull, isNotNull, inArray, ne, sql, gte } from "drizzle-orm";
-import { BidError, createBidIntent, submitSettlement } from "@/lib/bids";
+import { BidError, createBidIntent, declineReplacedBid, submitSettlement } from "@/lib/bids";
 import { REFUND_PERIOD_MS } from "@/lib/bid-rules";
 import { escrowAddress } from "@/lib/chain";
 import { confirmSettlement, listUnsyncedPendingBids, placeBid, sweepInFlightBids } from "./bid-lifecycle";
@@ -182,6 +182,12 @@ export const creatorAgentTriage = inngest.createFunction(
 
     await step.run("record-score", () => db.update(bids).set({ score: triageResult.score }).where(eq(bids.id, bidId)));
 
+    // A re-bid already meets the creator's own counter price: countering again or
+    // declining it would be absurd, so those outcomes just surface it in the inbox.
+    if (bid.replacesBidId && (triageResult.decision === "counter_offer" || triageResult.decision === "reject")) {
+      triageResult.decision = "surface";
+    }
+
     let action: { submitted: boolean; txId?: string; error?: string } | null = null;
 
     if (triageResult.decision === "counter_offer" && triageResult.counterOfferAmount) {
@@ -232,6 +238,20 @@ export const creatorAgentTriage = inngest.createFunction(
   },
 );
 
+// ─── Re-bid escrowed → release the original ───────────────────────────────────
+// Sent by notifyBidEscrowed when a bid placed at a creator's counter price is in
+// escrow. Declines the countered original from the creator's wallet so the
+// bidder's USDC isn't locked twice. If that can't happen (window passed, creator
+// already settled it, no gas), the original still refunds through autoRefund.
+export const declineReplacedBidJob = inngest.createFunction(
+  { id: "decline-replaced-bid", name: "Decline Replaced Bid", retries: 3 },
+  { event: "attnn/rebid.escrowed" },
+  async ({ event, step }) => {
+    const { bidId } = event.data as { bidId: string; replacesBidId: string };
+    return step.run("decline-original", () => declineReplacedBid(bidId));
+  },
+);
+
 // ─── Counter-Offer Handler ────────────────────────────────────────────────────
 // The bidder agent accepts a counter if it fits today's budget, by placing a NEW
 // bid at the counter amount. The original bid stays counter_offered with its USDC
@@ -251,6 +271,10 @@ export const handleCounterOffer = inngest.createFunction(
       const bid = await db.query.bids.findFirst({ where: eq(bids.id, bidId) });
       const config = await db.query.bidderConfigs.findFirst({ where: eq(bidderConfigs.userId, bidderUserId) });
       if (!bid || !config) return { decision: "skip", reason: "Missing data" };
+      // The creator may have accepted or declined the original in the meantime.
+      if (bid.status !== "counter_offered" || bid.settlementTxHash) {
+        return { decision: "skip", reason: `Original bid is ${bid.settlementTxHash ? "settling" : bid.status}` };
+      }
 
       const counterAmount = BigInt(counterOfferAmount);
       const today = new Date();
@@ -268,6 +292,7 @@ export const handleCounterOffer = inngest.createFunction(
           creatorUserId: bid.creatorUserId,
           amountUsdc: counterAmount,
           message: "I accept your counter offer.",
+          replacesBidId: bidId,
         });
         return { decision: "accept", newBidId: intent.id };
       } catch (err) {
@@ -287,6 +312,7 @@ export const functions = [
   runActiveBidders,
   creatorAgentTriage,
   handleCounterOffer,
+  declineReplacedBidJob,
   placeBid,
   confirmSettlement,
   sweepInFlightBids,

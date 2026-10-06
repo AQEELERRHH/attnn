@@ -109,6 +109,7 @@ export default async function DashboardPage() {
     createdAt: b.createdAt.toISOString(),
     settledAt: b.settledAt?.toISOString() ?? null,
     counterOfferAmount: b.counterOfferAmount ?? null,
+    replacesBidId: b.replacesBidId ?? null,
     bidTxHref: b.onChainTxHash ? txUrl(b.onChainTxHash) : null,
     settlementOnChainTxHash: b.settlementOnChainTxHash ?? null,
     settlementTxHref: b.settlementOnChainTxHash ? txUrl(b.settlementOnChainTxHash) : null,

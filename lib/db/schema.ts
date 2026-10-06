@@ -9,6 +9,7 @@ import {
   pgEnum,
   uniqueIndex,
   index,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 
@@ -212,12 +213,18 @@ export const bids = pgTable("bids", {
   settlementAttempt: integer("settlement_attempt").default(0).notNull(),
   // Why placement or the last settlement attempt failed (shown to the user).
   failReason: text("fail_reason"),
+  // Set on a bid the bidder's agent placed at a creator's counter price: the
+  // countered bid it replaces. Once this bid is escrowed, the original is
+  // declined automatically so the bidder's USDC isn't locked twice.
+  replacesBidId: uuid("replaces_bid_id").references((): AnyPgColumn => bids.id, { onDelete: "set null" }),
 }, (t) => [
   uniqueIndex("bids_escrow_onchain_id_uq")
     .on(t.escrowAddress, t.onChainBidId)
     .where(sql`${t.escrowAddress} IS NOT NULL AND ${t.onChainBidId} IS NOT NULL`),
   index("bids_status_idx").on(t.status),
   index("bids_bidder_created_idx").on(t.bidderUserId, t.createdAt),
+  // At most one re-bid per countered bid (also makes the counter handler idempotent).
+  uniqueIndex("bids_replaces_bid_id_uq").on(t.replacesBidId).where(sql`${t.replacesBidId} IS NOT NULL`),
 ]);
 
 export const bidsRelations = relations(bids, ({ one }) => ({

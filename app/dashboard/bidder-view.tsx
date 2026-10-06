@@ -5,7 +5,7 @@ import Link from "next/link";
 import { CreatorAvatar, MarketTable, Money, Num, Panel, StatStrip, StatusChip, type MarketColumn } from "@/components/market";
 import { bidDisplay } from "@/lib/bid-display";
 import { cn } from "@/lib/cn";
-import { refundCountdown, shortAddress, timeAgo } from "@/lib/format";
+import { formatMoney, refundCountdown, shortAddress, timeAgo } from "@/lib/format";
 import type { BidData, BidderConfigData, PortfolioSummary } from "./types";
 
 const OPEN_STATUSES = new Set(["placing", "pending", "counter_offered"]);
@@ -83,6 +83,20 @@ export function BidderView({
 }) {
   const [tab, setTab] = React.useState<"open" | "history">("open");
   const open = bids.filter((b) => OPEN_STATUSES.has(b.status));
+  // Counter re-bids: say which bid replaces which, so two open bids on one creator make sense.
+  const byId = new Map(bids.map((b) => [b.id, b]));
+  const rebidOf = new Map(bids.filter((b) => b.replacesBidId && b.status !== "failed").map((b) => [b.replacesBidId!, b]));
+  const rebidNote = (b: BidData): string | null => {
+    const original = b.replacesBidId ? byId.get(b.replacesBidId) : null;
+    if (original) return `At the creator's counter price. Your ${formatMoney(original.amountUsdc)} bid is released once this is escrowed.`;
+    const rebid = b.status === "counter_offered" ? rebidOf.get(b.id) : null;
+    if (rebid) {
+      return rebid.status === "placing"
+        ? `Your agent re-bid ${formatMoney(rebid.amountUsdc)}. This bid is released back to you once that's escrowed.`
+        : `Your agent re-bid ${formatMoney(rebid.amountUsdc)}. This bid is being released back to you.`;
+    }
+    return null;
+  };
   const history = bids.filter((b) => !OPEN_STATUSES.has(b.status));
   const s = summary.bidder;
 
@@ -120,6 +134,7 @@ export function BidderView({
               {d.label}
             </StatusChip>
             {d.note && <span className="mt-1 block text-xs text-text-secondary">{d.note}</span>}
+            {rebidNote(b) && <span className="mt-1 block text-xs text-arc-lavender">{rebidNote(b)}</span>}
           </span>
         );
       },
@@ -309,6 +324,7 @@ export function BidderView({
                     </span>
                   )}
                   {d.note && <span className="text-xs text-text-secondary">{d.note}</span>}
+                  {rebidNote(b) && <span className="text-xs text-arc-lavender">{rebidNote(b)}</span>}
                 </div>
               );
             }}

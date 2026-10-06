@@ -15,6 +15,13 @@
       "when": 1791286520747,
       "tag": "0001_settlement_truth",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791303001106,
+      "tag": "0002_counter_rebid",
+      "breakpoints": true
     }
   ]
 }

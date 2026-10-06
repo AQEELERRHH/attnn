@@ -80,8 +80,18 @@ lib/
   profiles.ts   getFullProfileByHandle
   inngest.ts    Inngest client (id "attnn")
 components/ui/  Radix/shadcn primitives
+components/market/  market design system (see below); reference page app/design/
 contracts/      Foundry project: src/AttnnEscrow.sol, src/AttnnRegistry.sol, test/, script/Deploy.s.sol
 ```
+
+## Market design system (`components/market/`)
+
+Shared UI for market screens; reference page at `/design` (local + Vercel previews, 404 on production).
+
+- **Colour roles** (palette unchanged from the original site): gold = money, open bids, primary action · green = settled / up · coral = refund countdowns, warnings, down · lavender = links, tags, focus ring · purple = decorative only (fails text contrast) · `text-dim` = placeholders/disabled only.
+- **Numbers**: every number uses `.num` / `<Num>` / `<Money atomic=…>` (DM Mono, tabular digits). Format with `lib/format.ts` (`formatMoney`, `formatChange`, `formatDuration`, `timeAgo`, `refundCountdown`, `dollarsToAtomic`); never float maths on money.
+- **Bid status text** comes only from `bidDisplay()` in `lib/bid-display.ts`, so every screen labels a bid the same way.
+- Components: `Panel`, `StatStrip`, `StatInline`, `StatusChip`, `Tag`, `CreatorAvatar`, `Sparkline` (server-safe), and `MarketTable`, `OrderBook`, `BidTicket` (client). `MarketTable` takes render functions, so use it from client components only. Buttons: primary is solid gold with dark text.
 
 ## Data model essentials
 

@@ -38,9 +38,21 @@ body {
 }
 
 @layer components {
+  /* ─── Market design system (PR 2) ─────────────────────────────────────
+     Every number on a market screen (money, %, counts, durations, hashes)
+     uses .num so digits line up in columns. Colors keep their meaning:
+     gold = money / open bids, green = settled / up, coral = refund countdowns,
+     warnings / down, lavender = links and tags, purple = decorative only
+     (it fails text contrast). text-dim is for placeholders and disabled only. */
+  .num { font-family: 'DM Mono', ui-monospace, monospace; font-variant-numeric: tabular-nums; letter-spacing: 0; }
+  .panel { @apply bg-arc-bg-1 border border-border rounded-xl; }
+  .panel-raised { @apply bg-arc-bg-2 border border-border-bright rounded-xl; }
+  .eyebrow { @apply text-[11px] font-medium uppercase tracking-[0.08em] text-text-secondary; }
+  .focus-ring { @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-arc-lavender focus-visible:ring-offset-2 focus-visible:ring-offset-arc-bg-0; }
+
   .glass-panel { @apply bg-arc-bg-2/60 backdrop-blur-xl border border-border rounded-xl; }
   .glass-panel-bright { @apply bg-arc-bg-2/80 backdrop-blur-xl border border-border-bright rounded-xl; }
-  .btn-primary { @apply px-6 py-3 bg-gradient-to-r from-arc-gold to-arc-purple text-white font-display font-bold rounded-lg hover:opacity-90 transition-all duration-200 disabled:opacity-50; }
+  .btn-primary { @apply px-6 py-3 bg-arc-gold text-arc-bg-0 font-display font-bold rounded-lg hover:brightness-110 transition-all duration-200 disabled:opacity-50; }
   .btn-secondary { @apply px-6 py-3 border border-border-bright text-text-primary font-display font-bold rounded-lg hover:bg-arc-bg-2 transition-all duration-200; }
   .input-field { @apply w-full px-4 py-3 bg-arc-bg-1 border border-border rounded-lg text-text-primary placeholder:text-text-dim focus:outline-none focus:border-arc-purple focus:ring-1 focus:ring-arc-purple/30 transition-all duration-200; }
 }

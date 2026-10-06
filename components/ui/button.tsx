@@ -4,16 +4,17 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/cn";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center whitespace-nowrap rounded-lg text-sm font-display font-bold transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-arc-purple/50 disabled:pointer-events-none disabled:opacity-50",
+  "inline-flex items-center justify-center whitespace-nowrap rounded-lg text-sm font-display font-bold transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-arc-lavender focus-visible:ring-offset-2 focus-visible:ring-offset-arc-bg-0 disabled:pointer-events-none disabled:opacity-50",
   {
     variants: {
       variant: {
-        default: "bg-gradient-to-r from-arc-gold to-arc-purple text-white hover:opacity-90",
+        // Solid gold with dark text: the market's primary action (bid, collect).
+        default: "bg-arc-gold text-arc-bg-0 hover:brightness-110",
         destructive: "bg-arc-coral text-white hover:bg-arc-coral/90",
         outline: "border border-border-bright text-text-primary hover:bg-arc-bg-2",
         secondary: "bg-arc-bg-2 text-text-primary hover:bg-arc-bg-3",
         ghost: "text-text-secondary hover:text-text-primary hover:bg-arc-bg-2",
-        link: "text-arc-purple underline-offset-4 hover:underline",
+        link: "text-arc-lavender underline-offset-4 hover:underline",
       },
       size: {
         default: "h-10 px-6 py-3",

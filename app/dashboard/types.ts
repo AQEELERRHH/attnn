@@ -55,6 +55,8 @@ export interface BidData {
   createdAt: string;
   settledAt: string | null;
   counterOfferAmount: string | null;
+  /** For a bid placed at a creator's counter price: the countered bid it replaces. */
+  replacesBidId: string | null;
   /** Explorer links for the escrow and settlement transactions, when known. */
   bidTxHref: string | null;
   settlementOnChainTxHash: string | null;

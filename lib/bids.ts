@@ -64,6 +64,8 @@ export interface BidIntentInput {
   message?: string | null;
   isPrivate?: boolean;
   score?: number | null;
+  /** The countered bid this one answers (counter handler only). */
+  replacesBidId?: string | null;
 }
 
 /**
@@ -72,6 +74,13 @@ export interface BidIntentInput {
  * user can fix (bad amount, inactive creator, not enough USDC).
  */
 export async function createBidIntent(input: BidIntentInput): Promise<BidRow> {
+  // A countered bid gets at most one re-bid (unique index); a retried counter
+  // handler gets the existing one back instead of escrowing twice.
+  if (input.replacesBidId) {
+    const existing = await db.query.bids.findFirst({ where: eq(bids.replacesBidId, input.replacesBidId) });
+    if (existing) return existing;
+  }
+
   const escrow = escrowAddress();
   if (!escrow) throw new BidError("Escrow contract is not configured", 500);
   if (input.bidderUserId === input.creatorUserId) throw new BidError("You can't bid on yourself");
@@ -129,6 +138,7 @@ export async function createBidIntent(input: BidIntentInput): Promise<BidRow> {
       score: input.score ?? null,
       status: "placing",
       escrowAddress: escrow,
+      replacesBidId: input.replacesBidId ?? null,
     })
     .returning();
   if (!row) throw new BidError("Could not record the bid", 500);
@@ -221,11 +231,54 @@ export async function finalizePlacement(bidId: string): Promise<PlacementOutcome
 }
 
 /** Hands a freshly escrowed bid to the creator's agent. */
-export async function notifyBidEscrowed(bid: Pick<BidRow, "id" | "creatorUserId">): Promise<void> {
-  await inngest.send({
-    name: "attnn/bid.placed",
-    data: { bidId: bid.id, creatorUserId: bid.creatorUserId },
+export async function notifyBidEscrowed(bid: Pick<BidRow, "id" | "creatorUserId" | "replacesBidId">): Promise<void> {
+  await inngest.send([
+    { name: "attnn/bid.placed", data: { bidId: bid.id, creatorUserId: bid.creatorUserId } },
+    // A re-bid at the creator's counter price is now escrowed: release the original.
+    ...(bid.replacesBidId
+      ? [{ name: "attnn/rebid.escrowed", data: { bidId: bid.id, replacesBidId: bid.replacesBidId } }]
+      : []),
+  ]);
+}
+
+/** Statuses of a re-bid that still stands in for the bid it replaced. */
+const LIVE_REBID: BidRow["status"][] = ["placing", "pending", "counter_offered", "accepted"];
+
+/** The live re-bid placed at this bid's counter price, if any. */
+export async function findLiveRebid(bidId: string): Promise<BidRow | null> {
+  const rebid = await db.query.bids.findFirst({
+    where: and(eq(bids.replacesBidId, bidId), inArray(bids.status, LIVE_REBID)),
   });
+  return rebid ?? null;
+}
+
+export type DeclineReplacedOutcome = "submitted" | "skipped";
+
+/**
+ * Declines the countered bid that an escrowed re-bid replaces, from the
+ * creator's wallet, so the bidder gets that USDC back now instead of after 3
+ * days. Skips (never throws a BidError) when the original already moved on:
+ * the creator settled it, it is past its window (autoRefund handles it), or
+ * another settlement is in flight.
+ */
+export async function declineReplacedBid(rebidId: string): Promise<{ outcome: DeclineReplacedOutcome; reason: string }> {
+  const rebid = await db.query.bids.findFirst({ where: eq(bids.id, rebidId) });
+  if (!rebid?.replacesBidId) return { outcome: "skipped", reason: "Not a re-bid" };
+  if (rebid.status !== "pending" && rebid.status !== "counter_offered" && rebid.status !== "accepted") {
+    return { outcome: "skipped", reason: `Re-bid is ${rebid.status}` };
+  }
+  const original = await db.query.bids.findFirst({ where: eq(bids.id, rebid.replacesBidId) });
+  if (!original) return { outcome: "skipped", reason: "Original bid not found" };
+  if (original.status !== "counter_offered") return { outcome: "skipped", reason: `Original is ${original.status}` };
+  if (original.settlementTxHash) return { outcome: "skipped", reason: "Original already has a settlement in flight" };
+
+  try {
+    await submitSettlement({ bidId: original.id, action: "reject", actorUserId: original.creatorUserId });
+    return { outcome: "submitted", reason: `Declined ${formatUsd(BigInt(original.amountUsdc))} bid replaced by ${formatUsd(BigInt(rebid.amountUsdc))}` };
+  } catch (err) {
+    if (err instanceof BidError) return { outcome: "skipped", reason: err.message };
+    throw err; // transient (RPC, Circle): let the job retry
+  }
 }
 
 // ─── Settlement ──────────────────────────────────────────────────────────────
@@ -296,7 +349,10 @@ export async function submitSettlement(params: {
 
   if (bid.status === "placing") throw new BidError("This bid is still being placed on-chain", 409);
   if (!SETTLEABLE.includes(bid.status)) throw new BidError(`This bid is already ${bid.status}`, 409);
-  if (action === "accept" && bid.status !== "pending") throw new BidError("Only pending bids can be accepted", 409);
+  if (action === "accept" && bid.status === "counter_offered" && (await findLiveRebid(bid.id))) {
+    // The bidder already met the counter with a new bid; accepting both would charge them twice.
+    throw new BidError("The bidder re-bid at your counter price. Reply to the new bid instead.", 409);
+  }
   if (bid.settlementAction && bid.settlementAction !== action) {
     throw new BidError("Another settlement for this bid is already confirming", 409);
   }

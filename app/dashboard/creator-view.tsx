@@ -19,6 +19,8 @@ import { FundWalletCard } from "./fund-wallet-card";
 import type { BidData, PortfolioSummary, ProfileData, WalletData } from "./types";
 
 const REPLY_MIN = 10;
+/** Statuses of a re-bid that still stands in for the countered bid it replaces. */
+const LIVE_REBID = new Set(["placing", "pending", "counter_offered", "accepted"]);
 const REPLY_MAX = 2000;
 
 const AVAILABILITY: Record<string, { label: string; tone: "success" | "pending" | "danger" }> = {
@@ -252,7 +254,15 @@ function CreatorMarketDesk({
         ) : (
           <ol className="border-t border-border">
             {inbox.map((bid, i) => (
-              <InboxRow key={bid.id} bid={bid} rank={i + 1} now={now} template={profile.autoReplyTemplate} />
+              <InboxRow
+                key={bid.id}
+                bid={bid}
+                rank={i + 1}
+                now={now}
+                template={profile.autoReplyTemplate}
+                rebid={bids.find((b) => b.replacesBidId === bid.id && LIVE_REBID.has(b.status)) ?? null}
+                replaces={bid.replacesBidId ? (bids.find((b) => b.id === bid.replacesBidId) ?? null) : null}
+              />
             ))}
           </ol>
         )}
@@ -314,7 +324,23 @@ function CreatorMarketDesk({
   );
 }
 
-function InboxRow({ bid, rank, now, template }: { bid: BidData; rank: number; now: number; template: string | null }) {
+function InboxRow({
+  bid,
+  rank,
+  now,
+  template,
+  rebid,
+  replaces,
+}: {
+  bid: BidData;
+  rank: number;
+  now: number;
+  template: string | null;
+  /** A live bid the bidder placed at this bid's counter price, if any. */
+  rebid: BidData | null;
+  /** For a re-bid: the countered bid it replaces. */
+  replaces: BidData | null;
+}) {
   const router = useRouter();
   const [mode, setMode] = React.useState<"idle" | "reply" | "counter">("idle");
   const [reply, setReply] = React.useState("");
@@ -422,19 +448,34 @@ function InboxRow({ bid, rank, now, template }: { bid: BidData; rank: number; no
           {bid.message && <p className="mt-2 max-w-[75ch] whitespace-pre-line text-sm text-text-primary">{bid.message}</p>}
           {countered && bid.counterOfferAmount && (
             <p className="mt-2 text-xs text-arc-lavender">
-              You asked for <Money atomic={bid.counterOfferAmount} className="text-arc-lavender" />. Their agent may place a new bid at that price; this one stays escrowed until you decline it or it refunds.
+              {rebid ? (
+                <>
+                  They re-bid at your price: <Money atomic={rebid.amountUsdc} className="text-arc-lavender" />.{" "}
+                  {rebid.status === "placing" ? "This bid is released back to them once that's escrowed." : "This bid is being released back to them automatically."}
+                </>
+              ) : (
+                <>
+                  You asked for <Money atomic={bid.counterOfferAmount} className="text-arc-lavender" />. If their agent bids that, this one is released
+                  automatically. You can still accept it at <Money atomic={bid.amountUsdc} className="text-arc-lavender" /> until then.
+                </>
+              )}
+            </p>
+          )}
+          {replaces && (
+            <p className="mt-2 text-xs text-arc-lavender">
+              Re-bid at your counter price. Replaces their <Money atomic={replaces.amountUsdc} className="text-arc-lavender" /> bid.
             </p>
           )}
           {d.note && !countered && <p className="mt-1 text-xs text-text-secondary">{d.note}</p>}
         </div>
         {!settling && mode === "idle" && (
           <div className="flex w-full flex-wrap gap-2 sm:w-auto">
-            {!countered && (
+            {!rebid && (
               <Button size="sm" onClick={() => setMode("reply")} disabled={windowPassed || !!busy} title={windowPassed ? "The 3-day reply window has passed" : undefined}>
                 Reply · collect {formatMoney(bid.amountUsdc)}
               </Button>
             )}
-            {!countered && !windowPassed && (
+            {!countered && !replaces && !windowPassed && (
               <Button size="sm" variant="outline" onClick={() => setMode("counter")} disabled={!!busy}>
                 Counter
               </Button>

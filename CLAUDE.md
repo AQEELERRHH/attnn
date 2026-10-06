@@ -108,6 +108,7 @@ Shared UI for market screens; reference page at `/design` (local + Vercel previe
   - `placing`: recorded, not yet escrowed. `failed`: placement failed, **no USDC moved** (`failReason` says why).
   - `pending`: escrowed on-chain; `onChainBidId` + `onChainTxHash` are always set from the transaction receipt.
   - `accepted` / `rejected` / `refunded`: written **only after the settlement transaction is COMPLETE** on Arc. While one is in flight the bid stays `pending` with `settlementTxHash` (Circle id) + `settlementAction` ("confirming"). A failed settlement clears both, bumps `settlementAttempt` and sets `failReason`.
+- `replacesBidId` (nullable self-reference): set on a re-bid placed at a creator's counter price; points at the countered original. Unique where not null.
 - `(escrowAddress, onChainBidId)` is a bid's on-chain identity: every escrow deployment numbers bids from 1. Unique index `bids_escrow_onchain_id_uq`. Rows from before this column have `escrowAddress = null`.
 - `bidTxHash` / `settlementTxHash` hold **Circle transaction ids**; `onChainTxHash` / `settlementOnChainTxHash` hold chain hashes.
 - Earnings, volume and anything shown as money moved must count only `accepted` (settled on-chain) bids; spend/budget counts everything except `failed`.
@@ -128,7 +129,7 @@ Contracts (addresses from env): **AttnnRegistry** (`registerCreator`, `getCreato
 2. **Place bid** (`/api/bid/place`, bidder agent, counter handler) → `createBidIntent()`: validates amount vs floor/limits and the bidder's USDC balance, inserts a `placing` row with `escrowAddress`, sends `attnn/bid.requested`, returns **202**.
 3. **`placeBid` job** (concurrency 1 per bidder, since `approve` overwrites the allowance): `approve` if the allowance is short → wait for `COMPLETE` → `placeBid` → wait → `finalizePlacement()` reads `BidPlaced` from the receipt (filtered to this escrow + bidder + creator) → `pending` with `onChainBidId`, then sends `attnn/bid.placed` for creator triage. Any Circle failure/revert → `failed`. Its `onFailure` never fails a bid whose `placeBid` was already submitted.
 4. **Accept / reject / refund** → `submitSettlement()`: checks the actor, the on-chain bid (`getBid`: still Pending, inside/after the 3-day window) and the wallet, then **reserves** the bid (`settlementAction` + a `reserved:<ms>` sentinel in `settlementTxHash`) before sending, so two different settlements can't both reach Circle. It then sends the call, swaps the sentinel for the Circle id and sends `attnn/settlement.submitted`. A failed settlement re-reads the escrow (`reconcileFromEscrow`) in case another transaction already settled it; a reservation older than 5 min is resolved by `refId` lookup or released. **`confirmSettlement` job** → `finalizeSettlement()` sets the final status once `COMPLETE`.
-5. **Counter** (`/api/bid/counter`, creator only, $5–$1,000 and > original) sets `counter_offered` (DB-only, USDC still escrowed) and sends `attnn/counter.received`; the bidder agent may place a **new** bid at that amount.
+5. **Counter** (`/api/bid/counter`, creator only, $5–$1,000 and > original) sets `counter_offered` (DB-only, USDC still escrowed) and sends `attnn/counter.received`; the bidder agent may place a **new** bid at that amount with `replacesBidId` = the original (one re-bid per original, unique index). When the re-bid is escrowed, `notifyBidEscrowed` also sends `attnn/rebid.escrowed` and `declineReplacedBid()` rejects the original from the creator's wallet, so the bidder's USDC isn't locked twice; if it can't (already settled, window passed, no gas) the original still refunds via `autoRefund`. A creator can accept a countered bid at its original price **unless** a live re-bid (placing/pending/counter_offered/accepted) stands in for it.
 6. **3-day refund:** `autoRefund` (hourly at :17) calls `submitSettlement(refund)` from the bidder's wallet for `pending`/`counter_offered` bids older than 3 days + 30 min. Status becomes `refunded` only when the claim completes.
 7. **Backstops:** `sweepInFlightBids` (every 10 min) finishes `placing` bids and in-flight settlements whose job ran out of time; a `placing` bid with no Circle id after 30 min is checked by `refId` before being failed. Circle webhooks (below) finish them immediately when a transaction reaches a terminal state.
 8. **Repair / audit:** `node --env-file=.env.local scripts/reconcile-bids.mjs` — READ-ONLY report comparing the DB with the escrow (phantoms, unproven accepts, status mismatches).
@@ -151,15 +152,15 @@ Triggered by `attnn/bid.placed`, which is sent only **after** the bid is escrowe
 
 1. Loads the bid, the creator's profile and their pending bids (`queueDepth`, `highestBidAmount`).
 2. `triageBidForCreator` (`lib/ai.ts`) returns a 0–10 score; thresholds are **hard-coded**: `≥ 8` accept (template or AI `draftReply`), `5–7` counter at 85% of the highest pending bid (floor $5) if a higher one exists else surface, `< 5` reject. `autoAcceptThreshold` is AI context only. Fallback when AISA fails: ≥ 2× minBid → 8, ≥ minBid → 5, else 3.
-3. Records the score, then acts through `submitSettlement` (accept/reject) or sets `counter_offered`. A `BidError` (e.g. window passed) is returned in the run result, not thrown.
+3. Records the score, then acts through `submitSettlement` (accept/reject) or sets `counter_offered`. A re-bid (`replacesBidId` set) is never countered or rejected by the agent; those outcomes become `surface`. A `BidError` (e.g. window passed) is returned in the run result, not thrown.
 
 ### Counter-offer handler: `handleCounterOffer`
 
-Triggered by `attnn/counter.received`. If the counter fits the bidder's remaining daily budget, it calls `createBidIntent` for a **new** bid at the counter amount (placed by the `placeBid` job like any other). The original bid stays `counter_offered`, its USDC escrowed until the creator rejects it or `autoRefund` claims it.
+Triggered by `attnn/counter.received`. Skips if the original is no longer `counter_offered` or is settling. If the counter fits the bidder's remaining daily budget, it calls `createBidIntent({ …, replacesBidId })` for a **new** bid at the counter amount (placed by the `placeBid` job like any other; a retry returns the same re-bid). The original stays `counter_offered` until `declineReplacedBidJob` (`attnn/rebid.escrowed`) releases it, the creator settles it, or `autoRefund` claims it.
 
 ### Other Inngest functions
 
-`activityFeed` (`arc/bid.placed`, placeholder no-op), `bidExpiryNotification` (daily 02:00 UTC, logs bids refunding within 24h). `placeBid`, `confirmSettlement` and `sweepInFlightBids` live in `inngest/bid-lifecycle.ts`. All nine are exported in the `functions` array.
+`activityFeed` (`arc/bid.placed`, placeholder no-op), `bidExpiryNotification` (daily 02:00 UTC, logs bids refunding within 24h). `placeBid`, `confirmSettlement` and `sweepInFlightBids` live in `inngest/bid-lifecycle.ts`. `declineReplacedBidJob` lives in `inngest/functions.ts`. All ten are exported in the `functions` array.
 
 ## x402 flow (`GET /api/c/[handle]`)
 

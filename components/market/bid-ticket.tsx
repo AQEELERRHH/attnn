@@ -160,9 +160,11 @@ export function BidTicket({
         />
       </div>
 
-      <p className="text-xs text-text-secondary">
-        Bidding as <span className="text-text-primary">{biddingAs}</span>
-      </p>
+      {biddingAs && (
+        <p className="text-xs text-text-secondary">
+          Bidding as <span className="text-text-primary">{biddingAs}</span>
+        </p>
+      )}
 
       <dl id="ticket-terms" className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-2 border-t border-border pt-3 text-[13px]">
         <dt className="text-text-secondary">You escrow</dt>

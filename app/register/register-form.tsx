@@ -7,6 +7,14 @@ import { Input } from "@/components/ui/input";
 import { Mail } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 
+/** Where to land after sign-in: a same-site path from ?callbackUrl=, else the dashboard. */
+function safeCallbackUrl(): string {
+  if (typeof window === "undefined") return "/dashboard";
+  const cb = new URLSearchParams(window.location.search).get("callbackUrl");
+  // Only same-site paths ("/c/alice"), never "//evil.com" or "https://…".
+  return cb && cb.startsWith("/") && !cb.startsWith("//") && !cb.startsWith("/\\") ? cb : "/dashboard";
+}
+
 export default function RegisterForm() {
   const [isLoading, setIsLoading] = useState(false);
 
@@ -19,7 +27,7 @@ export default function RegisterForm() {
     if (!email) return;
     setEmailLoading(true);
     try {
-      const res = await signIn("resend", { email, redirect: false, callbackUrl: "/dashboard" });
+      const res = await signIn("resend", { email, redirect: false, callbackUrl: safeCallbackUrl() });
       if (res?.ok) {
         setEmailSent(true);
         toast({ title: "Magic link sent!", description: "Check your email for the sign in link.", variant: "success" });
@@ -35,7 +43,7 @@ export default function RegisterForm() {
   const handleGoogleSignIn = async () => {
     setIsLoading(true);
     try {
-      await signIn("google", { callbackUrl: "/dashboard" });
+      await signIn("google", { callbackUrl: safeCallbackUrl() });
     } catch {
       toast({ title: "Error", description: "Google sign in failed", variant: "destructive" });
     }

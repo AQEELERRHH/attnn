@@ -24,7 +24,18 @@ export interface OrderBookBid {
  * Open, escrowed bids on one creator, highest first, with a depth bar. Only pass
  * bids that are actually escrowed (status pending / counter_offered).
  */
-export function OrderBook({ bids, floorUsdc, className }: { bids: OrderBookBid[]; floorUsdc: string; className?: string }) {
+export function OrderBook({
+  bids,
+  floorUsdc,
+  now,
+  className,
+}: {
+  bids: OrderBookBid[];
+  floorUsdc: string;
+  /** Server render time, so times match between server and browser (no hydration mismatch). */
+  now?: number;
+  className?: string;
+}) {
   const floor = creatorFloor(floorUsdc);
   const top = bids.reduce((m, b) => (BigInt(b.amountUsdc) > m ? BigInt(b.amountUsdc) : m), BigInt(0));
   const ranked = React.useMemo(
@@ -68,12 +79,12 @@ export function OrderBook({ bids, floorUsdc, className }: { bids: OrderBookBid[]
         return <Num className="text-arc-lavender">{pct > 0 ? `+${pct}%` : `${pct}%`}</Num>;
       },
     },
-    { key: "placed", label: "Placed", render: (b) => <Num className="text-text-secondary">{timeAgo(b.createdAt)}</Num> },
+    { key: "placed", label: "Placed", render: (b) => <Num className="text-text-secondary">{timeAgo(b.createdAt, now)}</Num> },
     {
       key: "refund",
       label: "Refund",
       render: (b) => {
-        const r = refundCountdown(b.createdAt);
+        const r = refundCountdown(b.createdAt, now);
         return <Num className={cn(r.due ? "text-arc-coral" : "text-arc-coral/90")}>{r.label}</Num>;
       },
     },

@@ -91,6 +91,10 @@ Shared UI for market screens; reference page at `/design` (local + Vercel previe
 - **Colour roles** (palette unchanged from the original site): gold = money, open bids, primary action · green = settled / up · coral = refund countdowns, warnings, down · lavender = links, tags, focus ring · purple = decorative only (fails text contrast) · `text-dim` = placeholders/disabled only.
 - **Numbers**: every number uses `.num` / `<Num>` / `<Money atomic=…>` (DM Mono, tabular digits). Format with `lib/format.ts` (`formatMoney`, `formatChange`, `formatDuration`, `timeAgo`, `refundCountdown`, `dollarsToAtomic`); never float maths on money.
 - **Bid status text** comes only from `bidDisplay()` in `lib/bid-display.ts`, so every screen labels a bid the same way.
+- **Market numbers** come from `lib/market.ts` (`computeCreatorStats`, `computePlatformTotals`, `loadMarketBids`). "Cleared" = `accepted` **with** `settlementOnChainTxHash`; reply rate = cleared ÷ (cleared + refunded) over 30 days; top bid / open bids count only `pending` + `counter_offered`. Never show placeholder stats.
+- Pages: `/creators` (markets table, ISR 60 s) and `/c/[handle]` (market page; bio/open-to free when signed in, x402 for agents). `SiteHeader` is the shared top bar. Pass the server's `now` into client components that show relative times, to avoid hydration mismatches.
+- **Market photo:** `profiles.avatarUrl`. Upload via `POST /api/profile/avatar` (browser resizes to 256×256 and re-encodes, server sniffs type, ≤512 KB) to Supabase Storage bucket `avatars` (needs `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`; bucket auto-created); `PUT {source:"google"}` links the Google photo (opt-in, googleusercontent.com only); `DELETE` removes.
+- Bids to creators with `availabilityStatus = "not_accepting"` are refused by `createBidIntent` and skipped by the bidder agent.
 - Components: `Panel`, `StatStrip`, `StatInline`, `StatusChip`, `Tag`, `CreatorAvatar`, `Sparkline` (server-safe), and `MarketTable`, `OrderBook`, `BidTicket` (client). `MarketTable` takes render functions, so use it from client components only. Buttons: primary is solid gold with dark text.
 
 ## Data model essentials
@@ -104,7 +108,7 @@ Shared UI for market screens; reference page at `/design` (local + Vercel previe
 - `bidTxHash` / `settlementTxHash` hold **Circle transaction ids**; `onChainTxHash` / `settlementOnChainTxHash` hold chain hashes.
 - Earnings, volume and anything shown as money moved must count only `accepted` (settled on-chain) bids; spend/budget counts everything except `failed`.
 - `agent_logs.action` is a pg enum, so new actions need a schema change plus a migration (ask before pushing).
-- One `profile` and one `bidder_config` per user (both are `unique` on `userId`). `profiles.minBid` is never below $5 (validated in the profile routes). `profiles.avatarUrl` is reserved for the market photo (UI in PR 3).
+- One `profile` and one `bidder_config` per user (both are `unique` on `userId`). `profiles.minBid` is never below $5 (validated in the profile routes). `profiles.avatarUrl` is the market photo (see Market design system).
 
 ## How on-chain writes work (Circle)
 

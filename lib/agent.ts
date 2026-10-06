@@ -83,7 +83,7 @@ export async function runBidderAgent(userId: string): Promise<AgentRunResult> {
     const activeProfiles = await db.query.profiles.findMany({ where: eq(profiles.isActive, true) });
     const creatorsToScore: { profile: typeof profiles.$inferSelect; address: string }[] = [];
     for (const profile of activeProfiles) {
-      if (profile.userId === userId) continue;
+      if (profile.userId === userId || profile.availabilityStatus === "not_accepting") continue;
       const wallet = await db.query.wallets.findFirst({ where: eq(wallets.userId, profile.userId) });
       if (wallet && creatorAddresses.has(wallet.address.toLowerCase())) {
         creatorsToScore.push({ profile, address: wallet.address });

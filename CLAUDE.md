@@ -133,6 +133,7 @@ Contracts (addresses from env): **AttnnRegistry** (`registerCreator`, `getCreato
 6. **3-day refund:** `autoRefund` (hourly at :17) calls `submitSettlement(refund)` from the bidder's wallet for `pending`/`counter_offered` bids older than 3 days + 30 min. Status becomes `refunded` only when the claim completes.
 7. **Backstops:** `sweepInFlightBids` (every 10 min) finishes `placing` bids and in-flight settlements whose job ran out of time; a `placing` bid with no Circle id after 30 min is checked by `refId` before being failed. Circle webhooks (below) finish them immediately when a transaction reaches a terminal state.
 8. **Repair / audit:** `node --env-file=.env.local scripts/reconcile-bids.mjs` — READ-ONLY report comparing the DB with the escrow (phantoms, unproven accepts, status mismatches).
+9. **Repair open bids (manual):** send `attnn/admin.reconcile-bids` from the Inngest dashboard. `{}` = dry run (report only); `{ "apply": true }` = links NULL-escrow / wrong-id rows to their real on-chain bid and marks rows with no on-chain bid in any known escrow as `failed` ("never escrowed"). Logic in `lib/reconcile.ts` (`classifyOpenRows` is pure). Skips bids with a settlement in flight.
 
 ## Agents
 
@@ -160,7 +161,7 @@ Triggered by `attnn/counter.received`. Skips if the original is no longer `count
 
 ### Other Inngest functions
 
-`activityFeed` (`arc/bid.placed`, placeholder no-op), `bidExpiryNotification` (daily 02:00 UTC, logs bids refunding within 24h). `placeBid`, `confirmSettlement` and `sweepInFlightBids` live in `inngest/bid-lifecycle.ts`. `declineReplacedBidJob` lives in `inngest/functions.ts`. All ten are exported in the `functions` array.
+`activityFeed` (`arc/bid.placed`, placeholder no-op), `bidExpiryNotification` (daily 02:00 UTC, logs bids refunding within 24h). `placeBid`, `confirmSettlement` and `sweepInFlightBids` live in `inngest/bid-lifecycle.ts`. `declineReplacedBidJob` and `reconcileOpenBidsJob` live in `inngest/functions.ts`. All eleven are exported in the `functions` array.
 
 ## x402 flow (`GET /api/c/[handle]`)
 

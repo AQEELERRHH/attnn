@@ -3,6 +3,7 @@ import { db } from "@/lib/db/client";
 import { bids } from "@/lib/db/schema";
 import { eq, and, lt, gt, isNull, isNotNull, inArray, ne, sql, gte } from "drizzle-orm";
 import { BidError, createBidIntent, declineReplacedBid, submitSettlement } from "@/lib/bids";
+import { applyVerdict, classifyOpenRows, indexOnChainBids, loadOpenRows } from "@/lib/reconcile";
 import { REFUND_PERIOD_MS } from "@/lib/bid-rules";
 import { escrowAddress } from "@/lib/chain";
 import { confirmSettlement, listUnsyncedPendingBids, placeBid, sweepInFlightBids } from "./bid-lifecycle";
@@ -255,6 +256,59 @@ export const declineReplacedBidJob = inngest.createFunction(
   },
 );
 
+// ─── Admin: reconcile open bids with the escrows ──────────────────────────────
+// Run by hand from the Inngest dashboard (Send event "attnn/admin.reconcile-bids").
+// data: {} for a dry run (report only), { "apply": true } to write the fixes.
+// See lib/reconcile.ts for what "linked" and "phantom" mean.
+export const reconcileOpenBidsJob = inngest.createFunction(
+  { id: "reconcile-open-bids", name: "Admin: Reconcile Open Bids", concurrency: 1, retries: 2 },
+  { event: "attnn/admin.reconcile-bids" },
+  async ({ event, step }) => {
+    const apply = (event.data as { apply?: boolean } | undefined)?.apply === true;
+    const rows = await step.run("load-open-bids", () => loadOpenRows());
+    if (!rows.length) return { apply, open: 0 };
+
+    const index = await step.run("index-escrows", () => indexOnChainBids(rows.map((r) => r.bidderAddress)));
+    const verdicts = classifyOpenRows(rows, index);
+
+    const summarize = (kind: string) => {
+      const list = rows.filter((r) => verdicts.get(r.id)?.kind === kind);
+      return { count: list.length, usdc: list.reduce((s, r) => s + BigInt(r.amountUsdc), BigInt(0)).toString() };
+    };
+    const report = {
+      apply,
+      open: rows.length,
+      ok: summarize("ok"),
+      linked: summarize("linked"),
+      phantom: summarize("phantom"),
+      linkedRows: rows
+        .filter((r) => verdicts.get(r.id)?.kind === "linked")
+        .map((r) => ({ id: r.id, ...(verdicts.get(r.id) as object) })),
+      phantomRowIds: rows.filter((r) => verdicts.get(r.id)?.kind === "phantom").map((r) => r.id),
+    };
+    if (!apply) return report;
+
+    let updated = 0;
+    let skipped = 0;
+    const toWrite = rows.filter((r) => verdicts.get(r.id)?.kind !== "ok");
+    for (let i = 0; i < toWrite.length; i += 50) {
+      const batch = toWrite.slice(i, i + 50);
+      const res = await step.run(`apply-${i}`, async () => {
+        let u = 0;
+        let sk = 0;
+        for (const r of batch) {
+          if ((await applyVerdict(r.id, verdicts.get(r.id)!)) === "updated") u++;
+          else sk++;
+        }
+        return { u, sk };
+      });
+      updated += res.u;
+      skipped += res.sk;
+    }
+    return { ...report, updated, skipped };
+  },
+);
+
 // ─── Counter-Offer Handler ────────────────────────────────────────────────────
 // The bidder agent accepts a counter if it fits today's budget, by placing a NEW
 // bid at the counter amount. The original bid stays counter_offered with its USDC
@@ -316,6 +370,7 @@ export const functions = [
   creatorAgentTriage,
   handleCounterOffer,
   declineReplacedBidJob,
+  reconcileOpenBidsJob,
   placeBid,
   confirmSettlement,
   sweepInFlightBids,

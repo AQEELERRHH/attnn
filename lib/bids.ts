@@ -433,6 +433,9 @@ export async function submitSettlement(params: {
   }
   const [, , , , , onChainStatus, createdAt] = onChain;
   if (onChainStatus !== ONCHAIN_STATUS.Pending) {
+    // Settled by some other transaction (or before the settlement fix): record what
+    // the escrow says instead of leaving the row open forever.
+    await reconcileFromEscrow(bid).catch(() => false);
     throw new BidError("This bid is already settled on-chain; it will update shortly", 409);
   }
   const periodMs = await refundPeriodMs(escrow);

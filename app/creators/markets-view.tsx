@@ -11,12 +11,12 @@ import {
   Num,
   Panel,
   Sparkline,
-  StatStrip,
   Tag,
   type MarketColumn,
 } from "@/components/market";
+import { LiveFills, PlatformStats, type FillTick, type PlatformStatsData } from "@/components/market/platform";
 import { cn } from "@/lib/cn";
-import { formatChange, formatDuration, timeAgo } from "@/lib/format";
+import { formatChange, formatDuration } from "@/lib/format";
 
 export interface MarketRow {
   handle: string;
@@ -35,22 +35,8 @@ export interface MarketRow {
   hasHistory: boolean;
 }
 
-export interface TickerFill {
-  handle: string;
-  amountUsdc: string;
-  settledAt: string;
-}
-
-export interface MarketTotals {
-  escrowUsdc: string;
-  escrowSource: string;
-  settled24hUsdc: string;
-  settledPrev24hUsdc: string;
-  cleared24h: number;
-  refunded24h: number;
-  activeAgents: number;
-  medianReply7dMs: number | null;
-}
+export type TickerFill = FillTick;
+export type MarketTotals = PlatformStatsData;
 
 const big = (s: string | null) => (s === null ? null : BigInt(s));
 const num = (s: string | null) => (s === null ? null : Number(s));
@@ -210,67 +196,28 @@ export function MarketsView({
             Every creator is a market. Bids are escrowed USDC on Arc: paid out on reply, refunded after 3 days without one.
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Link href="/dashboard" className="focus-ring inline-flex h-11 items-center rounded-lg border border-border-bright px-4 font-medium hover:bg-arc-bg-2">
+        <div className="flex w-full flex-wrap gap-2 sm:w-auto">
+          <Link href="/dashboard" className="focus-ring inline-flex h-11 w-full items-center justify-center rounded-lg border border-border-bright px-4 font-medium hover:bg-arc-bg-2 sm:w-auto">
             List yourself as a creator
           </Link>
           <Link
             href="/dashboard"
-            className="focus-ring inline-flex h-11 items-center rounded-lg bg-arc-gold px-4 font-display font-bold text-arc-bg-0 hover:brightness-110"
+            className="focus-ring inline-flex h-11 w-full items-center justify-center rounded-lg bg-arc-gold px-4 font-display font-bold text-arc-bg-0 hover:brightness-110 sm:w-auto"
           >
             Deploy a bidder agent
           </Link>
         </div>
       </div>
 
-      <StatStrip
-        className="mt-6"
-        items={[
-          { label: "In escrow now", value: <Money atomic={totals.escrowUsdc} tone="gold" />, sub: totals.escrowSource },
-          {
-            label: "24h settled",
-            value: <Money atomic={totals.settled24hUsdc} />,
-            sub:
-              BigInt(totals.settledPrev24hUsdc) > BigInt(0) ? (
-                <>
-                  <Change value={formatChange(BigInt(totals.settled24hUsdc), BigInt(totals.settledPrev24hUsdc))} /> vs prior 24h
-                </>
-              ) : (
-                "Nothing settled the 24h before"
-              ),
-          },
-          { label: "Bids cleared · 24h", value: <Num>{totals.cleared24h}</Num>, sub: `${totals.refunded24h} refunded` },
-          { label: "Active bidder agents", value: <Num>{totals.activeAgents}</Num>, sub: "Running on a schedule" },
-          { label: "Median reply", value: <Num>{formatDuration(totals.medianReply7dMs)}</Num>, sub: "Across cleared bids, 7d" },
-        ]}
-      />
-
-      {ticker.length > 0 && (
-        <div
-          aria-label="Latest fills"
-          className="mt-3 flex items-center gap-4 overflow-x-auto whitespace-nowrap rounded-[10px] border border-border bg-arc-bg-1 px-4 py-2.5 text-[13px]"
-        >
-          <span className="inline-flex flex-none items-center gap-1.5 font-medium text-green">
-            <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-green" />
-            Live fills
-          </span>
-          {ticker.map((f, i) => (
-            <span key={i} className="flex-none text-text-secondary">
-              <Link href={`/c/${f.handle}`} className="text-text-primary hover:underline">
-                @{f.handle}
-              </Link>{" "}
-              cleared <Money atomic={f.amountUsdc} tone="gold" /> · {timeAgo(f.settledAt, now)}
-            </span>
-          ))}
-        </div>
-      )}
+      <PlatformStats totals={totals} className="mt-6" />
+      <LiveFills ticker={ticker} now={now} className="mt-3" />
 
       <div className="mt-6 flex flex-wrap items-center gap-3">
         <div role="group" aria-label="Filter by tag" className="flex flex-wrap gap-1.5">
           {["All", ...topTags].map(chip)}
         </div>
-        <div className="ml-auto flex flex-wrap items-center gap-2.5">
-          <label className="relative flex h-10 min-w-[220px] items-center gap-2 rounded-lg border border-border-bright bg-arc-bg-1 px-3 focus-within:ring-2 focus-within:ring-arc-lavender">
+        <div className="flex w-full flex-wrap items-center gap-2.5 sm:ml-auto sm:w-auto">
+          <label className="relative flex h-10 min-w-[220px] flex-1 sm:flex-none items-center gap-2 rounded-lg border border-border-bright bg-arc-bg-1 px-3 focus-within:ring-2 focus-within:ring-arc-lavender">
             <Search aria-hidden className="h-4 w-4 text-text-secondary" />
             <span className="sr-only">Search creators</span>
             <input
@@ -305,6 +252,42 @@ export function MarketsView({
           defaultSort={{ key: "vol", dir: "desc" }}
           minWidth={960}
           empty={rows.length === 0 ? "No creators have opened a market yet." : "No markets match these filters."}
+          mobileCard={(r) => (
+            <div className="flex items-center gap-3">
+              <Link href={`/c/${r.handle}`} className="focus-ring flex min-w-0 flex-1 items-center gap-2.5 rounded-md">
+                <CreatorAvatar handle={r.handle} src={r.avatarUrl} />
+                <span className="min-w-0">
+                  <span className="flex flex-wrap items-center gap-1.5">
+                    <span className="truncate font-semibold">@{r.handle}</span>
+                    {!r.hasHistory && <span className="rounded border border-arc-lavender/30 px-1.5 text-[11px] text-arc-lavender">New</span>}
+                    {r.paused && <span className="rounded border border-arc-coral/40 px-1.5 text-[11px] text-arc-coral">Paused</span>}
+                  </span>
+                  <span className="block text-xs text-text-secondary">
+                    Floor <Money atomic={r.floorUsdc} className="text-text-secondary" />
+                    {r.replyRate !== null && (
+                      <>
+                        {" "}
+                        · <Num>{Math.round(r.replyRate * 100)}%</Num> reply
+                      </>
+                    )}
+                  </span>
+                </span>
+              </Link>
+              <span className="text-right leading-tight">
+                <Money atomic={r.topBidUsdc ?? r.lastClearedUsdc} tone={r.topBidUsdc ? "gold" : "default"} className="block font-medium" />
+                <span className="block text-[11px] text-text-secondary">{r.topBidUsdc ? "top bid" : r.lastClearedUsdc ? "last cleared" : "no bids"}</span>
+              </span>
+              <Link
+                href={`/c/${r.handle}`}
+                className={cn(
+                  "focus-ring inline-flex h-11 items-center rounded-lg px-3.5 text-sm",
+                  r.paused ? "border border-border-bright font-medium" : "bg-arc-gold font-display font-bold text-arc-bg-0",
+                )}
+              >
+                {r.paused ? "View" : "Bid"}
+              </Link>
+            </div>
+          )}
         />
         <div className="border-t border-border px-5 py-3 text-[13px] text-text-secondary">
           <Num>{filtered.length}</Num> of <Num>{rows.length}</Num> markets · prices in USDC

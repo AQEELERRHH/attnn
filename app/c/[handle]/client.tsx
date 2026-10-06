@@ -215,6 +215,20 @@ export function CreatorMarket(props: CreatorMarketProps) {
                 rowKey={(f) => f.id}
                 minWidth={600}
                 empty="No cleared bids yet."
+                mobileCard={(f) => (
+                  <div className="flex items-center gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate font-medium">{f.agent}</div>
+                      <div className="text-xs text-text-secondary">
+                        <Num>{timeAgo(f.settledAt, now)}</Num> · replied in <Num>{formatDuration(f.replyMs)}</Num> ·{" "}
+                        <a href={f.txHref} target="_blank" rel="noopener noreferrer" className="text-arc-lavender hover:underline">
+                          tx ↗
+                        </a>
+                      </div>
+                    </div>
+                    <Money atomic={f.amountUsdc} tone="success" className="font-medium" />
+                  </div>
+                )}
               />
             )}
           </Panel>

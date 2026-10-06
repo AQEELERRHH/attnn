@@ -7,3 +7,5 @@ export type { OrderBookBid } from "./order-book";
 export { BidTicket } from "./bid-ticket";
 export type { BidTicketProps } from "./bid-ticket";
 export { PriceChart } from "./price-chart";
+export { PlatformStats, LiveFills } from "./platform";
+export type { PlatformStatsData, FillTick } from "./platform";

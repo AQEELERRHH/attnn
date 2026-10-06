@@ -1,25 +1,16 @@
 import Link from "next/link";
-import { ArrowRight, ArrowLeft } from "lucide-react";
+import { ArrowRight } from "lucide-react";
+import { SiteHeader } from "@/components/market/site-header";
+import { arc } from "@/lib/chain";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 
 export default function AboutPage() {
   return (
     <div className="min-h-screen bg-arc-bg-0">
-      {/* Nav */}
-      <nav className="fixed top-0 w-full z-50 border-b border-border bg-arc-bg-0/80 backdrop-blur-xl">
-        <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-2">
-            <img src="/attnn-logo.jpeg" alt="Attnn." className="w-8 h-8 rounded-lg object-cover" />
-            <span className="font-display font-bold text-xl">attnn.</span>
-          </Link>
-          <Link href="/">
-            <Button variant="outline" size="sm"><ArrowLeft className="w-4 h-4 mr-2" />Back</Button>
-          </Link>
-        </div>
-      </nav>
+      <SiteHeader networkLabel={arc.chain.name} />
 
-      <div className="max-w-3xl mx-auto px-6 pt-32 pb-20">
+      <div className="max-w-3xl mx-auto px-4 sm:px-6 pt-12 sm:pt-16 pb-20">
 
         {/* Header */}
         <div className="mb-16 text-center">
@@ -86,7 +77,7 @@ export default function AboutPage() {
                 <p className="text-sm text-text-secondary">Anyone whose time has value; developers, designers, writers, founders, experts. You register your profile, set your minimum bid price, and receive an AI-ranked inbox of bids. You reply to the ones worth your time and earn USDC instantly.</p>
               </div>
               <div className="p-4 rounded-lg border border-arc-purple/30 bg-arc-bg-2/30">
-                <h3 className="font-display font-bold mb-2 text-arc-purple">Companies & Bidders</h3>
+                <h3 className="font-display font-bold mb-2 text-arc-lavender">Companies & Bidders</h3>
                 <p className="text-sm text-text-secondary">Anyone who needs to reach professionals: recruiters, founders, investors, marketers. You deploy an AI agent with a goal and budget. The agent finds matching creators automatically, places bids, and works around the clock without you lifting a finger.</p>
               </div>
             </div>
@@ -122,7 +113,7 @@ export default function AboutPage() {
                 <div className="w-8 h-8 rounded-full bg-arc-gold/20 flex items-center justify-center shrink-0 text-arc-gold font-bold text-sm">3</div>
                 <div>
                   <h4 className="font-medium mb-1">Circle Wallets: No Crypto Setup Needed</h4>
-                  <p className="text-sm text-text-secondary">When you sign up with Google, Attnn. creates a secure digital wallet for you automatically in the background. You never need to install MetaMask, write down seed phrases, or touch any crypto interface. It just works.</p>
+                  <p className="text-sm text-text-secondary">When you sign up, Attnn. creates a secure digital wallet for you automatically in the background. You never need to install MetaMask, write down seed phrases, or touch any crypto interface. It just works.</p>
                 </div>
               </div>
               <div className="flex gap-4">
@@ -162,7 +153,7 @@ export default function AboutPage() {
             <Card className="p-6 border-l-4 border-l-arc-coral">
               <h3 className="font-display font-bold mb-2">The Investor Finding Deal Flow</h3>
               <p className="text-sm text-text-secondary leading-relaxed">
-                An angel investor wants to meet early-stage founders building in Web3. They set up a bidder agent with the goal &quot;find founders building on Arc or Ethereum&quot; and a $100/day budget. The agent runs every 10 minutes, finds matching founders registered on Attnn., and places bids automatically. Serious founders reply. The investor gets warm introductions to 5 founders per week without sending a single cold message.
+                An angel investor wants to meet early-stage founders building in Web3. They set up a bidder agent with the goal &quot;find founders building on Arc or Ethereum&quot; and a $100/day budget. The agent runs every 30 minutes, finds matching founders registered on Attnn., and places bids automatically. Serious founders reply. The investor gets warm introductions to 5 founders per week without sending a single cold message.
               </p>
             </Card>
           </div>
@@ -183,15 +174,15 @@ export default function AboutPage() {
               },
               {
                 q: "What happens if a creator never replies?",
-                a: "After 3 days with no reply, the full bid amount is automatically refunded to the sender by a smart contract. No request needed, no dispute process, no human intervention. The code handles it automatically."
+                a: "After 3 days with no reply, the escrow contract lets the sender take the full bid back, and Attnn. claims that refund for them automatically. No request needed, no dispute process."
               },
               {
                 q: "Who are the AI agents and what do they actually do?",
-                a: "A bidder agent is a software program that runs on your behalf. You tell it your goal (e.g. find senior React developers), your daily budget (e.g. $20/day), and search tags (e.g. react, frontend, web3). Every 10 minutes, the agent searches the registry for matching creators, scores each one for fit using AI, and places bids on the best matches all without you clicking anything."
+                a: "A bidder agent is a software program that runs on your behalf. You tell it your goal (e.g. find senior React developers), your daily budget (e.g. $20/day), and search tags (e.g. react, frontend, web3). Every 30 minutes, the agent searches the registry for matching creators, scores each one for fit using AI, and places bids on the best matches all without you clicking anything."
               },
               {
                 q: "Do I need to know anything about crypto to use Attnn.?",
-                a: "No. You sign in with Google. A wallet is created for you automatically. You fund it with testnet USDC from a faucet (free on testnet). Everything else, the blockchain, the smart contracts, the escrow happens invisibly in the background. You just see a normal web app."
+                a: "No. You sign in with Google or your email. A wallet is created for you automatically. You fund it with testnet USDC from a faucet (free on testnet). Everything else, the blockchain, the smart contracts, the escrow happens invisibly in the background. You just see a normal web app."
               },
               {
                 q: "How much does it cost to place a bid?",
@@ -211,11 +202,11 @@ export default function AboutPage() {
               },
               {
                 q: "Is Attnn. live?",
-                a: "Attn. is currently live on Arc Testnet a test environment where USDC has no real monetary value. This lets builders and early users test everything safely. Mainnet launch follows Arc Network going live. The protocols v1(pitchslotarc.vercel.app) has already processed 500+ transactions in testing."
+                a: "Attnn. is currently live on Arc Testnet a test environment where USDC has no real monetary value. This lets builders and early users test everything safely. Mainnet launch follows Arc Network going live. The protocols v1(pitchslotarc.vercel.app) has already processed 500+ transactions in testing."
               },
               {
                 q: "How do you make sure a reply is actually meaningful and not just thanks bye?",
-                a: "Three layers: First, the smart contract requires a minimum of 10 characters to accept a bid,  so empty one-word replies are blocked at the contract level. Second, the marketplace self-regulates: creators who give low-quality replies will get fewer bids over time as bidders stop returning to them. Third, a creator-side AI agent will score incoming replies for quality before releasing funds, and creators with a pattern of low-quality replies will be flagged in their public profile."
+                a: "Three layers: First, Attnn. requires a reply of at least 10 characters before it accepts a bid, so empty one-word replies are blocked. Second, the marketplace self-regulates: creators who give low-quality replies will get fewer bids over time as bidders stop returning to them. Third, a creator-side AI agent will score incoming replies for quality before releasing funds, and creators with a pattern of low-quality replies will be flagged in their public profile."
               },
             ].map(({ q, a }) => (
               <Card key={q} className="p-6">
@@ -232,7 +223,7 @@ export default function AboutPage() {
         </div>
         <div className="text-center">
           <h2 className="text-2xl font-display font-bold mb-4">Ready to try it?</h2>
-          <p className="text-text-secondary mb-6">Sign in with Google. Your wallet is ready in seconds.</p>
+          <p className="text-text-secondary mb-6">Sign in with Google or email. Your wallet is ready in seconds.</p>
           <Link href="/register">
             <Button size="lg">Get Started <ArrowRight className="ml-2 w-4 h-4" /></Button>
           </Link>

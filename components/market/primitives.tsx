@@ -89,6 +89,8 @@ export function StatStrip({ items, className }: { items: StatItem[]; className?:
       className={cn(
         "grid gap-px overflow-hidden rounded-xl border border-border bg-border",
         "grid-cols-[repeat(auto-fit,minmax(170px,1fr))]",
+        // Phones show two columns; let an odd last item span the row instead of leaving a gap.
+        "max-sm:[&>*:last-child:nth-child(odd)]:col-span-full",
         className,
       )}
     >
@@ -216,7 +218,8 @@ export function Sparkline({
   /** Accessible description, e.g. "7 day cleared price from $20 to $35". */
   label: string;
 }) {
-  if (values.length < 2) return <span className="text-xs text-text-secondary">No fills yet</span>;
+  if (values.length === 0) return <span className="text-xs text-text-secondary">No fills yet</span>;
+  if (values.length === 1) return <span className="text-xs text-text-secondary">1 fill</span>;
   const min = Math.min(...values);
   const max = Math.max(...values);
   const span = max - min || 1;

@@ -22,8 +22,8 @@ export function CreatorCell({ bid }: { bid: BidData }) {
   );
 }
 
-export function TxLinks({ bid }: { bid: BidData }) {
-  if (!bid.bidTxHref && !bid.settlementTxHref) return <span className="text-text-secondary">—</span>;
+export function TxLinks({ bid, hideEmpty }: { bid: BidData; hideEmpty?: boolean }) {
+  if (!bid.bidTxHref && !bid.settlementTxHref) return hideEmpty ? null : <span className="text-text-secondary">—</span>;
   return (
     <span className="flex gap-3 text-[13px]">
       {bid.bidTxHref && (
@@ -280,6 +280,38 @@ export function BidderView({
             rowKey={(b) => b.id}
             defaultSort={{ key: "bid", dir: "desc" }}
             minWidth={980}
+            mobileCard={(b) => {
+              const d = bidDisplay(b, "bidder");
+              const r = refundCountdown(b.createdAt, now);
+              return (
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex items-center gap-3">
+                    <div className="min-w-0 flex-1">
+                      <CreatorCell bid={b} />
+                    </div>
+                    <Money atomic={b.amountUsdc} tone="gold" className="font-medium" />
+                  </div>
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-text-secondary">
+                    <StatusChip tone={d.tone} dot>
+                      {d.label}
+                    </StatusChip>
+                    {b.bookRank && (
+                      <Num>
+                        #{b.bookRank.rank} of {b.bookRank.of}
+                      </Num>
+                    )}
+                    {b.status !== "placing" && <Num className="text-arc-coral">{r.due ? "refund due now" : `refund ${r.label}`}</Num>}
+                    <TxLinks bid={b} hideEmpty />
+                  </div>
+                  {b.status === "counter_offered" && b.counterOfferAmount && (
+                    <span className="text-xs text-arc-lavender">
+                      Asked <Money atomic={b.counterOfferAmount} className="text-arc-lavender" />
+                    </span>
+                  )}
+                  {d.note && <span className="text-xs text-text-secondary">{d.note}</span>}
+                </div>
+              );
+            }}
             empty={
               <>
                 No open bids. Find a creator on the <Link href="/creators" className="text-arc-lavender hover:underline">markets page</Link> or let your agent bid for you.
@@ -294,6 +326,28 @@ export function BidderView({
             rowKey={(b) => b.id}
             defaultSort={{ key: "when", dir: "desc" }}
             minWidth={900}
+            mobileCard={(b) => {
+              const d = bidDisplay(b, "bidder");
+              const text = b.status === "failed" ? d.note : b.reply;
+              return (
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex items-center gap-3">
+                    <div className="min-w-0 flex-1">
+                      <CreatorCell bid={b} />
+                    </div>
+                    <Money atomic={b.amountUsdc} tone={b.status === "accepted" && b.settlementTxHref ? "success" : "muted"} className="font-medium" />
+                  </div>
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-text-secondary">
+                    <StatusChip tone={d.tone} dot>
+                      {d.label}
+                    </StatusChip>
+                    <Num>{timeAgo(b.settledAt ?? b.createdAt, now)}</Num>
+                    <TxLinks bid={b} hideEmpty />
+                  </div>
+                  {text && <span className={cn("line-clamp-3 text-xs", b.status === "failed" ? "text-arc-coral" : "text-text-secondary")}>{text}</span>}
+                </div>
+              );
+            }}
             empty="Nothing settled in the last 30 days."
           />
         )}

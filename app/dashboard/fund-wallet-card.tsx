@@ -1,29 +1,31 @@
 "use client";
 
 import { useState } from "react";
-import { Card } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Copy, ExternalLink } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Panel } from "@/components/market";
 import { toast } from "@/hooks/use-toast";
+import { formatMoney } from "@/lib/format";
 
-export function FundWalletCard({
-  address,
-  onFunded,
-}: {
-  address: string;
-  onFunded: () => void;
-}) {
+const ONE_USDC = BigInt(1_000_000);
+
+/** Circle returns balances as decimal strings ("12.345678"); convert without floats, truncating past 6 dp. */
+function decimalToAtomic(s: unknown): bigint | null {
+  const m = typeof s === "string" ? s.trim().match(/^(\d+)(?:\.(\d+))?$/) : null;
+  if (!m) return null;
+  return BigInt(m[1]!) * ONE_USDC + BigInt((m[2] ?? "").slice(0, 6).padEnd(6, "0"));
+}
+
+export function FundWalletCard({ address, onFunded }: { address: string; onFunded: () => void }) {
   const [copied, setCopied] = useState(false);
+  const [checking, setChecking] = useState(false);
 
-  const copyAddress = () => {
-    navigator.clipboard.writeText(address);
+  const copyAddress = async () => {
+    await navigator.clipboard.writeText(address).catch(() => {});
     setCopied(true);
     toast({ title: "Address copied" });
     setTimeout(() => setCopied(false), 2000);
   };
-
-  const faucetUrl = "https://faucet.circle.com";
-  const [checking, setChecking] = useState(false);
 
   // Soft check so creators aren't sent to a registration that will fail.
   // The server enforces the same $1 minimum in /api/profile/activate.
@@ -32,11 +34,11 @@ export function FundWalletCard({
     try {
       const res = await fetch("/api/wallet/balance");
       const data = await res.json();
-      const balance = Number.parseFloat(data?.balance ?? "0");
-      if (res.ok && Number.isFinite(balance) && balance < 1) {
+      const balance = decimalToAtomic(data?.balance ?? "0");
+      if (res.ok && balance !== null && balance < ONE_USDC) {
         toast({
           title: "Add at least $1 USDC to activate",
-          description: `Your wallet has $${balance.toFixed(2)}. Faucet funds can take a minute to arrive.`,
+          description: `Your wallet has ${formatMoney(balance)}. Faucet funds can take a minute to arrive.`,
           variant: "destructive",
         });
         return;
@@ -49,63 +51,58 @@ export function FundWalletCard({
     }
   };
 
+  const steps = [
+    { n: "01", label: "Wallet ready", cls: "border-green/40 text-green" },
+    { n: "02", label: "Fund wallet", cls: "border-arc-gold/60 text-arc-gold" },
+    { n: "03", label: "Register on Arc", cls: "border-border-bright text-text-secondary" },
+  ];
+
   return (
-    <Card className="p-8">
-      <div className="text-xs uppercase tracking-wider text-arc-gold mb-2">
-        Creator Registration
-      </div>
-      <h2 className="text-2xl font-display font-bold mb-2">
-        Fund your Agent Wallet
-      </h2>
-      <p className="text-sm text-text-secondary mb-8">
-        Add at least $1 USDC to activate. Your Circle Agent Wallet pays the small network fees on Arc (in USDC) for registering and replying to bids.
+    <Panel raised>
+      <div className="eyebrow text-arc-gold">Open your creator market</div>
+      <h2 className="mt-2 font-display text-2xl font-bold">Fund your agent wallet</h2>
+      <p className="mt-2 max-w-[65ch] text-sm text-text-secondary">
+        Add at least $1 USDC to activate. Your Circle agent wallet pays the small network fees on Arc (in USDC) for registering and replying to bids.
       </p>
 
-      <div className="flex items-center gap-2 mb-8">
-        <div className="px-3 py-1 rounded-full border border-green/40 text-green text-xs font-mono">
-          01 Wallet Ready
-        </div>
-        <div className="px-3 py-1 rounded-full border border-arc-gold/60 text-arc-gold text-xs font-mono">
-          02 Fund wallet
-        </div>
-        <div className="px-3 py-1 rounded-full border border-border text-text-dim text-xs font-mono">
-          03 Register on Arc
-        </div>
-      </div>
+      <ol className="mt-5 flex flex-wrap gap-2">
+        {steps.map((s) => (
+          <li key={s.n} className={`num rounded-full border px-3 py-1 text-xs ${s.cls}`}>
+            {s.n} {s.label}
+          </li>
+        ))}
+      </ol>
 
-      <div className="rounded-lg border border-border bg-arc-bg-2/50 p-4 mb-6">
-        <div className="text-xs uppercase tracking-wider text-text-secondary mb-2">
-          Your Circle Agent Wallet
-        </div>
-        <div className="font-mono text-sm break-all mb-3">{address}</div>
-        <div className="flex items-center gap-3 flex-wrap">
-          <Button variant="outline" size="sm" type="button" onClick={copyAddress}>
-            <Copy className="w-3 h-3 mr-2" />
+      <div className="mt-5 rounded-lg border border-border bg-arc-bg-0 p-4">
+        <div className="eyebrow">Your agent wallet</div>
+        <div className="num mt-2 break-all text-sm">{address}</div>
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          <Button variant="outline" size="sm" onClick={copyAddress}>
+            <Copy aria-hidden className="mr-1.5 h-3 w-3" />
             {copied ? "Copied" : "Copy address"}
           </Button>
           <a
-            href={faucetUrl}
+            href="https://faucet.circle.com"
             target="_blank"
             rel="noopener noreferrer"
-            className="text-arc-gold text-sm flex items-center gap-1 hover:underline"
+            className="focus-ring inline-flex items-center gap-1 rounded text-sm text-arc-lavender hover:underline"
           >
-            Get testnet USDC
-            <ExternalLink className="w-3 h-3 ml-1" />
+            Get testnet USDC <ExternalLink aria-hidden className="h-3 w-3" />
           </a>
         </div>
       </div>
 
-      <ol className="text-sm text-text-secondary space-y-2 mb-8 list-decimal pl-5">
+      <ol className="mt-5 list-decimal space-y-1.5 pl-5 text-sm text-text-secondary">
         <li>Copy your wallet address above</li>
         <li>Go to faucet.circle.com</li>
         <li>Select Arc Testnet</li>
         <li>Paste your address and request USDC (at least $1)</li>
-        <li>Come back and click the button below</li>
+        <li>Come back and press the button below</li>
       </ol>
 
-      <Button type="button" onClick={checkAndContinue} disabled={checking} className="w-full">
-        {checking ? "Checking balance..." : "I've added at least $1 USDC — continue"}
+      <Button onClick={checkAndContinue} disabled={checking} className="mt-6 w-full">
+        {checking ? "Checking balance…" : "I've added at least $1 USDC, continue"}
       </Button>
-    </Card>
+    </Panel>
   );
 }

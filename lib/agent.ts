@@ -23,7 +23,7 @@ function startOfUtcDay(): Date {
 }
 
 /** Today's committed spend: every bid except ones that failed (no USDC moved). */
-async function spentToday(userId: string): Promise<bigint> {
+export async function spentToday(userId: string): Promise<bigint> {
   const [row] = await db
     .select({ total: sql<string>`COALESCE(SUM(CAST(${bids.amountUsdc} AS BIGINT)), 0)` })
     .from(bids)

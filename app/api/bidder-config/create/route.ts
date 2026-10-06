@@ -3,6 +3,24 @@ import { auth } from "@/lib/auth";
 import { db } from "@/lib/db/client";
 import { bidderConfigs } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
+import { ESCROW_MAX_BID, ESCROW_MIN_BID, parseAtomicUsdc } from "@/lib/bid-rules";
+
+/** Checks the money and score fields that were sent. Returns an error message or null. */
+function validate(body: Record<string, unknown>): string | null {
+  if (body.dailyBudget !== undefined) {
+    const v = parseAtomicUsdc(body.dailyBudget);
+    if (v === null || v < ESCROW_MIN_BID) return "Daily budget must be at least $5 USDC";
+  }
+  if (body.maxBidPerCreator !== undefined) {
+    const v = parseAtomicUsdc(body.maxBidPerCreator);
+    if (v === null || v < ESCROW_MIN_BID || v > ESCROW_MAX_BID) return "Max bid per creator must be between $5 and $1,000 USDC";
+  }
+  if (body.minFitScore !== undefined) {
+    const v = body.minFitScore;
+    if (typeof v !== "number" || !Number.isInteger(v) || v < 0 || v > 10) return "Min fit score must be a whole number from 0 to 10";
+  }
+  return null;
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -10,6 +28,8 @@ export async function POST(req: NextRequest) {
     if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const body = await req.json();
+    const invalid = validate(body ?? {});
+    if (invalid) return NextResponse.json({ error: invalid }, { status: 400 });
     const { goal, dailyBudget, searchTags, minFitScore, defaultMessage, agentName, maxBidPerCreator } = body;
 
     // Check if already exists

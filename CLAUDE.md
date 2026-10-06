@@ -48,8 +48,11 @@ npm test               # playwright (no tests are checked in yet)
 app/
   page.tsx, about/, creators/          public marketing & discovery pages
   register/                            sign-in (Google / email magic link)
-  dashboard/                           page.tsx (server: loads wallet/profile/config/bids/logs)
-                                       dashboard-client.tsx (~1100 lines: creator, bidder & activity tabs)
+  dashboard/                           Portfolio. page.tsx (server: wallet, on-chain balance, bids, totals, logs)
+                                       dashboard-client.tsx (shell: header, wallet dialog, Bidding | Creator | Agent)
+                                       bidder-view (positions + history), creator-view (inbox, reply composer,
+                                       counter, market settings), agent-console (status, strategy, run log),
+                                       creator-/bidder-setup-form, wallet-dialog, fund-wallet-card, types.ts
   c/[handle]/                          public creator profile page (UI)
   api/
     auth/[...nextauth]/                Auth.js handlers
@@ -90,7 +93,8 @@ Shared UI for market screens; reference page at `/design` (local + Vercel previe
 
 - **Colour roles** (palette unchanged from the original site): gold = money, open bids, primary action · green = settled / up · coral = refund countdowns, warnings, down · lavender = links, tags, focus ring · purple = decorative only (fails text contrast) · `text-dim` = placeholders/disabled only.
 - **Numbers**: every number uses `.num` / `<Num>` / `<Money atomic=…>` (DM Mono, tabular digits). Format with `lib/format.ts` (`formatMoney`, `formatChange`, `formatDuration`, `timeAgo`, `refundCountdown`, `dollarsToAtomic`); never float maths on money.
-- **Bid status text** comes only from `bidDisplay()` in `lib/bid-display.ts`, so every screen labels a bid the same way.
+- **Bid status text** comes only from `bidDisplay()` in `lib/bid-display.ts`, so every screen labels a bid the same way. Pass `settlementOnChainTxHash` when you have it: an `accepted` row without one shows "Unverified" (pre-fix data).
+- **Portfolio numbers** come from `lib/portfolio.ts` (`computeBidderTotals`, `computeCreatorTotals`, `bookRanks`) plus `spentToday()` from `lib/agent.ts` (same rule the agent uses). In escrow = `pending` + `counter_offered` only; `placing` is shown as "confirming". Earnings count only cleared bids. The dashboard polls `router.refresh()` every 15 s while a bid is placing or settling.
 - **Market numbers** come from `lib/market.ts` (`computeCreatorStats`, `computePlatformTotals`, `loadMarketBids`). "Cleared" = `accepted` **with** `settlementOnChainTxHash`; reply rate = cleared ÷ (cleared + refunded) over 30 days; top bid / open bids count only `pending` + `counter_offered`. Never show placeholder stats.
 - Pages: `/creators` (markets table, ISR 60 s) and `/c/[handle]` (market page; bio/open-to free when signed in, x402 for agents). `SiteHeader` is the shared top bar. Pass the server's `now` into client components that show relative times, to avoid hydration mismatches.
 - **Market photo:** `profiles.avatarUrl`. Upload via `POST /api/profile/avatar` (browser resizes to 256×256 and re-encodes, server sniffs type, ≤512 KB) to Supabase Storage bucket `avatars` (needs `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`; bucket auto-created); `PUT {source:"google"}` links the Google photo (opt-in, googleusercontent.com only); `DELETE` removes.

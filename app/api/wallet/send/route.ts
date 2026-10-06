@@ -4,6 +4,7 @@ import { db } from "@/lib/db/client";
 import { wallets } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { transferUSDC } from "@/lib/circle";
+import { dollarsToAtomic } from "@/lib/format";
 
 export async function POST(req: NextRequest) {
   try {
@@ -11,21 +12,19 @@ export async function POST(req: NextRequest) {
     if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const { to, amount } = await req.json();
-    if (!to || !amount) return NextResponse.json({ error: "Missing to or amount" }, { status: 400 });
-    if (!to.startsWith("0x") || to.length !== 42) return NextResponse.json({ error: "Invalid address" }, { status: 400 });
-
-    const amountFloat = parseFloat(amount);
-    if (isNaN(amountFloat) || amountFloat <= 0) return NextResponse.json({ error: "Invalid amount" }, { status: 400 });
+    if (typeof to !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(to)) {
+      return NextResponse.json({ error: "Invalid address" }, { status: 400 });
+    }
+    // Dollars in ("12.5"), atomic USDC out, without float maths.
+    const atomic = dollarsToAtomic(String(amount ?? ""));
+    if (atomic === null || atomic <= BigInt(0)) return NextResponse.json({ error: "Invalid amount" }, { status: 400 });
 
     const wallet = await db.query.wallets.findFirst({
       where: eq(wallets.userId, session.user.id),
     });
     if (!wallet) return NextResponse.json({ error: "Wallet not found" }, { status: 404 });
 
-    // Convert USDC amount to 6 decimal atomic units
-    const atomicAmount = Math.round(amountFloat * 1_000_000).toString();
-
-    const result = await transferUSDC(wallet.circleWalletId, to, atomicAmount);
+    const result = await transferUSDC(wallet.circleWalletId, to, atomic.toString());
 
     return NextResponse.json({ success: true, txId: result.txId });
   } catch (err) {

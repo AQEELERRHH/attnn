@@ -1,5 +1,6 @@
 "use client";
 
+import type * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
@@ -11,8 +12,8 @@ const NAV = [
   { href: "/about", label: "How it works" },
 ];
 
-/** Top bar shared by the market screens. */
-export function SiteHeader({ networkLabel }: { networkLabel: string }) {
+/** Top bar shared by the market screens. `actions` replaces the sign-in / dashboard button. */
+export function SiteHeader({ networkLabel, actions }: { networkLabel: string; actions?: React.ReactNode }) {
   const pathname = usePathname();
   const { status } = useSession();
 
@@ -48,7 +49,7 @@ export function SiteHeader({ networkLabel }: { networkLabel: string }) {
             <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-green" />
             {networkLabel}
           </span>
-          {status === "authenticated" ? (
+          {actions ?? (status === "authenticated" ? (
             <Link href="/dashboard" className="focus-ring rounded-lg border border-border-bright px-3.5 py-2 text-sm font-medium hover:bg-arc-bg-2">
               Dashboard
             </Link>
@@ -59,7 +60,7 @@ export function SiteHeader({ networkLabel }: { networkLabel: string }) {
             >
               Get started
             </Link>
-          )}
+          ))}
         </div>
       </div>
     </header>

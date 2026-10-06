@@ -29,6 +29,8 @@ export function bidDisplay(
     settlementTxHash?: string | null;
     settlementAction?: string | null;
     failReason?: string | null;
+    /** Pass it to flag rows marked accepted with no settlement transaction (pre-fix data). */
+    settlementOnChainTxHash?: string | null;
   },
   viewer: "bidder" | "creator" = "bidder",
 ): BidDisplay {
@@ -57,6 +59,9 @@ export function bidDisplay(
         note: bid.failReason ? `Last attempt failed: ${bid.failReason}` : null,
       };
     case "accepted":
+      if (bid.settlementOnChainTxHash === null) {
+        return { label: "Unverified", tone: "muted", note: "Marked paid before on-chain checks. No settlement transaction on record." };
+      }
       return { label: viewer === "creator" ? "Paid" : "Replied · paid", tone: "success", note: null };
     case "rejected":
       return { label: "Declined · refunded", tone: "muted", note: null };

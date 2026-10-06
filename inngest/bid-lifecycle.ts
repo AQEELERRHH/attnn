@@ -122,7 +122,10 @@ export const placeBid = inngest.createFunction(
 
       // 2. Place the bid. The Circle id is stored in the same step so a retry
       //    finds the same transaction (opKey) and records it again.
-      await step.run("submit-place-bid", async () => {
+      const submitted = await step.run("submit-place-bid", async () => {
+        // The sweep may have given up on this bid while it waited in the queue.
+        const current = await db.query.bids.findFirst({ where: eq(bids.id, bidId), columns: { status: true } });
+        if (current?.status !== "placing") return null;
         const res = await executeContractCallOnce({
           walletId: bid.walletId,
           contractAddress: bid.escrow,
@@ -131,12 +134,23 @@ export const placeBid = inngest.createFunction(
           args: [bid.creator, bid.amount, bid.message, bid.isPrivate],
           opKey: `place:${bidId}`,
         });
-        await db
+        const saved = await db
           .update(bids)
           .set({ bidTxHash: res.txId })
-          .where(and(eq(bids.id, bidId), eq(bids.status, "placing")));
+          .where(and(eq(bids.id, bidId), eq(bids.status, "placing")))
+          .returning({ id: bids.id });
+        if (!saved.length) {
+          // The sweep failed the row between the check above and Circle accepting the
+          // call. placeBid WAS sent, so USDC may be escrowed: track it again instead of
+          // leaving a "failed" row that autoRefund would never claim.
+          await db
+            .update(bids)
+            .set({ status: "placing", bidTxHash: res.txId, failReason: null })
+            .where(and(eq(bids.id, bidId), eq(bids.status, "failed"), isNull(bids.bidTxHash)));
+        }
         return res.txId;
       });
+      if (!submitted) return { skipped: "bid is no longer placing" };
     }
 
     // 3. Wait for COMPLETE, then read bidId from the receipt.

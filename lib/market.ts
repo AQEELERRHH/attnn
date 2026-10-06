@@ -166,20 +166,22 @@ export async function loadMarketBids(creatorUserId?: string, now: number = Date.
   });
 }
 
-/** USDC currently held by the escrow contract, read from Arc. null if the read fails. */
+/**
+ * USDC currently held by the escrow contracts (the current one plus any earlier
+ * deployment that still holds old bids), read from Arc. null if a read fails.
+ */
 export async function readEscrowBalance(): Promise<string | null> {
   try {
     const { publicClient, usdcAbi, USDC_ADDRESS } = await import("./arc");
-    const { escrowAddress } = await import("./chain");
-    const escrow = escrowAddress();
-    if (!escrow) return null;
-    const bal = await publicClient.readContract({
-      address: USDC_ADDRESS,
-      abi: usdcAbi,
-      functionName: "balanceOf",
-      args: [escrow],
-    });
-    return bal.toString();
+    const { knownEscrowAddresses } = await import("./chain");
+    const escrows = knownEscrowAddresses();
+    if (!escrows.length) return null;
+    const balances = await Promise.all(
+      escrows.map((escrow) =>
+        publicClient.readContract({ address: USDC_ADDRESS, abi: usdcAbi, functionName: "balanceOf", args: [escrow] }),
+      ),
+    );
+    return balances.reduce((sum, b) => sum + b, BigInt(0)).toString();
   } catch (err) {
     console.warn("readEscrowBalance failed:", err);
     return null;

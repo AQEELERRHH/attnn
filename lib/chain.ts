@@ -93,6 +93,34 @@ export function escrowAddress(): `0x${string}` | null {
   return addr ? (addr.toLowerCase() as `0x${string}`) : null;
 }
 
+/**
+ * Earlier AttnnEscrow deployments that may still hold USDC for old bids. Bids in
+ * them can still be accepted, declined and refunded (same ABI), but new bids only
+ * ever go to escrowAddress(). Comma-separated ATTN_LEGACY_ESCROW_CONTRACTS
+ * overrides the default ("none" disables it); on testnet the default is the
+ * original 14-day escrow.
+ */
+const TESTNET_LEGACY_ESCROWS = ["0x3066138a56f75206aedd1a6e7d11c8244e278ab3"] as const;
+
+export function legacyEscrowAddresses(): `0x${string}`[] {
+  // Empty/unset = the network default; "none" turns legacy escrows off.
+  const raw = process.env.ATTN_LEGACY_ESCROW_CONTRACTS?.trim();
+  const list =
+    raw
+      ? raw.toLowerCase() === "none" ? [] : raw.split(",").map((a) => a.trim()).filter(Boolean)
+      : arc.network === "testnet"
+        ? [...TESTNET_LEGACY_ESCROWS]
+        : [];
+  const current = escrowAddress();
+  return [...new Set(list.map((a) => a.toLowerCase() as `0x${string}`))].filter((a) => a !== current);
+}
+
+/** Every escrow the app may settle bids in: the current one first, then legacy ones. */
+export function knownEscrowAddresses(): `0x${string}`[] {
+  const current = escrowAddress();
+  return [...(current ? [current] : []), ...legacyEscrowAddresses()];
+}
+
 export function txUrl(hash: string): string {
   return `${arc.explorerUrl.replace(/\/$/, "")}/tx/${hash}`;
 }

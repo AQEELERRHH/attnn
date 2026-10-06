@@ -38,10 +38,20 @@ export async function POST(req: NextRequest) {
       .returning({ id: bids.id });
     if (!updated.length) return NextResponse.json({ error: "Bid already processed" }, { status: 409 });
 
-    await inngest.send({
-      name: "attnn/counter.received",
-      data: { bidId, bidderUserId: bid.bidderUserId, counterOfferAmount: amount.toString() },
-    }).catch(() => {});
+    try {
+      await inngest.send({
+        name: "attnn/counter.received",
+        data: { bidId, bidderUserId: bid.bidderUserId, counterOfferAmount: amount.toString() },
+      });
+    } catch (err) {
+      // Without the event the bidder's agent never hears about the counter; undo it.
+      console.error("bid/counter: inngest.send failed", err);
+      await db
+        .update(bids)
+        .set({ status: "pending", counterOfferAmount: null })
+        .where(and(eq(bids.id, bidId), eq(bids.status, "counter_offered"), isNull(bids.settlementTxHash)));
+      return NextResponse.json({ error: "Couldn't send the counter right now. Please try again." }, { status: 503 });
+    }
 
     return NextResponse.json({ success: true, bidId, counterOfferAmount: amount.toString() });
   } catch (err) {

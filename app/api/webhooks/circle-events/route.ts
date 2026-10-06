@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { and, eq, inArray, isNull, or } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { decodeEventLog, type DecodeEventLogReturnType } from "viem";
 import { db } from "@/lib/db/client";
 import { bids, webhookEvents } from "@/lib/db/schema";
@@ -130,9 +130,10 @@ async function handle(body: {
   const bid = await db.query.bids.findFirst({
     where: and(
       eq(bids.onChainBidId, onChainBidId),
-      // Rows created before escrowAddress existed have null; they belong to the escrow
-      // that was current when they were created, which the reconcile script checks.
-      or(eq(bids.escrowAddress, escrow), isNull(bids.escrowAddress)),
+      // Only rows known to live in this escrow. Bid ids restart at 1 in every
+      // deployment, so a NULL-escrow row with the same id is a different bid
+      // (submitSettlement resolves and stamps those itself).
+      eq(bids.escrowAddress, escrow),
     ),
   });
   if (!bid) return { ignored: `no bid for on-chain id ${onChainBidId}` };

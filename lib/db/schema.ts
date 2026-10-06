@@ -7,8 +7,10 @@ import {
   boolean,
   jsonb,
   pgEnum,
+  uniqueIndex,
+  index,
 } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 
 // ─── Enums ───────────────────────────────────────────────────────────────────
 
@@ -18,13 +20,25 @@ export const walletStateEnum = pgEnum("wallet_state", [
   "active",
   "failed",
 ]);
+// Bid lifecycle:
+//   placing ─┬─► pending (escrowed on-chain, onChainBidId known) ─┬─► accepted
+//            │                                                     ├─► rejected
+//            └─► failed (no USDC moved)                            ├─► refunded
+//                                                                  └─► counter_offered (DB-only; still escrowed)
+// accepted / rejected / refunded are written only after the settlement transaction
+// is COMPLETE on-chain. While one is in flight the bid stays pending with
+// settlementTxHash + settlementAction set ("confirming").
 export const bidStatusEnum = pgEnum("bid_status", [
   "pending",
   "accepted",
   "rejected",
   "refunded",
   "counter_offered",
+  "placing",
+  "failed",
 ]);
+
+export type BidStatus = (typeof bidStatusEnum.enumValues)[number];
 export const agentLogActionEnum = pgEnum("agent_log_action", [
   "bid_placed",
   "bid_accepted",
@@ -98,7 +112,10 @@ export const profiles = pgTable("profiles", {
     .references(() => users.id, { onDelete: "cascade" })
     .unique(),
   handle: text("handle").notNull().unique(),
-  minBid: text("min_bid").default("1000000").notNull(),
+  // Atomic USDC (6 decimals). Never below the escrow's MIN_BID ($5).
+  minBid: text("min_bid").default("5000000").notNull(),
+  // Public market photo. Null → show the handle's initial.
+  avatarUrl: text("avatar_url"),
   tags: text("tags").array().default([]).notNull(),
   bio: text("bio"),
   profileURI: text("profile_uri"),
@@ -184,7 +201,24 @@ export const bids = pgTable("bids", {
   counterOfferAmount: text("counter_offer_amount"),
   onChainTxHash: text("on_chain_tx_hash"),
   settlementOnChainTxHash: text("settlement_on_chain_tx_hash"),
-});
+  // Escrow contract this bid lives in (lower-case). Bid ids restart at 1 in every
+  // escrow deployment, so (escrowAddress, onChainBidId) is the real identity.
+  // Null on rows created before this column existed.
+  escrowAddress: text("escrow_address"),
+  // Which settlement is in flight while settlementTxHash is set on a pending bid.
+  settlementAction: text("settlement_action").$type<"accept" | "reject" | "refund">(),
+  // Bumped each time a settlement transaction fails, so the retry gets a fresh
+  // Circle idempotency key ("settle:<id>:<action>:<attempt>").
+  settlementAttempt: integer("settlement_attempt").default(0).notNull(),
+  // Why placement or the last settlement attempt failed (shown to the user).
+  failReason: text("fail_reason"),
+}, (t) => [
+  uniqueIndex("bids_escrow_onchain_id_uq")
+    .on(t.escrowAddress, t.onChainBidId)
+    .where(sql`${t.escrowAddress} IS NOT NULL AND ${t.onChainBidId} IS NOT NULL`),
+  index("bids_status_idx").on(t.status),
+  index("bids_bidder_created_idx").on(t.bidderUserId, t.createdAt),
+]);
 
 export const bidsRelations = relations(bids, ({ one }) => ({
   bidder: one(users, {

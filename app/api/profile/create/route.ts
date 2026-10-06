@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { db } from "@/lib/db/client";
 import { profiles, wallets } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
+import { validateCreatorFloor } from "@/lib/bid-rules";
 
 export async function POST(req: NextRequest) {
   try {
@@ -15,6 +16,9 @@ export async function POST(req: NextRequest) {
     if (!handle || !minBid) {
       return NextResponse.json({ error: "Handle and minBid are required" }, { status: 400 });
     }
+    const floor = validateCreatorFloor(minBid);
+    if (!floor.ok) return NextResponse.json({ error: floor.error }, { status: 400 });
+    const minBidAtomic = floor.amount.toString();
 
     // Check handle uniqueness — allow if it's this user's own handle
     const existingHandle = await db.query.profiles.findFirst({ where: eq(profiles.handle, handle) });
@@ -35,7 +39,7 @@ export async function POST(req: NextRequest) {
         .update(profiles)
         .set({
           handle,
-          minBid,
+          minBid: minBidAtomic,
           tags: tags ?? [],
           bio: bio ?? null,
           profileURI: profileURI ?? null,
@@ -52,7 +56,7 @@ export async function POST(req: NextRequest) {
     const [profile] = await db.insert(profiles).values({
       userId: session.user.id,
       handle,
-      minBid,
+      minBid: minBidAtomic,
       tags: tags ?? [],
       bio: bio ?? null,
       profileURI: profileURI ?? null,

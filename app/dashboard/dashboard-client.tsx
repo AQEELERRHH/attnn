@@ -193,8 +193,8 @@ export function DashboardClient({
       });
       const data = await res.json();
       if (data.success) {
-        toast({ title: "Bid accepted!", variant: "success" });
-        setLocalBids(prev => prev.map(b => b.id === bidId ? { ...b, status: "accepted" } : b));
+        // Not accepted yet: the bid stays pending until acceptBid completes on Arc.
+        toast({ title: "Reply sent", description: "Releasing USDC on Arc. Earnings update once it confirms.", variant: "success" });
         router.refresh();
       } else {
         toast({ title: "Error", description: data.error ?? "Failed to accept", variant: "destructive" });
@@ -245,10 +245,13 @@ export function DashboardClient({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ bidId, userId }),
       });
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        toast({ title: "Bid rejected", variant: "success" });
-        setLocalBids(prev => prev.map(b => b.id === bidId ? { ...b, status: "rejected" } : b));
+        // Not rejected yet: the bid stays pending until rejectBid completes on Arc.
+        toast({ title: "Declining", description: "Refunding the bidder on Arc. This updates once it confirms.", variant: "success" });
         router.refresh();
+      } else {
+        toast({ title: "Error", description: data.error ?? "Failed to reject", variant: "destructive" });
       }
     } catch {
       toast({ title: "Error", variant: "destructive" });
@@ -900,7 +903,7 @@ function CreatorSetupForm({
     setLoading(true);
     setError("");
     try {
-      const minBidRaw = (parseFloat(minBid) * 1_000_000).toString();
+      const minBidRaw = Math.round(parseFloat(minBid) * 1_000_000).toString();
       const tagsArr = tags.split(",").map(t => t.trim()).filter(Boolean);
 
       if (isEdit) {

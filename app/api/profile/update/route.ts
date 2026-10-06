@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { db } from "@/lib/db/client";
 import { profiles, bidderConfigs } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
+import { validateCreatorFloor } from "@/lib/bid-rules";
 
 export async function POST(req: NextRequest) {
   try {
@@ -14,7 +15,11 @@ export async function POST(req: NextRequest) {
     // ── Profile fields ──
     const profileUpdates: Record<string, unknown> = {};
     if (updates.handle !== undefined) profileUpdates.handle = updates.handle;
-    if (updates.minBid !== undefined) profileUpdates.minBid = updates.minBid;
+    if (updates.minBid !== undefined) {
+      const floor = validateCreatorFloor(updates.minBid);
+      if (!floor.ok) return NextResponse.json({ error: floor.error }, { status: 400 });
+      profileUpdates.minBid = floor.amount.toString();
+    }
     if (updates.tags !== undefined) profileUpdates.tags = updates.tags;
     if (updates.bio !== undefined) profileUpdates.bio = updates.bio;
     if (updates.profileURI !== undefined) profileUpdates.profileURI = updates.profileURI;

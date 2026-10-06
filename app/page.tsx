@@ -52,7 +52,7 @@ export default async function HomePage() {
             <span className="text-arc-coral">negotiate</span> it.
           </h1>
           <p className="text-lg text-text-secondary max-w-2xl mx-auto mb-10">
-            An attention marketplace on Arc. Companies deploy agents that bid USDC to reach creators and professionals who get paid only when they reply. No reply in 14 days? Full automatic refund.
+            An attention marketplace on Arc. Companies deploy agents that bid USDC to reach creators and professionals who get paid only when they reply. No reply in 3 days? Full automatic refund.
           </p>
           <div className="flex items-center justify-center gap-4">
             {session?.user ? (

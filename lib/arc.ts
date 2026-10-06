@@ -205,6 +205,13 @@ export const escrowAbi = [
   },
   {
     type: "function",
+    name: "REFUND_PERIOD",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
     name: "getBidCount",
     inputs: [],
     outputs: [{ name: "", type: "uint256" }],

@@ -49,7 +49,7 @@ Attnn. is a two-sided agentic attention marketplace built entirely on the Circle
 **The escrow guarantee:**
 - Bid placed → USDC locked in smart contract escrow
 - Creator replies → USDC released instantly to creator wallet
-- No reply in 14 days → full automatic refund to bidder
+- No reply in 3 days → full automatic refund to bidder
 
 ---
 
@@ -238,7 +238,9 @@ function isActiveCreator(address creator) external view returns (bool)
 
 Key design: tag-based discovery allows the bidder agent to query `getCreatorsByTag("web3")` and get all matching creator wallet addresses directly from the contract no database query needed for discovery.
 
-### AttnnEscrow `0x3066138a56f75206AeDd1A6E7d11c8244E278aB3`
+### AttnnEscrow `0x7B43B155aCC2B191C121FB2fC724669a6F7Fbb86`
+
+Current deployment (3-day refund window). The original deployment `0x3066138a56f75206AeDd1A6E7d11c8244E278aB3` (14-day window) still holds some older bids; the app settles and refunds those in place but never sends new bids to it.
 
 Bid lifecycle management with trustless escrow.
 
@@ -254,7 +256,7 @@ function getCreatorBids(address creator) external view returns (uint256[])
 Key design:
 - `placeBid` requires prior `approve()` call on USDC contract, the bidder wallet must authorize the escrow to spend USDC before bidding
 - `acceptBid` requires a reply string of minimum 10 characters, basic quality gate preventing empty acceptances
-- `claimRefund` enforces 14-day window via `block.timestamp`
+- `claimRefund` enforces the 3-day window (`REFUND_PERIOD`) via `block.timestamp`
 - OpenZeppelin `ReentrancyGuard` on all state-changing functions
 - Built with Foundry, `via_ir = true` required in `foundry.toml`
 - 20 Foundry tests passing
@@ -317,7 +319,7 @@ CIRCLE_WALLET_SET_ID=...
 
 # Arc Contracts
 ATTN_REGISTRY_CONTRACT=0x853C43338A3FAA52DE3AB79aEBc6AF2F51c41dA3
-ATTN_ESCROW_CONTRACT=0x3066138a56f75206AeDd1A6E7d11c8244E278aB3
+ATTN_ESCROW_CONTRACT=0x7B43B155aCC2B191C121FB2fC724669a6F7Fbb86
 ARC_CHAIN_ID=5042002
 
 # AI
@@ -483,7 +485,8 @@ OpenAPI spec: included in this repository as attnn_openapi.json.
 | Contract | Address |
 |---|---|
 | AttnnRegistry | `0x853C43338A3FAA52DE3AB79aEBc6AF2F51c41dA3` |
-| AttnnEscrow | `0x3066138a56f75206AeDd1A6E7d11c8244E278aB3` |
+| AttnnEscrow | `0x7B43B155aCC2B191C121FB2fC724669a6F7Fbb86` |
+| AttnnEscrow (original, 14-day, legacy bids only) | `0x3066138a56f75206AeDd1A6E7d11c8244E278aB3` |
 | PitchSlotArc V1 | `0x8cE043782da362f3e9caf5fd995061765a993138` |
 | USDC (Arc Testnet) | `0x3600000000000000000000000000000000000000` |
 | Platform Seller Wallet | `0x569ab5cafeba4d38d2b95cd509ed97779e5ff9bf` |
@@ -508,7 +511,7 @@ This section maps Attnn. against the Programmable Money Hackathon Agentic Econom
 
 - Bidder agent places USDC bids every 10 minutes without any human input
 - Creator agent accepts/rejects bids on-chain, triggering USDC settlement or immediate refund
-- 14-day auto-refund Inngest cron sweeps expired bids daily at 03:00 UTC
+- Auto-refund Inngest cron claims expired bids every hour (3 days after placing; 14 for bids still in the original escrow)
 - All flows execute via Circle Developer-Controlled Wallets no human signing at any step
 
 ### "Use of Agent Stack to connect agents to wallets, USDC payments and onchain actions"

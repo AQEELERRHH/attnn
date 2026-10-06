@@ -57,7 +57,7 @@ What if instead of hoping to bump into them at an event you could bid USDC to re
 
 When someone puts real money behind a message, it signals something no DM can "I am serious. This is worth your time."
 
-The creator sees your bid in their inbox. They know you mean business because you put USDC in escrow. If they reply they earn it. If they don't reply in 14 days you get every cent back automatically. 
+The creator sees your bid in their inbox. They know you mean business because you put USDC in escrow. If they reply they earn it. If they don't reply in 3 days you get every cent back automatically. 
 
 ## How is negotiation carriedout on Attnn.
 When we say "let agents negotiate it" the negotiation is the bidding process itself.
@@ -545,7 +545,7 @@ The classic chicken and egg problem. Our answer is V1 PitchSlotArc already has 5
 
 "Why did you build your own escrow contract instead of using an existing solution?"
 
-The existing escrow solutions don't support the specific bid lifecycle we needed reply-triggered release, automatic 14-day refund, bidder and creator discovery by address, and on-chain bid ID lookup for accept and reject. We needed all four in one contract. Building it ourselves with Foundry on Arc gave us full control and 20 passing tests to prove correctness.
+The existing escrow solutions don't support the specific bid lifecycle we needed reply-triggered release, automatic 3-day refund, bidder and creator discovery by address, and on-chain bid ID lookup for accept and reject. We needed all four in one contract. Building it ourselves with Foundry on Arc gave us full control and 20 passing tests to prove correctness.
 
 "How does the bidder agent actually find creators? Is it centralised or on-chain?"
 

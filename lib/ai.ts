@@ -1,3 +1,4 @@
+import { ESCROW_MAX_BID, creatorFloor } from "./bid-rules";
 import { z } from "zod";
 
 // ─── AI Client ───────────────────────────────────────────────────────────────
@@ -180,6 +181,30 @@ export interface TriageResult {
   counterOfferAmount?: string;
 }
 
+
+/** The creator's reply template if it is long enough to accept with (10–2,000 chars). */
+function usableTemplate(template: string | null | undefined): string | undefined {
+  const t = template?.trim();
+  return t && t.length >= 10 && t.length <= 2000 ? t : undefined;
+}
+
+/**
+ * What the creator agent asks for when it counters: 85% of the highest escrowed
+ * bid, never below the creator's floor or $5. Returns undefined (so the bid is
+ * surfaced instead) unless that is strictly more than this bid and within the
+ * $1,000 maximum, the same rules /api/bid/counter enforces for creators.
+ */
+export function counterAmountFor(bidAmountUsdc: string, highestBidAmount: string | null | undefined, creatorMinBid: string): string | undefined {
+  if (!highestBidAmount) return undefined;
+  const amount = BigInt(bidAmountUsdc);
+  const highest = BigInt(highestBidAmount);
+  if (highest <= amount) return undefined;
+  const floor = creatorFloor(creatorMinBid);
+  const target = (highest * BigInt(85)) / BigInt(100);
+  const counter = target > floor ? target : floor;
+  if (counter <= amount || counter > ESCROW_MAX_BID) return undefined;
+  return counter.toString();
+}
 export async function triageBidForCreator(
   bid: BidData & { message: string },
   creatorProfile: CreatorProfile & { autoAcceptThreshold: number; autoReplyTemplate: string | null; queueDepth: number },
@@ -214,23 +239,17 @@ Return JSON: { "score": number, "decision": "accept"|"surface"|"reject", "reason
     if (score >= 8) {
       decision = "accept";
     } else if (score >= 5) {
-      if (highestBidAmount && BigInt(highestBidAmount) > BigInt(bid.amountUsdc)) {
-        // There is a higher bid — counter-offer at 85% of highest bid
-        const highest = BigInt(highestBidAmount);
-        const counter = highest * BigInt(85) / BigInt(100);
-        const minBid = BigInt(5_000_000);
-        counterOfferAmount = (counter > minBid ? counter : minBid).toString();
-        decision = "counter_offer";
-      } else {
-        decision = "surface";
-      }
+      counterOfferAmount = counterAmountFor(bid.amountUsdc, highestBidAmount, creatorProfile.minBid);
+      decision = counterOfferAmount ? "counter_offer" : "surface";
     } else {
       decision = "reject";
     }
 
     let draftedReply: string | undefined;
     if (decision === "accept") {
-      draftedReply = creatorProfile.autoReplyTemplate ??
+      // The escrow app requires a 10+ character reply; an empty or too-short template
+      // would make the accept fail, so draft one instead.
+      draftedReply = usableTemplate(creatorProfile.autoReplyTemplate) ??
         await draftReply(bid.message, { handle: creatorProfile.handle, bio: creatorProfile.bio });
     }
 
@@ -243,12 +262,9 @@ Return JSON: { "score": number, "decision": "accept"|"surface"|"reject", "reason
     let counterOfferAmountFallback: string | undefined;
     if (score >= 8) {
       decisionFallback = "accept";
-    } else if (score >= 5 && highestBidAmount && BigInt(highestBidAmount) > BigInt(bid.amountUsdc)) {
-      const counter = BigInt(highestBidAmount) * BigInt(85) / BigInt(100);
-      counterOfferAmountFallback = (counter > BigInt(5_000_000) ? counter : BigInt(5_000_000)).toString();
-      decisionFallback = "counter_offer";
     } else if (score >= 5) {
-      decisionFallback = "surface";
+      counterOfferAmountFallback = counterAmountFor(bid.amountUsdc, highestBidAmount, creatorProfile.minBid);
+      decisionFallback = counterOfferAmountFallback ? "counter_offer" : "surface";
     } else {
       decisionFallback = "reject";
     }
@@ -256,7 +272,7 @@ Return JSON: { "score": number, "decision": "accept"|"surface"|"reject", "reason
       decision: decisionFallback,
       score,
       reason: "Fallback triage — AI unavailable.",
-      draftedReply: decisionFallback === "accept" ? (creatorProfile.autoReplyTemplate ?? undefined) : undefined,
+      draftedReply: decisionFallback === "accept" ? usableTemplate(creatorProfile.autoReplyTemplate) : undefined,
       counterOfferAmount: counterOfferAmountFallback,
     };
   }

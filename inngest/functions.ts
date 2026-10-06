@@ -191,20 +191,23 @@ export const creatorAgentTriage = inngest.createFunction(
     let action: { submitted: boolean; txId?: string; error?: string } | null = null;
 
     if (triageResult.decision === "counter_offer" && triageResult.counterOfferAmount) {
-      await step.run("auto-counter-offer", async () => {
+      const counterAmount = triageResult.counterOfferAmount;
+      const countered = await step.run("auto-counter-offer", async () => {
         const updated = await db
           .update(bids)
-          .set({ status: "counter_offered", counterOfferAmount: triageResult.counterOfferAmount })
+          .set({ status: "counter_offered", counterOfferAmount: counterAmount })
           .where(and(eq(bids.id, bidId), eq(bids.status, "pending"), isNull(bids.settlementTxHash)))
           .returning({ id: bids.id });
-        if (updated.length) {
-          await inngest.send({
-            name: "attnn/counter.received",
-            data: { bidId, bidderUserId: bid.bidderUserId, counterOfferAmount: triageResult.counterOfferAmount },
-          });
-        }
-        return { countered: updated.length > 0 };
+        return updated.length > 0;
       });
+      // Separate step: if sending fails, the retry re-sends instead of finding the
+      // row already countered and skipping the event (the bidder would never hear).
+      if (countered) {
+        await step.sendEvent("notify-counter", {
+          name: "attnn/counter.received",
+          data: { bidId, bidderUserId: bid.bidderUserId, counterOfferAmount: counterAmount },
+        });
+      }
     } else if (triageResult.decision === "accept" && triageResult.draftedReply) {
       action = await step.run("auto-accept-bid", async () => {
         try {

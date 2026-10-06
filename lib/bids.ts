@@ -18,7 +18,7 @@ import { parseEventLogs, type Hex } from "viem";
 import { db } from "./db/client";
 import { bids, profiles, wallets } from "./db/schema";
 import { escrowAbi, publicClient, usdcAbi, USDC_ADDRESS } from "./arc";
-import { escrowAddress } from "./chain";
+import { escrowAddress, knownEscrowAddresses } from "./chain";
 import {
   classifyTxState,
   describeTxFailure,
@@ -298,20 +298,71 @@ const CHAIN_FINAL: Record<number, BidRow["status"]> = {
   [ONCHAIN_STATUS.Refunded]: "refunded",
 };
 
+type OnChainBid = readonly [Hex, Hex, bigint, string, string, number, bigint];
+
+async function readOnChainBid(escrow: string, onChainBidId: string): Promise<OnChainBid> {
+  return publicClient.readContract({
+    address: escrow as Hex,
+    abi: escrowAbi,
+    functionName: "getBid",
+    args: [BigInt(onChainBidId)],
+  }) as Promise<OnChainBid>;
+}
+
+/** True when the escrow's bid N is this row's bid (ids restart at 1 in every deployment). */
+function sameBid(onChain: OnChainBid, bid: Pick<BidRow, "bidderAddress" | "creatorAddress" | "amountUsdc">): boolean {
+  return (
+    lower(onChain[0]) === lower(bid.bidderAddress) &&
+    lower(onChain[1]) === lower(bid.creatorAddress) &&
+    onChain[2].toString() === bid.amountUsdc
+  );
+}
+
+/**
+ * The escrow contract that holds this bid. Rows created before escrow_address
+ * existed have it NULL and may live in an earlier deployment, so the known
+ * escrows are checked on-chain for a bid with this id, bidder, creator and
+ * amount, and the match is saved on the row. Returns null if none matches.
+ */
+export async function resolveBidEscrow(bid: BidRow): Promise<string | null> {
+  if (bid.escrowAddress) return bid.escrowAddress;
+  if (!bid.onChainBidId) return null;
+  for (const candidate of knownEscrowAddresses()) {
+    const onChain = await readOnChainBid(candidate, bid.onChainBidId);
+    if (sameBid(onChain, bid)) {
+      await db.update(bids).set({ escrowAddress: candidate }).where(and(eq(bids.id, bid.id), isNull(bids.escrowAddress)));
+      return candidate;
+    }
+  }
+  return null;
+}
+
+/** Refund period of an escrow deployment (3 days now, 14 in the original). Cached per address. */
+const refundPeriodCache = new Map<string, number>();
+async function refundPeriodMs(escrow: string): Promise<number> {
+  const key = lower(escrow);
+  const cached = refundPeriodCache.get(key);
+  if (cached !== undefined) return cached;
+  try {
+    const seconds = await publicClient.readContract({ address: escrow as Hex, abi: escrowAbi, functionName: "REFUND_PERIOD" });
+    const ms = Number(seconds) * 1000;
+    refundPeriodCache.set(key, ms);
+    return ms;
+  } catch {
+    return REFUND_PERIOD_MS; // not cached, so it's re-read next time
+  }
+}
+
 /**
  * After a settlement of ours fails, the escrow may still be final because a
  * DIFFERENT transaction settled it (a race, or someone acting outside the app).
  * Reads the escrow and, if the bid is no longer Pending there, writes that status.
  */
 async function reconcileFromEscrow(bid: BidRow): Promise<boolean> {
-  const escrow = bid.escrowAddress ?? escrowAddress();
+  const escrow = await resolveBidEscrow(bid);
   if (!escrow || !bid.onChainBidId) return false;
-  const onChain = await publicClient.readContract({
-    address: escrow as Hex,
-    abi: escrowAbi,
-    functionName: "getBid",
-    args: [BigInt(bid.onChainBidId)],
-  });
+  const onChain = await readOnChainBid(escrow, bid.onChainBidId);
+  if (!sameBid(onChain, bid)) return false;
   const finalStatus = CHAIN_FINAL[onChain[5]];
   if (!finalStatus) return false;
   const updated = await db
@@ -361,10 +412,11 @@ export async function submitSettlement(params: {
   }
   if (!bid.onChainBidId) throw new BidError("This bid has no on-chain id yet", 409);
 
-  const escrow = bid.escrowAddress ?? escrowAddress();
-  if (!escrow) throw new BidError("Escrow contract is not configured", 500);
-  if (escrowAddress() && lower(escrow) !== escrowAddress()) {
-    throw new BidError("This bid lives in a retired escrow contract and needs manual handling", 409);
+  // Old rows may sit in an earlier escrow deployment; settle them where they are.
+  const escrow = await resolveBidEscrow(bid);
+  if (!escrow) throw new BidError("Couldn't find this bid in any known escrow contract. It needs manual review.", 409);
+  if (!knownEscrowAddresses().includes(lower(escrow) as Hex)) {
+    throw new BidError("This bid lives in an unknown escrow contract and needs manual handling", 409);
   }
 
   if (action === "accept") {
@@ -374,18 +426,19 @@ export async function submitSettlement(params: {
   }
 
   // Check the chain before spending gas, so users get a clear reason.
-  const [, , , , , onChainStatus, createdAt] = await publicClient.readContract({
-    address: escrow as Hex,
-    abi: escrowAbi,
-    functionName: "getBid",
-    args: [BigInt(bid.onChainBidId)],
-  });
+  const onChain = await readOnChainBid(escrow, bid.onChainBidId);
+  // Never act on a different bid that happens to share the id.
+  if (!sameBid(onChain, bid)) {
+    throw new BidError("The escrow's record for this bid doesn't match. It needs manual review.", 409);
+  }
+  const [, , , , , onChainStatus, createdAt] = onChain;
   if (onChainStatus !== ONCHAIN_STATUS.Pending) {
     throw new BidError("This bid is already settled on-chain; it will update shortly", 409);
   }
-  const expiresAt = Number(createdAt) * 1000 + REFUND_PERIOD_MS;
+  const periodMs = await refundPeriodMs(escrow);
+  const expiresAt = Number(createdAt) * 1000 + periodMs;
   if (action === "accept" && Date.now() >= expiresAt) {
-    throw new BidError("The 3-day reply window has passed; this bid can only be refunded now", 409);
+    throw new BidError(`The ${Math.round(periodMs / 86_400_000)}-day reply window has passed; this bid can only be refunded now`, 409);
   }
   if (action === "refund" && Date.now() < expiresAt) {
     throw new BidError("The refund window hasn't passed yet", 409);

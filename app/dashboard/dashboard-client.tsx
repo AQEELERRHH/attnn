@@ -7,20 +7,21 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { FundWalletCard } from "./fund-wallet-card";
+import { AvatarEditor } from "@/components/market/avatar-editor";
 import { Slider } from "@/components/ui/slider";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/hooks/use-toast";
 import { LogOut, Wallet, Play, Square, MessageCircle, Check, X, Activity, Zap, Bot, Users, Coins } from "lucide-react";
 
 interface WalletData { id: string; address: string; circleWalletId: string; blockchain: string; state: string; }
-interface ProfileData { id: string; handle: string; minBid: string; tags: string[]; bio: string | null; autoAcceptThreshold: number | null; autoReplyTemplate: string | null; isActive: boolean; availabilityStatus: string; openTo: string[]; }
+interface ProfileData { id: string; handle: string; minBid: string; tags: string[]; bio: string | null; autoAcceptThreshold: number | null; autoReplyTemplate: string | null; isActive: boolean; availabilityStatus: string; openTo: string[]; avatarUrl: string | null; }
 interface BidderConfigData { id: string; goal: string | null; dailyBudget: string; maxBidPerCreator: string; minFitScore: number; searchTags: string[]; defaultMessage: string | null; isActive: boolean; agentName: string | null; }
 interface BidData { id: string; onChainBidId: string | null; bidderUserId: string; creatorUserId: string; bidderAddress: string; creatorAddress: string; amountUsdc: string; message: string | null; status: string; score: number | null; reply: string | null; bidTxHash: string | null; settlementTxHash: string | null; createdAt: string; settledAt: string | null; counterOfferAmount: string | null; onChainTxHash: string | null; settlementOnChainTxHash: string | null; agentName: string | null; }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- agent_logs.data is untyped jsonb whose shape varies by action
 interface LogData { id: string; action: string; data: any; txHash: string | null; createdAt: string; }
 
 export function DashboardClient({
-  wallet, profile, bidderConfig, bids, logs, userId, userRole,
+  wallet, profile, bidderConfig, bids, logs, userId, userRole, hasGooglePhoto,
 }: {
   wallet: WalletData | null;
   profile: ProfileData | null;
@@ -29,6 +30,7 @@ export function DashboardClient({
   logs: LogData[];
   userId: string;
   userRole: string;
+  hasGooglePhoto: boolean;
 }) {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState(profile?.isActive ? "bidder" : "creator");
@@ -489,6 +491,9 @@ export function DashboardClient({
                         Edit Profile
                       </Button>
                     </div>
+                  </div>
+                  <div className="mt-5 border-t border-border pt-5">
+                    <AvatarEditor handle={profile.handle} initialUrl={profile.avatarUrl} hasGooglePhoto={hasGooglePhoto} />
                   </div>
                 </Card>
 

@@ -6,3 +6,4 @@ export { OrderBook } from "./order-book";
 export type { OrderBookBid } from "./order-book";
 export { BidTicket } from "./bid-ticket";
 export type { BidTicketProps } from "./bid-ticket";
+export { PriceChart } from "./price-chart";

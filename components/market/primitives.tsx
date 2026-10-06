@@ -107,7 +107,7 @@ export function StatStrip({ items, className }: { items: StatItem[]; className?:
 export function StatInline({ items, className }: { items: StatItem[]; className?: string }) {
   const tone = { default: "text-text-primary", gold: "text-arc-gold", success: "text-green", danger: "text-arc-coral" };
   return (
-    <dl className={cn("grid grid-cols-[repeat(auto-fit,minmax(120px,1fr))] gap-x-7 gap-y-4", className)}>
+    <dl className={cn("grid grid-cols-[repeat(auto-fit,minmax(104px,1fr))] gap-x-6 gap-y-4", className)}>
       {items.map((it) => (
         <div key={it.label}>
           <dt className="eyebrow">{it.label}</dt>

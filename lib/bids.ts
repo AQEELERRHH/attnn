@@ -78,7 +78,9 @@ export async function createBidIntent(input: BidIntentInput): Promise<BidRow> {
 
   const profile = await db.query.profiles.findFirst({ where: eq(profiles.userId, input.creatorUserId) });
   if (!profile) throw new BidError("Creator not found", 404);
-  if (!profile.isActive) throw new BidError("This creator isn't accepting bids right now");
+  if (!profile.isActive || profile.availabilityStatus === "not_accepting") {
+    throw new BidError("This creator isn't accepting bids right now");
+  }
 
   const check = validateBidAmount(
     typeof input.amountUsdc === "bigint" ? input.amountUsdc : String(input.amountUsdc).trim(),

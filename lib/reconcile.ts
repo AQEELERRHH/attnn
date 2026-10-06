@@ -13,7 +13,7 @@
  *
  * Read-only unless `apply` is true. Bids with a settlement in flight are skipped.
  */
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { Hex } from "viem";
 import { db } from "./db/client";
 import { bids } from "./db/schema";
@@ -27,26 +27,23 @@ export interface OnChainEntry {
   id: string;
   creator: string;
   amount: string;
+  /** Escrow status: 0 Pending, 1 Accepted, 2 Rejected, 3 Refunded. */
+  status: number;
 }
 
-/** Every bid each bidder has in each known escrow. Plain JSON so an Inngest step can return it. */
-export async function indexOnChainBids(bidders: string[]): Promise<Record<string, OnChainEntry[]>> {
+/**
+ * Every bid in every known escrow (ids run 1..getBidCount()), grouped by bidder.
+ * Plain JSON so an Inngest step can return it.
+ */
+export async function indexOnChainBids(): Promise<Record<string, OnChainEntry[]>> {
   const index: Record<string, OnChainEntry[]> = {};
-  for (const bidder of [...new Set(bidders.map(lower))]) {
-    const entries: OnChainEntry[] = [];
-    for (const escrow of knownEscrowAddresses()) {
-      const ids = (await publicClient.readContract({
-        address: escrow as Hex,
-        abi: escrowAbi,
-        functionName: "getBidderBids",
-        args: [bidder as Hex],
-      })) as readonly bigint[];
-      for (const id of ids) {
-        const b = await publicClient.readContract({ address: escrow as Hex, abi: escrowAbi, functionName: "getBid", args: [id] });
-        entries.push({ escrow, id: id.toString(), creator: lower(b[1]), amount: b[2].toString() });
-      }
+  for (const escrow of knownEscrowAddresses()) {
+    const count = (await publicClient.readContract({ address: escrow as Hex, abi: escrowAbi, functionName: "getBidCount" })) as bigint;
+    for (let i = BigInt(1); i <= count; i++) {
+      const b = await publicClient.readContract({ address: escrow as Hex, abi: escrowAbi, functionName: "getBid", args: [i] });
+      const bidder = lower(b[0]);
+      (index[bidder] ??= []).push({ escrow, id: i.toString(), creator: lower(b[1]), amount: b[2].toString(), status: Number(b[5]) });
     }
-    index[bidder] = entries;
   }
   return index;
 }
@@ -104,7 +101,9 @@ export function classifyOpenRows(rows: OpenRow[], index: Record<string, OnChainE
   //    amount (oldest row first), otherwise it never reached escrow.
   const sorted = [...unresolved].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   for (const row of sorted) {
-    const candidate = (index[lower(row.bidderAddress)] ?? []).find((e) => matches(row, e) && !claimed.has(key(e.escrow, e.id)));
+    // Prefer bids still Pending on-chain (the ones with USDC actually locked).
+    const pool = [...(index[lower(row.bidderAddress)] ?? [])].sort((a, b) => Number(a.status !== 0) - Number(b.status !== 0));
+    const candidate = pool.find((e) => matches(row, e) && !claimed.has(key(e.escrow, e.id)));
     if (candidate) {
       claimed.add(key(candidate.escrow, candidate.id));
       out.set(row.id, { kind: "linked", escrow: candidate.escrow, onChainBidId: candidate.id });
@@ -146,4 +145,103 @@ export async function applyVerdict(rowId: string, verdict: Verdict): Promise<"up
     return r.length ? "updated" : "skipped";
   }
   return "skipped";
+}
+
+// ─── Orphans: still escrowed on-chain, but the DB row says it's finished ─────────
+
+/**
+ * A closed row (accepted / rejected / refunded) with no settlement transaction on
+ * record. Before the settlement fix the app wrote these statuses without the chain
+ * agreeing, so some of them are still Pending in the escrow with USDC locked.
+ */
+export interface ClosedRow {
+  id: string;
+  status: string;
+  bidderAddress: string;
+  creatorAddress: string;
+  amountUsdc: string;
+  escrowAddress: string | null;
+  onChainBidId: string | null;
+  createdAt: string;
+}
+
+export interface OrphanReport {
+  /** Closed rows to reopen as pending, linked to their on-chain bid. */
+  reopen: { rowId: string; previousStatus: string; escrow: string; onChainBidId: string; amountUsdc: string }[];
+  /** Pending on-chain bids with no DB row at all (needs manual handling). */
+  unmatched: { escrow: string; onChainBidId: string; bidder: string; creator: string; amountUsdc: string }[];
+}
+
+/**
+ * Pure. `claimed` = "escrow:id" keys owned by open rows (ok or linked). Every other
+ * on-chain bid that is still Pending is an orphan; match it to a closed row with
+ * the same bidder, creator and amount (exact id first, then oldest row).
+ */
+export function findOrphans(index: Record<string, OnChainEntry[]>, claimed: Set<string>, closed: ClosedRow[]): OrphanReport {
+  const key = (escrow: string, id: string) => `${lower(escrow)}:${id}`;
+  const used = new Set<string>();
+  const report: OrphanReport = { reopen: [], unmatched: [] };
+  for (const [bidder, entries] of Object.entries(index)) {
+    for (const e of entries) {
+      if (e.status !== 0 || claimed.has(key(e.escrow, e.id))) continue;
+      const candidates = closed
+        .filter(
+          (r) =>
+            !used.has(r.id) &&
+            lower(r.bidderAddress) === bidder &&
+            lower(r.creatorAddress) === e.creator &&
+            r.amountUsdc === e.amount &&
+            (!r.escrowAddress || lower(r.escrowAddress) === lower(e.escrow)),
+        )
+        .sort((a, b) => Number(b.onChainBidId === e.id) - Number(a.onChainBidId === e.id) || a.createdAt.localeCompare(b.createdAt));
+      const match = candidates.find((r) => !r.onChainBidId || r.onChainBidId === e.id || !r.escrowAddress);
+      if (match) {
+        used.add(match.id);
+        report.reopen.push({ rowId: match.id, previousStatus: match.status, escrow: e.escrow, onChainBidId: e.id, amountUsdc: e.amount });
+      } else {
+        report.unmatched.push({ escrow: e.escrow, onChainBidId: e.id, bidder, creator: e.creator, amountUsdc: e.amount });
+      }
+    }
+  }
+  return report;
+}
+
+/** Closed rows without a settlement transaction, for these bidders. */
+export async function loadClosedRows(bidders: string[]): Promise<ClosedRow[]> {
+  if (!bidders.length) return [];
+  const rows = await db.query.bids.findMany({
+    where: and(
+      inArray(bids.status, ["accepted", "rejected", "refunded"]),
+      isNull(bids.settlementOnChainTxHash),
+      inArray(sql`lower(${bids.bidderAddress})`, bidders.map(lower)),
+    ),
+    columns: { id: true, status: true, bidderAddress: true, creatorAddress: true, amountUsdc: true, escrowAddress: true, onChainBidId: true, createdAt: true },
+  });
+  return rows.map((r) => ({ ...r, createdAt: r.createdAt.toISOString() }));
+}
+
+/**
+ * Reopens a closed row whose bid is still Pending on-chain, so the creator can
+ * reply or autoRefund can return the USDC. Only touches rows still closed with no
+ * settlement transaction on record.
+ */
+export async function reopenOrphan(r: OrphanReport["reopen"][number]): Promise<"updated" | "skipped"> {
+  try {
+    const res = await db
+      .update(bids)
+      .set({
+        status: "pending",
+        escrowAddress: lower(r.escrow),
+        onChainBidId: r.onChainBidId,
+        settledAt: null,
+        settlementTxHash: null,
+        settlementAction: null,
+        failReason: null,
+      })
+      .where(and(eq(bids.id, r.rowId), inArray(bids.status, ["accepted", "rejected", "refunded"]), isNull(bids.settlementOnChainTxHash)))
+      .returning({ id: bids.id });
+    return res.length ? "updated" : "skipped";
+  } catch {
+    return "skipped"; // (escrow, id) already owned by another row
+  }
 }

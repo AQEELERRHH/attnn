@@ -3,7 +3,7 @@ import { db } from "@/lib/db/client";
 import { bids } from "@/lib/db/schema";
 import { eq, and, lt, gt, isNull, isNotNull, inArray, ne, sql, gte } from "drizzle-orm";
 import { BidError, createBidIntent, declineReplacedBid, submitSettlement } from "@/lib/bids";
-import { applyVerdict, classifyOpenRows, indexOnChainBids, loadOpenRows } from "@/lib/reconcile";
+import { applyVerdict, classifyOpenRows, findOrphans, indexOnChainBids, loadClosedRows, loadOpenRows, reopenOrphan } from "@/lib/reconcile";
 import { REFUND_PERIOD_MS } from "@/lib/bid-rules";
 import { escrowAddress } from "@/lib/chain";
 import { confirmSettlement, listUnsyncedPendingBids, placeBid, sweepInFlightBids } from "./bid-lifecycle";
@@ -266,10 +266,22 @@ export const reconcileOpenBidsJob = inngest.createFunction(
   async ({ event, step }) => {
     const apply = (event.data as { apply?: boolean } | undefined)?.apply === true;
     const rows = await step.run("load-open-bids", () => loadOpenRows());
-    if (!rows.length) return { apply, open: 0 };
-
-    const index = await step.run("index-escrows", () => indexOnChainBids(rows.map((r) => r.bidderAddress)));
+    const index = await step.run("index-escrows", () => indexOnChainBids());
     const verdicts = classifyOpenRows(rows, index);
+
+    // Still Pending on-chain but owned by no open row: look for a closed row to reopen.
+    const claimed = new Set<string>();
+    for (const r of rows) {
+      const v = verdicts.get(r.id);
+      if (v?.kind === "linked") claimed.add(`${v.escrow.toLowerCase()}:${v.onChainBidId}`);
+      if (v?.kind === "ok" && r.escrowAddress && r.onChainBidId) claimed.add(`${r.escrowAddress.toLowerCase()}:${r.onChainBidId}`);
+    }
+    const orphanBidders = Object.entries(index)
+      .filter(([, list]) => list.some((e) => e.status === 0 && !claimed.has(`${e.escrow.toLowerCase()}:${e.id}`)))
+      .map(([bidder]) => bidder);
+    const closed = await step.run("load-closed-rows", () => loadClosedRows(orphanBidders));
+    const orphans = findOrphans(index, claimed, closed);
+    const sumUsdc = (xs: { amountUsdc: string }[]) => xs.reduce((s, x) => s + BigInt(x.amountUsdc), BigInt(0)).toString();
 
     const summarize = (kind: string) => {
       const list = rows.filter((r) => verdicts.get(r.id)?.kind === kind);
@@ -285,6 +297,8 @@ export const reconcileOpenBidsJob = inngest.createFunction(
         .filter((r) => verdicts.get(r.id)?.kind === "linked")
         .map((r) => ({ id: r.id, ...(verdicts.get(r.id) as object) })),
       phantomRowIds: rows.filter((r) => verdicts.get(r.id)?.kind === "phantom").map((r) => r.id),
+      reopen: { count: orphans.reopen.length, usdc: sumUsdc(orphans.reopen), rows: orphans.reopen },
+      unmatchedOnChain: { count: orphans.unmatched.length, usdc: sumUsdc(orphans.unmatched), bids: orphans.unmatched },
     };
     if (!apply) return report;
 
@@ -305,7 +319,12 @@ export const reconcileOpenBidsJob = inngest.createFunction(
       updated += res.u;
       skipped += res.sk;
     }
-    return { ...report, updated, skipped };
+    const reopened = await step.run("reopen-orphans", async () => {
+      let u = 0;
+      for (const o of orphans.reopen) if ((await reopenOrphan(o)) === "updated") u++;
+      return u;
+    });
+    return { ...report, updated, skipped, reopened };
   },
 );
 

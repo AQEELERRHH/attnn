@@ -460,6 +460,11 @@ export function DashboardClient({
                         Min bid: {formatAmount(profile.minBid)} &middot; Tags: {profile.tags.join(", ") || "none"}
                         {profile.bio && <> &middot; Bio: {profile.bio}</>}
                       </p>
+                      {!profile.isActive && (
+                        <p className="text-xs text-arc-gold mt-2">
+                          Not active yet. Add at least $1 USDC to your wallet to activate. It covers network fees on Arc.
+                        </p>
+                      )}
                     </div>
                     <div className="flex gap-2">
                       {!profile.isActive && (
@@ -935,7 +940,11 @@ function CreatorSetupForm({
             toast({ title: "Creator profile created!", description: "Registered on-chain", variant: "success" });
             onComplete();
           } else {
-            setError("Profile saved but on-chain registration failed: " + (activateData.error ?? "Unknown error"));
+            setError(
+              activateData.code === "INSUFFICIENT_FUNDS"
+                ? "Profile saved. " + activateData.error + " Then press Activate on Arc."
+                : "Profile saved but on-chain registration failed: " + (activateData.error ?? "Unknown error"),
+            );
           }
         } else {
           setError(data.error ?? "Failed to create profile");

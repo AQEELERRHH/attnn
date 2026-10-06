@@ -5,6 +5,7 @@ import { wallets, profiles } from "@/lib/db/schema";
 import { executeContractCall } from "@/lib/circle";
 import { registryAbi } from "@/lib/arc";
 import { eq } from "drizzle-orm";
+import { ACTIVATION_FUNDS_MESSAGE, ACTIVATION_MIN_USDC, getUsdcBalance } from "@/lib/activation";
 
 export async function POST(_req: NextRequest) {
   try {
@@ -19,6 +20,20 @@ export async function POST(_req: NextRequest) {
 
     const registryAddr = process.env.ATTN_REGISTRY_CONTRACT;
     if (!registryAddr) return NextResponse.json({ error: "Registry not deployed" }, { status: 500 });
+
+    // Registration is paid for in USDC gas from the creator's own wallet.
+    try {
+      const balance = await getUsdcBalance(wallet.address);
+      if (balance < ACTIVATION_MIN_USDC) {
+        return NextResponse.json(
+          { error: ACTIVATION_FUNDS_MESSAGE, code: "INSUFFICIENT_FUNDS", balance: balance.toString() },
+          { status: 400 },
+        );
+      }
+    } catch (err) {
+      // RPC hiccup: don't block activation; an unfunded wallet fails at Circle anyway.
+      console.warn("profile/activate: balance check skipped:", err);
+    }
 
     const result = await executeContractCall({
       walletId: wallet.circleWalletId,

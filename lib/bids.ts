@@ -23,6 +23,7 @@ import {
   classifyTxState,
   describeTxFailure,
   executeContractCallOnce,
+  findTransactionByRefId,
   getTransactionStatus,
 } from "./circle";
 import {
@@ -229,6 +230,43 @@ export async function notifyBidEscrowed(bid: Pick<BidRow, "id" | "creatorUserId"
 
 const SETTLEABLE: BidRow["status"][] = ["pending", "counter_offered"];
 
+/** settlementTxHash holds this sentinel between reserving a bid and Circle returning an id. */
+const RESERVATION_PREFIX = "reserved:";
+const RESERVATION_STALE_MS = 5 * 60 * 1000;
+const isReservation = (v: string | null | undefined) => !!v && v.startsWith(RESERVATION_PREFIX);
+const settlementOpKey = (bidId: string, action: SettlementAction, attempt: number) =>
+  `settle:${bidId}:${action}:${attempt}`;
+
+const CHAIN_FINAL: Record<number, BidRow["status"]> = {
+  [ONCHAIN_STATUS.Accepted]: "accepted",
+  [ONCHAIN_STATUS.Rejected]: "rejected",
+  [ONCHAIN_STATUS.Refunded]: "refunded",
+};
+
+/**
+ * After a settlement of ours fails, the escrow may still be final because a
+ * DIFFERENT transaction settled it (a race, or someone acting outside the app).
+ * Reads the escrow and, if the bid is no longer Pending there, writes that status.
+ */
+async function reconcileFromEscrow(bid: BidRow): Promise<boolean> {
+  const escrow = bid.escrowAddress ?? escrowAddress();
+  if (!escrow || !bid.onChainBidId) return false;
+  const onChain = await publicClient.readContract({
+    address: escrow as Hex,
+    abi: escrowAbi,
+    functionName: "getBid",
+    args: [BigInt(bid.onChainBidId)],
+  });
+  const finalStatus = CHAIN_FINAL[onChain[5]];
+  if (!finalStatus) return false;
+  const updated = await db
+    .update(bids)
+    .set({ status: finalStatus, settledAt: new Date(), settlementTxHash: null, settlementAction: null, failReason: null })
+    .where(and(eq(bids.id, bid.id), inArray(bids.status, SETTLEABLE)))
+    .returning({ id: bids.id });
+  return updated.length > 0;
+}
+
 /**
  * Sends acceptBid / rejectBid / claimRefund for an escrowed bid. The bid stays
  * pending ("confirming") until finalizeSettlement sees the transaction COMPLETE.
@@ -257,9 +295,11 @@ export async function submitSettlement(params: {
   if (bid.status === "placing") throw new BidError("This bid is still being placed on-chain", 409);
   if (!SETTLEABLE.includes(bid.status)) throw new BidError(`This bid is already ${bid.status}`, 409);
   if (action === "accept" && bid.status !== "pending") throw new BidError("Only pending bids can be accepted", 409);
-  if (bid.settlementTxHash) {
-    if (bid.settlementAction === action) return { txId: bid.settlementTxHash }; // already in flight
+  if (bid.settlementAction && bid.settlementAction !== action) {
     throw new BidError("Another settlement for this bid is already confirming", 409);
+  }
+  if (bid.settlementTxHash && !isReservation(bid.settlementTxHash)) {
+    return { txId: bid.settlementTxHash }; // same action already sent
   }
   if (!bid.onChainBidId) throw new BidError("This bid has no on-chain id yet", 409);
 
@@ -303,29 +343,50 @@ export async function submitSettlement(params: {
   const fn = action === "accept" ? "acceptBid" : action === "reject" ? "rejectBid" : "claimRefund";
   const args = action === "accept" ? [bid.onChainBidId, params.reply!.trim()] : [bid.onChainBidId];
 
-  const { txId } = await executeContractCallOnce({
-    walletId: actorWallet.circleWalletId,
-    contractAddress: escrow,
-    abi: escrowAbi,
-    functionName: fn,
-    args,
-    opKey: `settle:${bid.id}:${action}:${bid.settlementAttempt}`,
-  });
+  const opKey = settlementOpKey(bid.id, action, bid.settlementAttempt);
 
-  const recorded = await db
-    .update(bids)
-    .set({
-      settlementTxHash: txId,
-      settlementAction: action,
-      failReason: null,
-      ...(action === "accept" ? { reply: params.reply!.trim() } : {}),
-    })
-    .where(and(eq(bids.id, bid.id), isNull(bids.settlementTxHash), inArray(bids.status, SETTLEABLE)))
-    .returning({ id: bids.id });
-  if (!recorded.length) {
-    // Someone else recorded a settlement first; ours will fail on-chain ("bid not pending").
-    throw new BidError("Another settlement for this bid is already confirming", 409);
+  // Reserve the bid for this action BEFORE sending anything, so two different
+  // settlements (e.g. agent reject vs manual accept) can never both reach Circle.
+  // The sentinel lives in settlementTxHash until Circle returns the real id.
+  let reservation = bid.settlementTxHash; // our own earlier reservation (retry)
+  if (!reservation) {
+    reservation = `${RESERVATION_PREFIX}${Date.now()}`;
+    const reserved = await db
+      .update(bids)
+      .set({ settlementTxHash: reservation, settlementAction: action, failReason: null })
+      .where(and(eq(bids.id, bid.id), isNull(bids.settlementTxHash), inArray(bids.status, SETTLEABLE)))
+      .returning({ id: bids.id });
+    if (!reserved.length) throw new BidError("Another settlement for this bid is already confirming", 409);
   }
+
+  let txId: string;
+  try {
+    ({ txId } = await executeContractCallOnce({
+      walletId: actorWallet.circleWalletId,
+      contractAddress: escrow,
+      abi: escrowAbi,
+      functionName: fn,
+      args,
+      opKey,
+    }));
+  } catch (err) {
+    // The request may still have reached Circle (e.g. a timeout). Only release the
+    // reservation if Circle has no transaction for this op key.
+    const sent = await findTransactionByRefId(actorWallet.circleWalletId, opKey).catch(() => null);
+    if (!sent) {
+      await db
+        .update(bids)
+        .set({ settlementTxHash: null, settlementAction: null })
+        .where(and(eq(bids.id, bid.id), eq(bids.settlementTxHash, reservation)));
+      throw err;
+    }
+    txId = sent.txId;
+  }
+
+  await db
+    .update(bids)
+    .set({ settlementTxHash: txId, ...(action === "accept" ? { reply: params.reply!.trim() } : {}) })
+    .where(and(eq(bids.id, bid.id), eq(bids.settlementTxHash, reservation)));
 
   try {
     await inngest.send({ name: "attnn/settlement.submitted", data: { bidId: bid.id } });
@@ -354,7 +415,32 @@ export async function finalizeSettlement(bidId: string): Promise<SettlementOutco
   // settlementTxHash onto a still-pending bid, so a missing action means a refund claim.
   const action: SettlementAction = bid.settlementAction ?? "refund";
 
-  const status = await getTransactionStatus(bid.settlementTxHash);
+  let circleTxId = bid.settlementTxHash;
+  if (isReservation(circleTxId)) {
+    // Reserved but the Circle id was never saved (crash mid-submit). Give the
+    // submitter time to finish, then look the transaction up by its op key.
+    const reservedAt = Number(circleTxId.slice(RESERVATION_PREFIX.length));
+    if (Date.now() - reservedAt < RESERVATION_STALE_MS) return "in_flight";
+    const wallet = await walletFor(action === "refund" ? bid.bidderUserId : bid.creatorUserId);
+    const sent = wallet
+      ? await findTransactionByRefId(wallet.circleWalletId, settlementOpKey(bid.id, action, bid.settlementAttempt))
+      : null;
+    if (!sent) {
+      const released = await db
+        .update(bids)
+        .set({ settlementTxHash: null, settlementAction: null })
+        .where(and(eq(bids.id, bid.id), eq(bids.settlementTxHash, circleTxId)))
+        .returning({ id: bids.id });
+      return released.length ? "failed" : "noop";
+    }
+    await db
+      .update(bids)
+      .set({ settlementTxHash: sent.txId })
+      .where(and(eq(bids.id, bid.id), eq(bids.settlementTxHash, circleTxId)));
+    circleTxId = sent.txId;
+  }
+
+  const status = await getTransactionStatus(circleTxId);
   const outcome = classifyTxState(status.state);
   if (outcome === "in_flight") return "in_flight";
 
@@ -367,9 +453,10 @@ export async function finalizeSettlement(bidId: string): Promise<SettlementOutco
         settlementAttempt: sql`${bids.settlementAttempt} + 1`,
         failReason: `${action} failed: ${describeTxFailure(status)}`.slice(0, 500),
       })
-      .where(and(eq(bids.id, bid.id), eq(bids.settlementTxHash, bid.settlementTxHash)))
+      .where(and(eq(bids.id, bid.id), eq(bids.settlementTxHash, circleTxId)))
       .returning({ id: bids.id });
-    return cleared.length ? "failed" : "noop";
+    if (!cleared.length) return "noop";
+    return (await reconcileFromEscrow(bid)) ? "settled" : "failed";
   }
 
   if (status.txHash) {
@@ -383,8 +470,8 @@ export async function finalizeSettlement(bidId: string): Promise<SettlementOutco
           settlementAttempt: sql`${bids.settlementAttempt} + 1`,
           failReason: `${action} reverted on-chain`,
         })
-        .where(and(eq(bids.id, bid.id), eq(bids.settlementTxHash, bid.settlementTxHash)));
-      return "failed";
+        .where(and(eq(bids.id, bid.id), eq(bids.settlementTxHash, circleTxId)));
+      return (await reconcileFromEscrow(bid)) ? "settled" : "failed";
     }
   }
 
@@ -397,7 +484,7 @@ export async function finalizeSettlement(bidId: string): Promise<SettlementOutco
       failReason: null,
     })
     .where(
-      and(eq(bids.id, bid.id), eq(bids.settlementTxHash, bid.settlementTxHash), inArray(bids.status, SETTLEABLE)),
+      and(eq(bids.id, bid.id), eq(bids.settlementTxHash, circleTxId), inArray(bids.status, SETTLEABLE)),
     )
     .returning({ id: bids.id });
   return settled.length ? "settled" : "noop";

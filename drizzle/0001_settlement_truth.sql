@@ -15,4 +15,6 @@ CREATE INDEX IF NOT EXISTS "bids_status_idx" ON "bids" USING btree ("status");--
 CREATE INDEX IF NOT EXISTS "bids_bidder_created_idx" ON "bids" USING btree ("bidder_user_id","created_at");--> statement-breakpoint
 -- Data fix: AttnnEscrow rejects bids below MIN_BID ($5 = 5000000 atomic USDC).
 -- Creator floors below that could only produce reverting bids, so raise them.
-UPDATE "profiles" SET "min_bid" = '5000000' WHERE CAST("min_bid" AS NUMERIC) < 5000000;
+-- Malformed (non-numeric) floors are reset too, instead of aborting the migration.
+UPDATE "profiles" SET "min_bid" = '5000000'
+WHERE CASE WHEN "min_bid" ~ '^[0-9]+(\.[0-9]+)?$' THEN CAST("min_bid" AS NUMERIC) < 5000000 ELSE true END;

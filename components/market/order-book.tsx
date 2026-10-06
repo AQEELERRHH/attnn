@@ -105,6 +105,27 @@ export function OrderBook({
       minWidth={640}
       className={className}
       empty="No open bids. Be the first: anything at or above the floor gets escrowed."
+      mobileCard={(b, i) => {
+        const r = refundCountdown(b.createdAt, now);
+        return (
+          <div className="flex items-start gap-3">
+            <Num className="w-5 pt-0.5 text-text-secondary">{i + 1}</Num>
+            <div className="min-w-0 flex-1">
+              <div className="truncate font-medium">{b.agent}</div>
+              <div className="text-xs text-text-secondary">
+                <Num>{timeAgo(b.createdAt, now)}</Num> · <Num className="text-arc-coral">refund {r.label}</Num>
+                {b.score != null && (
+                  <>
+                    {" "}
+                    · score <Num>{b.score.toFixed(1)}</Num>
+                  </>
+                )}
+              </div>
+            </div>
+            <Money atomic={b.amountUsdc} tone="gold" className="font-medium" />
+          </div>
+        );
+      }}
     />
   );
 }

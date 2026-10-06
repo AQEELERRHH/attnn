@@ -51,7 +51,7 @@ export default function RegisterForm() {
   };
 
   return (
-    <Card className="p-8 space-y-4">
+    <Card className="p-6 sm:p-8 space-y-4">
       {/* Google Sign In */}
       <Button
         type="button"
@@ -74,7 +74,7 @@ export default function RegisterForm() {
       {/* Divider */}
       <div className="flex items-center gap-3">
         <div className="flex-1 h-px bg-border" />
-        <span className="text-xs text-text-dim">or</span>
+        <span className="text-xs text-text-secondary">or</span>
         <div className="flex-1 h-px bg-border" />
       </div>
 
@@ -88,9 +88,12 @@ export default function RegisterForm() {
       ) : (
         <form onSubmit={handleEmailSignIn} className="space-y-3">
           <div className="relative">
-            <Mail className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-text-dim" />
+            <label htmlFor="signin-email" className="sr-only">Email address</label>
+            <Mail aria-hidden className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary" />
             <Input
+              id="signin-email"
               type="email"
+              autoComplete="email"
               placeholder="Enter your email"
               value={email}
               onChange={e => setEmail(e.target.value)}

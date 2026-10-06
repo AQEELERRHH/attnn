@@ -30,6 +30,7 @@ export function MarketTable<Row>({
   minWidth = 760,
   className,
   caption,
+  mobileCard,
 }: {
   columns: MarketColumn<Row>[];
   rows: Row[];
@@ -40,6 +41,11 @@ export function MarketTable<Row>({
   className?: string;
   /** Screen-reader caption. */
   caption?: string;
+  /**
+   * Optional compact layout for phones: when set, screens below `sm` get a
+   * stacked list of these cards (same sort order) instead of the wide table.
+   */
+  mobileCard?: (row: Row, index: number) => React.ReactNode;
 }) {
   const [sort, setSort] = React.useState(defaultSort ?? null);
 
@@ -61,8 +67,10 @@ export function MarketTable<Row>({
   const toggle = (key: string) =>
     setSort((s) => (s?.key === key ? { key, dir: s.dir === "desc" ? "asc" : "desc" } : { key, dir: "desc" }));
 
-  return (
-    <div className={cn("relative overflow-x-auto", className)}>
+  const emptyState = <div className="px-5 py-10 text-center text-sm text-text-secondary">{empty ?? "Nothing here yet."}</div>;
+
+  const table = (
+    <div className={cn("relative overflow-x-auto", mobileCard ? "hidden sm:block" : className)}>
       <table className="w-full border-collapse" style={{ minWidth }}>
         {caption && <caption className="sr-only">{caption}</caption>}
         <thead>
@@ -121,7 +129,23 @@ export function MarketTable<Row>({
           ))}
         </tbody>
       </table>
-      {sorted.length === 0 && <div className="px-5 py-10 text-center text-sm text-text-secondary">{empty ?? "Nothing here yet."}</div>}
+      {sorted.length === 0 && emptyState}
+    </div>
+  );
+
+  if (!mobileCard) return table;
+
+  return (
+    <div className={className}>
+      <ul aria-label={caption} className="sm:hidden">
+        {sorted.map((row, i) => (
+          <li key={rowKey(row)} className="border-b border-border px-4 py-3 last:border-b-0">
+            {mobileCard(row, i)}
+          </li>
+        ))}
+      </ul>
+      {sorted.length === 0 && <div className="sm:hidden">{emptyState}</div>}
+      {table}
     </div>
   );
 }

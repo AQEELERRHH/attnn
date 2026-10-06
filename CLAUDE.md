@@ -129,7 +129,7 @@ Triggered by the `runActiveBidders` Inngest cron (`*/30 * * * *`, rechecks `isAc
 
 ### Creator agent (reactive): `creatorAgentTriage` in `inngest/functions.ts`
 
-Triggered by `attnn/bid.placed`, which is sent only **after** the bid is escrowed (so `onChainBidId` is always set; there is no chain-sync wait any more). Concurrency 10.
+Triggered by `attnn/bid.placed`, which is sent only **after** the bid is escrowed (so `onChainBidId` is always set; there is no chain-sync wait any more). Concurrency 5 (the Inngest plan maximum; anything higher makes the whole app sync fail).
 
 1. Loads the bid, the creator's profile and their pending bids (`queueDepth`, `highestBidAmount`).
 2. `triageBidForCreator` (`lib/ai.ts`) returns a 0–10 score; thresholds are **hard-coded**: `≥ 8` accept (template or AI `draftReply`), `5–7` counter at 85% of the highest pending bid (floor $5) if a higher one exists else surface, `< 5` reject. `autoAcceptThreshold` is AI context only. Fallback when AISA fails: ≥ 2× minBid → 8, ≥ minBid → 5, else 3.

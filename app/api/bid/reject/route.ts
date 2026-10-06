@@ -1,48 +1,25 @@
-// Polyfill BigInt JSON serialization for NextResponse.json
-(BigInt.prototype as unknown as { toJSON: () => string }).toJSON = function () { return this.toString(); };
-
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { db } from "@/lib/db/client";
-import { bids, wallets } from "@/lib/db/schema";
-import { executeContractCall } from "@/lib/circle";
-import { escrowAbi } from "@/lib/arc";
-import { eq } from "drizzle-orm";
+import { BidError, submitSettlement } from "@/lib/bids";
 
+/**
+ * Sends rejectBid from the creator's wallet, which refunds the bidder on-chain.
+ * The bid is marked rejected only once the transaction is COMPLETE.
+ */
 export async function POST(req: NextRequest) {
   try {
     const session = await auth();
     if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    const { bidId } = await req.json();
 
-    const bid = await db.query.bids.findFirst({ where: eq(bids.id, bidId) });
-    if (!bid) return NextResponse.json({ error: "Bid not found" }, { status: 404 });
-    if (bid.creatorUserId !== session.user.id) return NextResponse.json({ error: "Only the creator can reject this bid" }, { status: 403 });
-    if (bid.status !== "pending") return NextResponse.json({ error: "Bid already processed" }, { status: 400 });
+    const body = await req.json().catch(() => null);
+    const { bidId } = (body ?? {}) as Record<string, unknown>;
+    if (typeof bidId !== "string" || !bidId) return NextResponse.json({ error: "bidId is required" }, { status: 400 });
 
-    const wallet = await db.query.wallets.findFirst({ where: eq(wallets.userId, session.user.id) });
-    if (!wallet) return NextResponse.json({ error: "Wallet not found" }, { status: 404 });
-
-    const escrowAddr = process.env.ATTN_ESCROW_CONTRACT;
-    if (!escrowAddr) return NextResponse.json({ error: "Escrow not deployed" }, { status: 500 });
-
-    // Settlement engine populates onChainBidId — no rescue poll needed
-    if (!bid.onChainBidId) {
-      return NextResponse.json({ error: "Bid still finalizing on-chain. Please wait 30 seconds and try again." }, { status: 400 });
-    }
-    const onChainBidId = BigInt(bid.onChainBidId);
-    const result = await executeContractCall({
-      walletId: wallet.circleWalletId,
-      contractAddress: escrowAddr,
-      abi: escrowAbi,
-      functionName: "rejectBid",
-      args: [onChainBidId],
-    });
-
-    await db.update(bids).set({ status: "rejected", settlementTxHash: result.txId, settledAt: new Date() }).where(eq(bids.id, bidId));
-
-    return NextResponse.json({ success: true, txId: result.txId });
+    const { txId } = await submitSettlement({ bidId, action: "reject", actorUserId: session.user.id });
+    return NextResponse.json({ success: true, status: "confirming", txId }, { status: 202 });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : "Failed" }, { status: 500 });
+    if (err instanceof BidError) return NextResponse.json({ error: err.message }, { status: err.status });
+    console.error("bid/reject:", err);
+    return NextResponse.json({ error: "Could not reject bid" }, { status: 500 });
   }
 }

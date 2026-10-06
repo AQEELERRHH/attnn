@@ -59,7 +59,7 @@ export function PublicProfileClient({
       });
       const data = await res.json();
       if (data.success) {
-        toast({ title: "Bid placed!", description: `$${bidAmount} USDC bid sent to @${handle}`, variant: "success" });
+        toast({ title: "Bid submitted", description: `Escrowing $${bidAmount} USDC on Arc for @${handle}. It shows as placing until it confirms.`, variant: "success" });
         setShowBidForm(false);
         setBidAmount("");
         setBidMessage("");
@@ -181,7 +181,7 @@ export function PublicProfileClient({
                     />
                     <div className="bg-arc-bg-0 rounded-lg p-3 text-center border border-border">
                       <div className="text-xs text-text-dim">🔒 ${bidAmount || "0"} USDC → Escrow</div>
-                      <div className="text-xs text-text-dim mt-0.5">No reply in 14 days → automatic refund</div>
+                      <div className="text-xs text-text-dim mt-0.5">No reply in 3 days → automatic refund</div>
                     </div>
                     <div className="flex gap-2">
                       <Button variant="outline" className="flex-1" onClick={() => setShowBidForm(false)}>Cancel</Button>

@@ -8,6 +8,13 @@
       "when": 1789853601448,
       "tag": "0000_nice_mystique",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1791286520747,
+      "tag": "0001_settlement_truth",
+      "breakpoints": true
     }
   ]
 }

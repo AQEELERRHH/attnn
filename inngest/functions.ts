@@ -1,383 +1,167 @@
 import { inngest } from "@/lib/inngest";
 import { db } from "@/lib/db/client";
-import { bids, wallets } from "@/lib/db/schema";
-import { eq, and, lt, gt, isNull, isNotNull } from "drizzle-orm";
-import { executeContractCall, getTransactionStatus } from "@/lib/circle";
-import { escrowAbi } from "@/lib/arc";
+import { bids } from "@/lib/db/schema";
+import { eq, and, lt, gt, isNull, isNotNull, inArray, ne, sql, gte } from "drizzle-orm";
+import { BidError, createBidIntent, submitSettlement } from "@/lib/bids";
+import { REFUND_PERIOD_MS } from "@/lib/bid-rules";
+import { escrowAddress } from "@/lib/chain";
+import { confirmSettlement, listUnsyncedPendingBids, placeBid, sweepInFlightBids } from "./bid-lifecycle";
 
-// ─── Auto‑Refund Cron ─────────────────────────────────────────────────────────
-// Runs daily at 03:00 UTC. Calls claimRefund() on-chain from the bidder's wallet for
-// pending bids past the escrow's 14-day refund window. The status flips to "refunded"
-// when the BidRefunded log arrives at /api/webhooks/circle-events, not here.
-const REFUND_PERIOD_MS = 3 * 24 * 60 * 60 * 1000;
-// The escrow stores createdAt when the bid lands on Arc, which is later than the DB row's
-// createdAt. Waiting an extra 2 hours avoids "refund period not passed" reverts.
-const REFUND_MARGIN_MS = 2 * 60 * 60 * 1000;
-// Circle transaction states that mean the claim will never land, so it can be retried.
-const FAILED_TX_STATES = new Set(["FAILED", "DENIED", "CANCELLED"]);
+// ─── Auto-Refund Cron ─────────────────────────────────────────────────────────
+// Hourly. Claims refunds for escrowed bids nobody replied to within the escrow's
+// 3-day window, from the bidder's own wallet (the contract requires msg.sender ==
+// bidder). Counter-offered bids are included: their USDC is still escrowed.
+// The bid becomes "refunded" only once the claim is COMPLETE on-chain
+// (confirmSettlement / sweep / BidRefunded webhook), never here.
+
+// The escrow stamps createdAt when the bid lands on Arc, a little after the DB row.
+// A margin avoids "refund period not passed" reverts.
+const REFUND_MARGIN_MS = 30 * 60 * 1000;
 
 export const autoRefund = inngest.createFunction(
   { id: "auto-refund", name: "Auto-Refund Expired Bids" },
-  { cron: "0 3 * * *" },
+  { cron: "17 * * * *" },
   async ({ step }) => {
-    const expiredBefore = new Date(Date.now() - REFUND_PERIOD_MS);
     const claimableBefore = new Date(Date.now() - REFUND_PERIOD_MS - REFUND_MARGIN_MS);
+    const escrow = escrowAddress();
+    if (!escrow) return { message: "ATTN_ESCROW_CONTRACT not configured" };
 
-    // 0. Reconcile claims submitted by an earlier run. A settlementTxHash on a still-pending
-    //    bid means claimRefund was submitted but BidRefunded never arrived. If Circle says the
-    //    transaction failed, clear the hash so the claim step below retries it in this run.
-    const submittedClaims = await step.run("fetch-submitted-refund-claims", async () => {
-      return db
-        .select()
+    const refundable = await step.run("fetch-refundable-bids", () =>
+      db
+        .select({ id: bids.id, bidderUserId: bids.bidderUserId, amountUsdc: bids.amountUsdc, settlementAttempt: bids.settlementAttempt })
         .from(bids)
         .where(
           and(
-            eq(bids.status, "pending"),
-            isNotNull(bids.onChainBidId),
-            isNotNull(bids.settlementTxHash),
-          ),
-        )
-        .limit(100);
-    });
-
-    const reconcileResults = await Promise.allSettled(
-      submittedClaims.map(async (bid) => {
-        return await step.run(`reconcile-bid-${bid.id}`, async () => {
-          const txId = bid.settlementTxHash;
-          if (!txId) return { bidId: bid.id, reset: false };
-
-          try {
-            const status = await getTransactionStatus(txId);
-            if (!FAILED_TX_STATES.has(status.state)) {
-              // Still in flight or already confirmed — leave it for the webhook.
-              return { bidId: bid.id, reset: false, state: status.state };
-            }
-
-            await db
-              .update(bids)
-              .set({ settlementTxHash: null })
-              .where(eq(bids.id, bid.id));
-
-            const reason = [status.errorReason, status.errorDetails].filter(Boolean).join(" — ");
-            console.warn(
-              `Auto-refund: claim ${txId} for bid ${bid.id} ended in ${status.state}${reason ? `: ${reason}` : ""}; cleared settlementTxHash for retry`,
-            );
-            return { bidId: bid.id, reset: true, state: status.state, reason: reason || null };
-          } catch (err) {
-            const message = err instanceof Error ? err.message : String(err);
-            console.error(`Auto-refund: could not reconcile claim ${txId} for bid ${bid.id}: ${message}`);
-            return { bidId: bid.id, reset: false, error: message };
-          }
-        });
-      }),
-    );
-
-    const resetCount = reconcileResults.filter(
-      (r) => r.status === "fulfilled" && r.value.reset,
-    ).length;
-
-    // 1. Bids that can actually be claimed on-chain: synced to a bid id, no settlement
-    //    transaction submitted yet, and past the refund window plus the safety margin.
-    const refundableBids = await step.run("fetch-refundable-bids", async () => {
-      return db
-        .select()
-        .from(bids)
-        .where(
-          and(
-            eq(bids.status, "pending"),
+            inArray(bids.status, ["pending", "counter_offered"]),
             isNotNull(bids.onChainBidId),
             isNull(bids.settlementTxHash),
             lt(bids.createdAt, claimableBefore),
           ),
         )
-        .limit(100); // batch size
-    });
-
-    // 2. Expired bids that never got an on-chain bid id. claimRefund() needs that id, so
-    //    these cannot be refunded automatically — report them for manual follow-up.
-    const unsyncedBids = await step.run("report-unsynced-expired-bids", async () => {
-      const rows = await db
-        .select()
-        .from(bids)
-        .where(
-          and(
-            eq(bids.status, "pending"),
-            isNull(bids.onChainBidId),
-            lt(bids.createdAt, expiredBefore),
-          ),
-        )
-        .limit(100);
-
-      for (const bid of rows) {
-        console.warn(
-          `Auto-refund: bid ${bid.id} (${bid.amountUsdc} USDC) is past the refund window but has no onChainBidId; skipping chain call, left pending`,
-        );
-      }
-      // bid_status has no "failed"/"expired" member, so the status is left as "pending".
-      return rows.map((bid) => ({ bidId: bid.id, amountUsdc: bid.amountUsdc }));
-    });
-
-    if (refundableBids.length === 0) {
-      return { message: "No refundable bids", resetCount, unsyncedCount: unsyncedBids.length, unsynced: unsyncedBids };
-    }
-
-    const escrowAddress = process.env.ATTN_ESCROW_CONTRACT;
-    if (!escrowAddress) {
-      console.error("Auto-refund: ATTN_ESCROW_CONTRACT is not configured, no refunds claimed");
-      return {
-        message: "ATTN_ESCROW_CONTRACT not configured",
-        refundableCount: refundableBids.length,
-        resetCount,
-        unsyncedCount: unsyncedBids.length,
-      };
-    }
-
-    // 3. Claim each refund from the bidder's own wallet — the escrow requires
-    //    msg.sender == bid.bidder.
-    const results = await Promise.allSettled(
-      refundableBids.map(async (bid) => {
-        return await step.run(`refund-bid-${bid.id}`, async () => {
-          try {
-            const onChainBidId = bid.onChainBidId;
-            if (!onChainBidId) {
-              return { bidId: bid.id, success: false, error: "Missing onChainBidId" };
-            }
-
-            const wallet = await db.query.wallets.findFirst({
-              where: and(eq(wallets.userId, bid.bidderUserId), eq(wallets.state, "active")),
-            });
-            if (!wallet) {
-              console.error(`Auto-refund: no active wallet for bidder ${bid.bidderUserId} (bid ${bid.id})`);
-              return { bidId: bid.id, success: false, error: "No active wallet for bidder" };
-            }
-
-            const result = await executeContractCall({
-              walletId: wallet.circleWalletId,
-              contractAddress: escrowAddress,
-              abi: escrowAbi,
-              functionName: "claimRefund",
-              args: [onChainBidId],
-            });
-
-            // Record the Circle transaction id only. The webhook sets status "refunded"
-            // when BidRefunded is emitted on-chain.
-            await db
-              .update(bids)
-              .set({ settlementTxHash: result.txId })
-              .where(eq(bids.id, bid.id));
-
-            console.log(
-              `Auto-refund: claimRefund submitted for bid ${bid.id} (${bid.amountUsdc} USDC), circle tx ${result.txId}`,
-            );
-            return { bidId: bid.id, success: true, txId: result.txId };
-          } catch (err) {
-            const message = err instanceof Error ? err.message : String(err);
-            console.error(`Auto-refund: claimRefund failed for bid ${bid.id}: ${message}`);
-            return { bidId: bid.id, success: false, error: message };
-          }
-        });
-      }),
+        .limit(100),
     );
 
-    const succeeded = results.filter((r) => r.status === "fulfilled" && r.value.success);
-    const failed = results.filter((r) => r.status === "rejected" || !r.value?.success);
+    // Pre-fix rows that never got an on-chain id can't be claimed automatically.
+    const unsynced = await step.run("report-unsynced-expired-bids", () =>
+      listUnsyncedPendingBids(new Date(Date.now() - REFUND_PERIOD_MS)),
+    );
+
+    const results = [];
+    for (const bid of refundable) {
+      // The attempt number is in the step id so a failed claim is retried next hour
+      // with a fresh step (and a fresh Circle idempotency key).
+      const r = await step.run(`refund-${bid.id}-${bid.settlementAttempt}`, async () => {
+        try {
+          const { txId } = await submitSettlement({ bidId: bid.id, action: "refund", actorUserId: bid.bidderUserId });
+          return { bidId: bid.id, submitted: true, txId };
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          console.warn(`Auto-refund: bid ${bid.id} not claimed: ${message}`);
+          return { bidId: bid.id, submitted: false, error: message };
+        }
+      });
+      results.push(r);
+    }
 
     return {
-      message: `Submitted ${succeeded.length} of ${refundableBids.length} refund claims`,
-      succeeded: succeeded.length,
-      failed: failed.length,
-      resetCount,
-      unsyncedCount: unsyncedBids.length,
-      unsynced: unsyncedBids,
-      details: results.map((r) => r.status === "fulfilled" ? r.value : { error: r.reason }),
+      submitted: results.filter((r) => r.submitted).length,
+      skipped: results.filter((r) => !r.submitted).length,
+      unsyncedCount: unsynced.length,
+      unsynced,
+      details: results,
     };
-  }
+  },
 );
 
 // ─── Activity Feed Generator ──────────────────────────────────────────────────
-// Listens to on‑chain events and updates the activity feed in real‑time
+// Placeholder for on-chain activity events (Arc/Alchemy). Not wired up yet.
 export const activityFeed = inngest.createFunction(
   { id: "activity-feed", name: "Activity Feed" },
   { event: "arc/bid.placed" },
-  async ({ event, step }: { event: any; step: any }) => {
-    // This function would be triggered by webhooks from Arc/Alchemy Notify
-    // For now, we'll create a placeholder that can be extended
-    const { data } = event;
-
-    // Example event data structure:
-    // {
-    //   event: "BidPlaced",
-    //   bidId: "123",
-    //   bidder: "0x...",
-    //   creator: "0x...",
-    //   amount: "1000000",
-    //   timestamp: 1234567890,
-    // }
-
-    await step.run("update-activity-feed", async () => {
-      // Insert into agent_logs table
-      // await db.insert(agentLogs).values({
-      //   userId: ..., // resolve from address
-      //   action: data.event.toLowerCase(),
-      //   metadata: data,
-      //   createdAt: new Date(data.timestamp * 1000),
-      // });
-    });
-
-    return { processed: event.name, data };
-  }
+  async ({ event }) => {
+    return { processed: event.name };
+  },
 );
 
 // ─── Bid Expiry Notifications ────────────────────────────────────────────────
-// Sends email/push notifications 24h before a bid expires
+// Daily. Finds escrowed bids that refund within the next 24h. Delivery is not
+// built yet (WhatsApp/email are on the roadmap), so this only logs.
 export const bidExpiryNotification = inngest.createFunction(
   { id: "bid-expiry-notification", name: "Bid Expiry Notification" },
   { cron: "0 2 * * *" },
-  async ({ step }: { step: any }) => {
-    const thirteenDaysAgo = new Date(Date.now() - 13 * 24 * 60 * 60 * 1000);
+  async ({ step }) => {
+    const now = Date.now();
+    const windowStart = new Date(now - REFUND_PERIOD_MS);
+    const windowEnd = new Date(now - REFUND_PERIOD_MS + 24 * 60 * 60 * 1000);
 
-    const bidsNearingExpiry = await step.run("fetch-nearing-expiry", async () => {
-      const result = await db
-        .select()
+    const nearingExpiry = await step.run("fetch-nearing-expiry", () =>
+      db
+        .select({ id: bids.id })
         .from(bids)
-        .where(
-          and(
-            eq(bids.status, "pending"),
-            gt(bids.createdAt, thirteenDaysAgo), // created within last 13 days
-            lt(bids.createdAt, new Date(Date.now() - 13 * 24 * 60 * 60 * 1000 + 60 * 60 * 1000)) // fine‑tune
-          )
-        );
-      return result;
-    });
-
-    // For each bid, send notification to bidder and creator
-    // This is a placeholder – actual notification delivery depends on your stack
-    for (const bid of bidsNearingExpiry) {
-      await step.run(`notify-bid-${bid.id}`, async () => {
-        console.log(`Bid ${bid.id} expires soon – notify participants`);
-        // await sendEmail(...);
-        // await sendPush(...);
-      });
-    }
-
-    return { notified: bidsNearingExpiry.length };
-  }
+        .where(and(eq(bids.status, "pending"), gt(bids.createdAt, windowStart), lt(bids.createdAt, windowEnd))),
+    );
+    for (const bid of nearingExpiry) console.log(`Bid ${bid.id} refunds within 24h — notify participants`);
+    return { notified: nearingExpiry.length };
+  },
 );
 
-// Export all functions
-
-// --- Bidder Agent Auto-Runner ----------------------------------------------
-// Runs every 10 minutes for every active bidder config.
+// ─── Bidder Agent Auto-Runner ─────────────────────────────────────────────────
+// Every 30 minutes for every active bidder config.
 export const runActiveBidders = inngest.createFunction(
   { id: "run-active-bidders", name: "Run Active Bidder Agents" },
   { cron: "*/30 * * * *" },
-  async ({ step }: { step: any }) => {
+  async ({ step }) => {
     const { bidderConfigs } = await import("@/lib/db/schema");
     const { runBidderAgent } = await import("@/lib/agent");
 
-    const activeBidders = await step.run("fetch-active-bidders", async () => {
-      return db.select().from(bidderConfigs).where(eq(bidderConfigs.isActive, true));
-    });
-
-    if (activeBidders.length === 0) {
-      return { message: "No active bidders" };
-    }
-
-    const results = await Promise.allSettled(
-      activeBidders.map((cfg: any) =>
-        step.run(`run-bidder-${cfg.userId}`, async () => {
-          try {
-            // Re-check isActive in case user paused after this run started
-            const { bidderConfigs: bc } = await import("@/lib/db/schema");
-            const { eq: eqFresh } = await import("drizzle-orm");
-            const fresh = await db.select().from(bc).where(eqFresh(bc.userId, cfg.userId)).limit(1);
-            if (!fresh[0] || !fresh[0].isActive) {
-              return { userId: cfg.userId, skipped: true, reason: "Agent paused" };
-            }
-            const r = await runBidderAgent(cfg.userId);
-            return { userId: cfg.userId, ...r };
-          } catch (err) {
-            const e = err as Error;
-            return { userId: cfg.userId, error: e.message };
-          }
-        })
-      )
+    const activeBidders = await step.run("fetch-active-bidders", () =>
+      db.select({ userId: bidderConfigs.userId }).from(bidderConfigs).where(eq(bidderConfigs.isActive, true)),
     );
+    if (activeBidders.length === 0) return { message: "No active bidders" };
 
-    return {
-      total: activeBidders.length,
-      results: results.map((r) => (r.status === "fulfilled" ? r.value : { error: r.reason })),
-    };
-  }
+    const results = [];
+    for (const cfg of activeBidders) {
+      const r = await step.run(`run-bidder-${cfg.userId}`, async () => {
+        try {
+          // Re-check isActive in case the user paused after this run started
+          const fresh = await db.select({ isActive: bidderConfigs.isActive }).from(bidderConfigs).where(eq(bidderConfigs.userId, cfg.userId)).limit(1);
+          if (!fresh[0]?.isActive) return { userId: cfg.userId, skipped: true, reason: "Agent paused" };
+          return { userId: cfg.userId, ...(await runBidderAgent(cfg.userId)) };
+        } catch (err) {
+          return { userId: cfg.userId, error: err instanceof Error ? err.message : String(err) };
+        }
+      });
+      results.push(r);
+    }
+    return { total: activeBidders.length, results };
+  },
 );
 
-
 // ─── Creator Agent Triage ─────────────────────────────────────────────────────
-// Triggered when a new bid is placed. Scores and triages the bid on behalf of the creator.
-// How many times triage re-reads the bid waiting for the BidPlaced webhook to set
-// onChainBidId, sleeping 30s between checks (~4.5 minutes of waiting).
-const CHAIN_SYNC_ATTEMPTS = 10;
-
+// Triggered by attnn/bid.placed, which is now sent only after the bid is escrowed
+// on-chain (onChainBidId known), so there is no chain-sync wait any more.
 export const creatorAgentTriage = inngest.createFunction(
-  // A burst of bids must not open unbounded runs — each one can sit in the chain-sync wait
-  // for minutes.
   { id: "creator-agent-triage", name: "Creator Agent Triage", concurrency: 10 },
   { event: "attnn/bid.placed" },
-  async ({ event, step }: { event: any; step: any }) => {
-    const { bidId, creatorUserId } = event.data;
+  async ({ event, step }) => {
+    const { bidId, creatorUserId } = event.data as { bidId: string; creatorUserId: string };
 
     const bidData = await step.run("fetch-bid", async () => {
-      const { bids, profiles, wallets } = await import("@/lib/db/schema");
-      const { eq } = await import("drizzle-orm");
+      const { profiles } = await import("@/lib/db/schema");
       const bid = await db.query.bids.findFirst({ where: eq(bids.id, bidId) });
       const profile = await db.query.profiles.findFirst({ where: eq(profiles.userId, creatorUserId) });
-      const wallet = await db.query.wallets.findFirst({ where: eq(wallets.userId, creatorUserId) });
-      const allPendingBids = await db.select().from(bids).where(
-        eq(bids.creatorUserId, creatorUserId)
-      ).then(r => r.filter(b => b.status === "pending"));
-      const queueDepth = allPendingBids.length;
-      const highestBidAmount = allPendingBids.reduce((max, b) => {
-        return BigInt(b.amountUsdc) > BigInt(max) ? b.amountUsdc : max;
-      }, "0");
-      return { bid, profile, wallet, queueDepth, highestBidAmount };
+      const openBids = await db
+        .select({ amountUsdc: bids.amountUsdc })
+        .from(bids)
+        .where(and(eq(bids.creatorUserId, creatorUserId), eq(bids.status, "pending")));
+      const highestBidAmount = openBids.reduce((max, b) => (BigInt(b.amountUsdc) > BigInt(max) ? b.amountUsdc : max), "0");
+      return { bid, profile, queueDepth: openBids.length, highestBidAmount };
     });
 
-    const { bid, profile, wallet, queueDepth, highestBidAmount } = bidData;
-    if (!bid || !profile || !wallet) return { message: "Missing data — skipping triage" };
-    if (bid.status !== "pending") return { message: "Bid already processed" };
-
-    // ── Wait for chain sync ──
-    // onChainBidId is filled in by the BidPlaced log at /api/webhooks/circle-events, which
-    // lands after this event fires. acceptBid/rejectBid need that id, so poll for it before
-    // triaging. Step ids are unique per iteration because Inngest memoises by id.
-    let onChainBidId: string | null = bid.onChainBidId ?? null;
-
-    for (let attempt = 0; attempt < CHAIN_SYNC_ATTEMPTS && !onChainBidId; attempt++) {
-      const sync = await step.run(`check-chain-sync-${attempt}`, async () => {
-        const fresh = await db.query.bids.findFirst({ where: eq(bids.id, bidId) });
-        return { onChainBidId: fresh?.onChainBidId ?? null, status: fresh?.status ?? null };
-      });
-
-      if (sync.status !== "pending") {
-        return { message: "Bid no longer pending during chain sync wait", status: sync.status };
-      }
-      if (sync.onChainBidId) {
-        onChainBidId = sync.onChainBidId;
-        break;
-      }
-      if (attempt < CHAIN_SYNC_ATTEMPTS - 1) {
-        await step.sleep(`wait-for-chain-sync-${attempt}`, "30s");
-      }
-    }
-
-    // Without an on-chain bid id the settlement calls would revert, so the AI still triages
-    // (the score is worth recording) but accept/reject are reported as skipped.
-    const chainSynced = Boolean(onChainBidId);
-    if (!chainSynced) {
-      console.error(
-        `Creator triage: bid ${bidId} still has no onChainBidId after ${CHAIN_SYNC_ATTEMPTS} checks over ~${(CHAIN_SYNC_ATTEMPTS - 1) * 30}s; on-chain accept/reject will be skipped`,
-      );
-    }
+    const { bid, profile, queueDepth, highestBidAmount } = bidData;
+    if (!bid || !profile) return { message: "Missing data — skipping triage" };
+    if (bid.status !== "pending") return { message: `Bid is ${bid.status} — skipping triage` };
+    if (!bid.onChainBidId) return { message: "Bid has no on-chain id — skipping triage" };
 
     const triageResult = await step.run("triage-bid", async () => {
       const { triageBidForCreator } = await import("@/lib/ai");
@@ -392,199 +176,118 @@ export const creatorAgentTriage = inngest.createFunction(
           autoReplyTemplate: profile.autoReplyTemplate,
           queueDepth,
         },
-        highestBidAmount
+        highestBidAmount,
       );
     });
 
-    // counter_offer is DB-only, so it runs whether or not the chain id synced.
-    let skippedReason: string | null = null;
+    await step.run("record-score", () => db.update(bids).set({ score: triageResult.score }).where(eq(bids.id, bidId)));
+
+    let action: { submitted: boolean; txId?: string; error?: string } | null = null;
 
     if (triageResult.decision === "counter_offer" && triageResult.counterOfferAmount) {
       await step.run("auto-counter-offer", async () => {
-        const { bids: bidsTable } = await import("@/lib/db/schema");
-        await db.update(bidsTable).set({
-          status: "counter_offered",
-          counterOfferAmount: triageResult.counterOfferAmount,
-        }).where(eq(bids.id, bidId));
-
-        // Fire event so bidder agent can respond
-        await inngest.send({
-          name: "attnn/counter.received",
-          data: {
-            bidId,
-            bidderUserId: bid.bidderUserId,
-            counterOfferAmount: triageResult.counterOfferAmount,
-          },
-        });
-
-        return { countered: true, amount: triageResult.counterOfferAmount };
+        const updated = await db
+          .update(bids)
+          .set({ status: "counter_offered", counterOfferAmount: triageResult.counterOfferAmount })
+          .where(and(eq(bids.id, bidId), eq(bids.status, "pending"), isNull(bids.settlementTxHash)))
+          .returning({ id: bids.id });
+        if (updated.length) {
+          await inngest.send({
+            name: "attnn/counter.received",
+            data: { bidId, bidderUserId: bid.bidderUserId, counterOfferAmount: triageResult.counterOfferAmount },
+          });
+        }
+        return { countered: updated.length > 0 };
       });
     } else if (triageResult.decision === "accept" && triageResult.draftedReply) {
-      if (!onChainBidId) {
-        skippedReason = "accept skipped: onChainBidId never synced, bid left pending for manual review";
-      } else await step.run("auto-accept-bid", async () => {
-        const { executeContractCall } = await import("@/lib/circle");
-        const { escrowAbi } = await import("@/lib/arc");
-        const escrowAddr = process.env.ATTN_ESCROW_CONTRACT;
-        if (!escrowAddr || !onChainBidId) return { skipped: true };
-
-        const result = await executeContractCall({
-          walletId: wallet.circleWalletId,
-          contractAddress: escrowAddr,
-          abi: escrowAbi,
-          functionName: "acceptBid",
-          args: [onChainBidId, triageResult.draftedReply],
-        });
-
-        await db.update(bids).set({
-          status: "accepted",
-          reply: triageResult.draftedReply,
-          score: triageResult.score,
-          settlementTxHash: result.txId,
-          settledAt: new Date(),
-        }).where(eq(bids.id, bidId));
-
-        return { accepted: true, txId: result.txId };
+      action = await step.run("auto-accept-bid", async () => {
+        try {
+          const { txId } = await submitSettlement({ bidId, action: "accept", actorUserId: creatorUserId, reply: triageResult.draftedReply });
+          return { submitted: true, txId };
+        } catch (err) {
+          if (err instanceof BidError) return { submitted: false, error: err.message };
+          throw err;
+        }
       });
     } else if (triageResult.decision === "reject") {
-      if (!onChainBidId) {
-        skippedReason = "reject skipped: onChainBidId never synced, bid left pending for manual review";
-      } else await step.run("auto-reject-bid", async () => {
-        const { executeContractCall } = await import("@/lib/circle");
-        const { escrowAbi } = await import("@/lib/arc");
-        const escrowAddr = process.env.ATTN_ESCROW_CONTRACT;
-        if (!escrowAddr || !onChainBidId) return { skipped: true };
-
-        const result = await executeContractCall({
-          walletId: wallet.circleWalletId,
-          contractAddress: escrowAddr,
-          abi: escrowAbi,
-          functionName: "rejectBid",
-          args: [onChainBidId],
-        });
-
-        await db.update(bids).set({
-          status: "rejected",
-          score: triageResult.score,
-          settlementTxHash: result.txId,
-          settledAt: new Date(),
-        }).where(eq(bids.id, bidId));
-
-        return { rejected: true, txId: result.txId };
+      action = await step.run("auto-reject-bid", async () => {
+        try {
+          const { txId } = await submitSettlement({ bidId, action: "reject", actorUserId: creatorUserId });
+          return { submitted: true, txId };
+        } catch (err) {
+          if (err instanceof BidError) return { submitted: false, error: err.message };
+          throw err;
+        }
       });
-    } else {
-      // Surface — update score only, leave as pending for manual review
-      await db.update(bids).set({ score: triageResult.score }).where(eq(bids.id, bidId));
     }
-
-    if (skippedReason) {
-      // The bid stays pending, so record the score to surface it in the creator's inbox.
-      await step.run("record-score-chain-sync-skipped", async () => {
-        await db.update(bids).set({ score: triageResult.score }).where(eq(bids.id, bidId));
-        return { score: triageResult.score };
-      });
-      console.error(`Creator triage: bid ${bidId} — ${skippedReason}`);
-    }
+    // "surface": score recorded above, left pending for the creator.
 
     return {
       decision: triageResult.decision,
       score: triageResult.score,
       reason: triageResult.reason,
-      chainSynced,
-      onChainBidId,
-      ...(skippedReason ? { skipped: true, skippedReason } : {}),
+      onChainBidId: bid.onChainBidId,
+      ...(action ? { settlement: action } : {}),
     };
-  }
+  },
 );
 
-
-// Counter-Offer Handler — bidder agent evaluates and responds to counter-offers
+// ─── Counter-Offer Handler ────────────────────────────────────────────────────
+// The bidder agent accepts a counter if it fits today's budget, by placing a NEW
+// bid at the counter amount. The original bid stays counter_offered with its USDC
+// escrowed until the creator rejects it or the auto-refund claims it.
 export const handleCounterOffer = inngest.createFunction(
   { id: "handle-counter-offer", name: "Handle Counter Offer" },
   { event: "attnn/counter.received" },
-  async ({ event, step }: { event: any; step: any }) => {
-    const { bidId, bidderUserId, counterOfferAmount } = event.data;
+  async ({ event, step }) => {
+    const { bidId, bidderUserId, counterOfferAmount } = event.data as {
+      bidId: string;
+      bidderUserId: string;
+      counterOfferAmount: string;
+    };
 
-    const data = await step.run("fetch-counter-data", async () => {
-      const { bids: bidsTable, bidderConfigs, wallets, profiles } = await import("@/lib/db/schema");
-      const { eq } = await import("drizzle-orm");
-      const bid = await db.query.bids.findFirst({ where: eq(bidsTable.id, bidId) });
+    const result = await step.run("place-counter-bid", async () => {
+      const { bidderConfigs } = await import("@/lib/db/schema");
+      const bid = await db.query.bids.findFirst({ where: eq(bids.id, bidId) });
       const config = await db.query.bidderConfigs.findFirst({ where: eq(bidderConfigs.userId, bidderUserId) });
-      const bidderWallet = await db.query.wallets.findFirst({ where: eq(wallets.userId, bidderUserId) });
-      const creatorProfile = await db.query.profiles.findFirst({ where: eq(profiles.userId, bid?.creatorUserId ?? "") });
-      return { bid, config, bidderWallet, creatorProfile };
+      if (!bid || !config) return { decision: "skip", reason: "Missing data" };
+
+      const counterAmount = BigInt(counterOfferAmount);
+      const today = new Date();
+      today.setUTCHours(0, 0, 0, 0);
+      const [spentRow] = await db
+        .select({ total: sql<string>`COALESCE(SUM(CAST(${bids.amountUsdc} AS BIGINT)), 0)` })
+        .from(bids)
+        .where(and(eq(bids.bidderUserId, bidderUserId), gte(bids.createdAt, today), ne(bids.status, "failed")));
+      const remaining = BigInt(config.dailyBudget) - BigInt(spentRow?.total ?? "0");
+      if (counterAmount > remaining) return { decision: "reject", reason: "Counter offer exceeds remaining daily budget" };
+
+      try {
+        const intent = await createBidIntent({
+          bidderUserId,
+          creatorUserId: bid.creatorUserId,
+          amountUsdc: counterAmount,
+          message: "I accept your counter offer.",
+        });
+        return { decision: "accept", newBidId: intent.id };
+      } catch (err) {
+        if (err instanceof BidError) return { decision: "reject", reason: err.message };
+        throw err;
+      }
     });
 
-    const { bid, config, bidderWallet, creatorProfile } = data;
-    if (!bid || !config || !bidderWallet || !creatorProfile) {
-      return { skipped: true, reason: "Missing data" };
-    }
-
-    const counterAmount = BigInt(counterOfferAmount);
-    // Contract calls take the atomic amount as a string; BigInt is only for the budget maths
-    // below, since the Circle SDK can't JSON-serialise a BigInt.
-    const counterAmountStr = counterAmount.toString();
-    const dailyBudget = BigInt(config.dailyBudget);
-
-    // Check remaining daily budget
-    const today = new Date();
-    today.setUTCHours(0, 0, 0, 0);
-    const { sql, gte, and, eq: eqCheck } = await import("drizzle-orm");
-    const { bids: bidsTable2 } = await import("@/lib/db/schema");
-    const todaySpent = await db
-      .select({ total: sql<string>`COALESCE(SUM(CAST(amount_usdc AS BIGINT)), '0')` })
-      .from(bidsTable2)
-      .where(and(eqCheck(bidsTable2.bidderUserId, bidderUserId), gte(bidsTable2.createdAt, today)));
-    const spent = BigInt(todaySpent[0]?.total ?? "0");
-    const remaining = dailyBudget - spent;
-
-    if (counterAmount > remaining) {
-      return { decision: "reject", reason: "Counter offer exceeds remaining daily budget" };
-    }
-
-    // Accept — place a new bid at the counter offer amount
-    await step.run("place-counter-bid", async () => {
-      const { executeContractCall } = await import("@/lib/circle");
-      const { escrowAbi, usdcAbi, USDC_ADDRESS } = await import("@/lib/arc");
-      const escrowAddr = process.env.ATTN_ESCROW_CONTRACT as string;
-
-      await executeContractCall({
-        walletId: bidderWallet.circleWalletId,
-        contractAddress: USDC_ADDRESS,
-        abi: usdcAbi as any,
-        functionName: "approve",
-        args: [escrowAddr, counterAmountStr],
-      });
-
-      const result = await executeContractCall({
-        walletId: bidderWallet.circleWalletId,
-        contractAddress: escrowAddr,
-        abi: escrowAbi as any,
-        functionName: "placeBid",
-        args: [creatorProfile.walletAddress ?? bid.creatorAddress, counterAmountStr, "I accept your counter offer.", false],
-      });
-
-      const { bids: bidsTable3 } = await import("@/lib/db/schema");
-      await db.insert(bidsTable3).values({
-        bidderUserId,
-        creatorUserId: bid.creatorUserId,
-        bidderAddress: bidderWallet.address,
-        creatorAddress: bid.creatorAddress,
-        amountUsdc: counterAmountStr,
-        message: "I accept your counter offer.",
-        isPrivate: false,
-        status: "pending" as const,
-        bidTxHash: result.txId,
-        onChainBidId: null,
-      });
-
-
-      return { accepted: true, txId: result.txId };
-    });
-
-    return { decision: "accept" };
-  }
+    return result;
+  },
 );
 
-
-export const functions = [autoRefund, activityFeed, bidExpiryNotification, runActiveBidders, creatorAgentTriage, handleCounterOffer];
+export const functions = [
+  autoRefund,
+  activityFeed,
+  bidExpiryNotification,
+  runActiveBidders,
+  creatorAgentTriage,
+  handleCounterOffer,
+  placeBid,
+  confirmSettlement,
+  sweepInFlightBids,
+];

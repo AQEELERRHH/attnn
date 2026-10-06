@@ -1,74 +1,47 @@
 import { NextRequest, NextResponse } from "next/server";
+import { eq } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db/client";
-import { bids, wallets, profiles } from "@/lib/db/schema";
-import { executeContractCall } from "@/lib/circle";
-import { escrowAbi, usdcAbi, USDC_ADDRESS } from "@/lib/arc";
-import { eq } from "drizzle-orm";
-import { inngest } from "@/lib/inngest";
+import { profiles } from "@/lib/db/schema";
+import { BidError, createBidIntent } from "@/lib/bids";
 
+/**
+ * Records a bid and queues it for on-chain placement. Returns 202 straight away:
+ * the bid shows as "placing" until the placeBid job has escrowed it on Arc
+ * ("pending") or it fails with a reason ("failed", no USDC moved).
+ */
 export async function POST(req: NextRequest) {
   try {
     const session = await auth();
     if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    const body = await req.json();
-    const { creatorHandle, amountUsdc, message, isPrivate } = body;
+
+    const body = await req.json().catch(() => null);
+    const { creatorHandle, amountUsdc, message, isPrivate } = (body ?? {}) as Record<string, unknown>;
+    if (typeof creatorHandle !== "string" || !creatorHandle) {
+      return NextResponse.json({ error: "creatorHandle is required" }, { status: 400 });
+    }
+    if (message !== undefined && message !== null && (typeof message !== "string" || message.length > 2000)) {
+      return NextResponse.json({ error: "Message must be text under 2000 characters" }, { status: 400 });
+    }
 
     const creatorProfile = await db.query.profiles.findFirst({ where: eq(profiles.handle, creatorHandle) });
     if (!creatorProfile) return NextResponse.json({ error: "Creator not found" }, { status: 404 });
 
-    const creatorWallet = await db.query.wallets.findFirst({ where: eq(wallets.userId, creatorProfile.userId) });
-    const bidderWallet = await db.query.wallets.findFirst({ where: eq(wallets.userId, session.user.id) });
-    if (!bidderWallet || !creatorWallet) return NextResponse.json({ error: "Wallets not found" }, { status: 404 });
-
-    const escrowAddr = process.env.ATTN_ESCROW_CONTRACT;
-    if (!escrowAddr) return NextResponse.json({ error: "Escrow not deployed" }, { status: 500 });
-
-    // Step 1: Approve escrow to spend USDC
-    await executeContractCall({
-      walletId: bidderWallet.circleWalletId,
-      contractAddress: USDC_ADDRESS,
-      abi: usdcAbi,
-      functionName: "approve",
-      args: [escrowAddr, amountUsdc],
+    const bid = await createBidIntent({
+      bidderUserId: session.user.id,
+      creatorUserId: creatorProfile.userId,
+      amountUsdc: typeof amountUsdc === "number" ? String(amountUsdc) : (amountUsdc as string),
+      message: (message as string | undefined) ?? null,
+      isPrivate: isPrivate === true,
     });
 
-    // Wait for approval to settle on Arc
-    await new Promise(r => setTimeout(r, 8000));
-
-    // Step 2: Place the bid
-    const result = await executeContractCall({
-      walletId: bidderWallet.circleWalletId,
-      contractAddress: escrowAddr,
-      abi: escrowAbi,
-      functionName: "placeBid",
-      args: [creatorWallet.address, amountUsdc, message ?? "", isPrivate ?? false],
-    });
-    // Fire and forget — Inngest settleTransaction handles on-chain confirmation
-    const onChainBidId: string | null = null;
-
-    const [bid] = await db.insert(bids).values({
-      bidderUserId: session.user.id, creatorUserId: creatorProfile.userId,
-      bidderAddress: bidderWallet.address, creatorAddress: creatorWallet.address,
-      amountUsdc, message, isPrivate: isPrivate ?? false, status: "pending",
-      bidTxHash: result.txId, onChainBidId,
-    }).returning();
-    // Auto-accept logic — runs after bid is inserted
-    const autoAccepted = false;
-    if (!bid) return NextResponse.json({ success: true, txId: result.txId, autoAccepted });
-    // Auto-accept is handled by Inngest creatorAgentTriage — not here
-
-    // Fire creator-agent triage event
-    if (bid) {
-      await inngest.send({
-        name: "attnn/bid.placed",
-        data: { bidId: bid.id, creatorUserId: creatorProfile.userId },
-      }).catch(() => {});
-
-    }
-
-    return NextResponse.json({ bid, success: true, txId: result.txId, autoAccepted });
+    return NextResponse.json(
+      { success: true, status: "placing", bid: { id: bid.id, status: bid.status, amountUsdc: bid.amountUsdc } },
+      { status: 202 },
+    );
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : "Failed" }, { status: 500 });
+    if (err instanceof BidError) return NextResponse.json({ error: err.message }, { status: err.status });
+    console.error("bid/place:", err);
+    return NextResponse.json({ error: "Could not place bid" }, { status: 500 });
   }
 }

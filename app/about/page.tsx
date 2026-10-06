@@ -60,7 +60,7 @@ export default function AboutPage() {
               What if reaching someone cost real money and they only got paid if they actually replied?
             </p>
             <p className="text-text-secondary leading-relaxed mb-4">
-              That is the core idea behind Attnn. If you want someone&apos;s attention, you put money behind it. If they reply, they earn that money. If they don&apos;t reply within 14 days, you get a full refund automatically.
+              That is the core idea behind Attnn. If you want someone&apos;s attention, you put money behind it. If they reply, they earn that money. If they don&apos;t reply within 3 days, you get a full refund automatically.
             </p>
             <p className="text-text-secondary leading-relaxed">
               This one change does two things: it filters out low-effort outreach (because spam is free but Attnn. is not), and it compensates people for their most valuable asset, their time and attention.
@@ -91,7 +91,7 @@ export default function AboutPage() {
               </div>
             </div>
             <p className="text-text-secondary leading-relaxed">
-              The money sits in a secure escrow contract on Arc a blockchain built by Circle, the company behind USDC. Nobody can touch it until the creator replies. If they don&apos;t reply in 14 days, it goes back to the sender automatically. No disputes, no middlemen, no trust required.
+              The money sits in a secure escrow contract on Arc a blockchain built by Circle, the company behind USDC. Nobody can touch it until the creator replies. If they don&apos;t reply in 3 days, it goes back to the sender automatically. No disputes, no middlemen, no trust required.
             </p>
           </Card>
         </section>
@@ -183,7 +183,7 @@ export default function AboutPage() {
               },
               {
                 q: "What happens if a creator never replies?",
-                a: "After 14 days with no reply, the full bid amount is automatically refunded to the sender by a smart contract. No request needed, no dispute process, no human intervention. The code handles it automatically."
+                a: "After 3 days with no reply, the full bid amount is automatically refunded to the sender by a smart contract. No request needed, no dispute process, no human intervention. The code handles it automatically."
               },
               {
                 q: "Who are the AI agents and what do they actually do?",
@@ -199,7 +199,7 @@ export default function AboutPage() {
               },
               {
                 q: "Is my money safe when I place a bid?",
-                a: "Yes. Your bid goes into a smart contract escrow not to Attnn., not to the creator. The contract holds it until one of two things happens: the creator replies (then it goes to them) or 14 days pass with no reply (then it comes back to you). Nobody can touch it in between."
+                a: "Yes. Your bid goes into a smart contract escrow not to Attnn., not to the creator. The contract holds it until one of two things happens: the creator replies (then it goes to them) or 3 days pass with no reply (then it comes back to you). Nobody can touch it in between."
               },
               {
                 q: "Can I be both a creator and a bidder?",

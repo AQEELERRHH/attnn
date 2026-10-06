@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db/client";
 import { bids } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
+import { ESCROW_MAX_BID, ESCROW_MIN_BID, parseAtomicUsdc } from "@/lib/bid-rules";
 import { inngest } from "@/lib/inngest";
 
 export async function POST(req: NextRequest) {
@@ -20,27 +21,29 @@ export async function POST(req: NextRequest) {
     if (!bid) return NextResponse.json({ error: "Bid not found" }, { status: 404 });
     if (bid.creatorUserId !== session.user.id) return NextResponse.json({ error: "Only the creator can counter this bid" }, { status: 403 });
     if (bid.status !== "pending") return NextResponse.json({ error: "Bid already processed" }, { status: 400 });
+    if (bid.settlementTxHash) return NextResponse.json({ error: "This bid is already being settled" }, { status: 409 });
 
-    const minBid = 5_000_000;
-    if (Number(counterOfferAmount) < minBid) {
-      return NextResponse.json({ error: "Counter offer must be at least $5 USDC" }, { status: 400 });
+    const amount = parseAtomicUsdc(counterOfferAmount);
+    if (amount === null || amount < ESCROW_MIN_BID || amount > ESCROW_MAX_BID) {
+      return NextResponse.json({ error: "Counter offer must be between $5 and $1,000 USDC" }, { status: 400 });
     }
-
-    if (Number(counterOfferAmount) <= Number(bid.amountUsdc)) {
+    if (amount <= BigInt(bid.amountUsdc)) {
       return NextResponse.json({ error: "Counter offer must be higher than the original bid" }, { status: 400 });
     }
 
-    await db.update(bids).set({
-      status: "counter_offered",
-      counterOfferAmount: counterOfferAmount.toString(),
-    }).where(eq(bids.id, bidId));
+    const updated = await db
+      .update(bids)
+      .set({ status: "counter_offered", counterOfferAmount: amount.toString() })
+      .where(and(eq(bids.id, bidId), eq(bids.status, "pending"), isNull(bids.settlementTxHash)))
+      .returning({ id: bids.id });
+    if (!updated.length) return NextResponse.json({ error: "Bid already processed" }, { status: 409 });
 
     await inngest.send({
       name: "attnn/counter.received",
-      data: { bidId, bidderUserId: bid.bidderUserId, counterOfferAmount },
+      data: { bidId, bidderUserId: bid.bidderUserId, counterOfferAmount: amount.toString() },
     }).catch(() => {});
 
-    return NextResponse.json({ success: true, bidId, counterOfferAmount });
+    return NextResponse.json({ success: true, bidId, counterOfferAmount: amount.toString() });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Failed" }, { status: 500 });
   }

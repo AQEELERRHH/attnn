@@ -1,10 +1,10 @@
 import { db } from "./db/client";
 import { bids, agentLogs, profiles, bidderConfigs, wallets } from "./db/schema";
-import { evaluateCreatorForBidder, draftReply, scoreBidForCreator } from "./ai";
-import { executeContractCall } from "./circle";
-import { inngest } from "./inngest";
-import { escrowAbi, registryAbi, publicClient } from "./arc";
-import { eq, and, gte, sql } from "drizzle-orm";
+import { evaluateCreatorForBidder } from "./ai";
+import { registryAbi, publicClient } from "./arc";
+import { BidError, createBidIntent } from "./bids";
+import { formatUsd, resolveAgentBidAmount } from "./bid-rules";
+import { eq, and, gte, ne, sql } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
 
 // ─── Bidder Agent Run ────────────────────────────────────────────────────────
@@ -16,48 +16,52 @@ export interface AgentRunResult {
   logId: string;
 }
 
+function startOfUtcDay(): Date {
+  const d = new Date();
+  d.setUTCHours(0, 0, 0, 0);
+  return d;
+}
+
+/** Today's committed spend: every bid except ones that failed (no USDC moved). */
+async function spentToday(userId: string): Promise<bigint> {
+  const [row] = await db
+    .select({ total: sql<string>`COALESCE(SUM(CAST(${bids.amountUsdc} AS BIGINT)), 0)` })
+    .from(bids)
+    .where(and(eq(bids.bidderUserId, userId), gte(bids.createdAt, startOfUtcDay()), ne(bids.status, "failed")));
+  return BigInt(row?.total ?? "0");
+}
+
+/**
+ * One run of a bidder's agent: discover creators by tag, score them, and queue bids.
+ *
+ * Bids are recorded as "placing" intents (lib/bids.ts); the placeBid Inngest job
+ * does approve → placeBid on-chain. This function never touches the chain itself,
+ * so it no longer sleeps between calls or holds a Vercel function open.
+ */
 export async function runBidderAgent(userId: string): Promise<AgentRunResult> {
   const errors: string[] = [];
   let bidsPlaced = 0;
   let creatorsFound = 0;
 
   try {
-    // Load bidder config
-    const config = await db.query.bidderConfigs.findFirst({
-      where: eq(bidderConfigs.userId, userId),
-    });
-
+    const config = await db.query.bidderConfigs.findFirst({ where: eq(bidderConfigs.userId, userId) });
     if (!config || !config.isActive) {
       await logAgentAction(userId, "agent_stopped", { reason: "Config not active" });
       return { bidsPlaced: 0, creatorsFound: 0, errors: ["Bidder config not active"], logId: "" };
     }
 
-    // Check daily budget — use UTC to match blockchain timestamps
-    const today = new Date();
-    today.setUTCHours(0, 0, 0, 0);
-    const todaySpent = await db
-      .select({ total: sql<string>`COALESCE(SUM(CAST(amount_usdc AS BIGINT)), '0')` })
-      .from(bids)
-      .where(
-        and(
-          eq(bids.bidderUserId, userId),
-          gte(bids.createdAt, today),
-        ),
-      );
-
-    const spent = BigInt(todaySpent[0]?.total ?? "0");
     const budget = BigInt(config.dailyBudget);
-
+    const spent = await spentToday(userId);
     if (spent >= budget) {
       await logAgentAction(userId, "agent_stopped", { reason: "Daily budget exhausted", spent: spent.toString(), budget: config.dailyBudget });
       return { bidsPlaced: 0, creatorsFound: 0, errors: ["Daily budget exhausted"], logId: "" };
     }
 
-    // Discover creators by tags
+    // Discover creators by tags (on-chain registry)
+    const registryAddr = process.env.ATTN_REGISTRY_CONTRACT as `0x${string}`;
     const creatorAddresses = new Set<string>();
     for (const tag of config.searchTags) {
       try {
-        const registryAddr = process.env.ATTN_REGISTRY_CONTRACT as `0x${string}`;
         const addresses = await publicClient.readContract({
           address: registryAddr,
           abi: registryAbi,
@@ -75,31 +79,25 @@ export async function runBidderAgent(userId: string): Promise<AgentRunResult> {
       return { bidsPlaced: 0, creatorsFound: 0, errors, logId: uuidv4() };
     }
 
-    // Get active creators from DB
-    const activeProfiles = await db.query.profiles.findMany({
-      where: eq(profiles.isActive, true),
-      with: { user: true },
-    });
-
+    // Active creators in the DB whose wallet is in the registry results
+    const activeProfiles = await db.query.profiles.findMany({ where: eq(profiles.isActive, true) });
     const creatorsToScore: { profile: typeof profiles.$inferSelect; address: string }[] = [];
-
     for (const profile of activeProfiles) {
-      const wallet = await db.query.wallets.findFirst({
-        where: eq(wallets.userId, profile.userId),
-      });
-      if (wallet && creatorAddresses.has(wallet.address.toLowerCase()) && profile.userId !== userId) {
+      if (profile.userId === userId) continue;
+      const wallet = await db.query.wallets.findFirst({ where: eq(wallets.userId, profile.userId) });
+      if (wallet && creatorAddresses.has(wallet.address.toLowerCase())) {
         creatorsToScore.push({ profile, address: wallet.address });
       }
     }
 
-    // Filter out creators already bid on today (UTC) — no rebidding same profile in one day
-    const todayUTC = new Date();
-    todayUTC.setUTCHours(0, 0, 0, 0);
-    const todayBids = await db.select({ creatorUserId: bids.creatorUserId })
+    // No re-bidding the same creator in one UTC day. Failed attempts count too, so a
+    // creator the agent can't afford isn't retried every 30 minutes.
+    const todayBids = await db
+      .select({ creatorUserId: bids.creatorUserId })
       .from(bids)
-      .where(and(eq(bids.bidderUserId, userId), gte(bids.createdAt, todayUTC)));
-    const alreadyBidToday = new Set(todayBids.map(b => b.creatorUserId));
-    const filteredCreators = creatorsToScore.filter(ct => !alreadyBidToday.has(ct.profile.userId));
+      .where(and(eq(bids.bidderUserId, userId), gte(bids.createdAt, startOfUtcDay())));
+    const alreadyBidToday = new Set(todayBids.map((b) => b.creatorUserId));
+    const filteredCreators = creatorsToScore.filter((ct) => !alreadyBidToday.has(ct.profile.userId));
     creatorsFound = filteredCreators.length;
 
     if (creatorsFound === 0) {
@@ -107,222 +105,79 @@ export async function runBidderAgent(userId: string): Promise<AgentRunResult> {
       return { bidsPlaced: 0, creatorsFound: 0, errors, logId: uuidv4() };
     }
 
-    // Score each creator
-    const scored: { profile: typeof profiles.$inferSelect; address: string; score: number; bidAmount: string }[] = [];
-
+    // Score up to 10; keep those above the bidder's fit threshold.
+    const scored: { profile: typeof profiles.$inferSelect; score: number; bidAmount: bigint }[] = [];
     for (const ct of filteredCreators.slice(0, 10)) {
       try {
         const result = await evaluateCreatorForBidder(
-          {
-            handle: ct.profile.handle,
-            bio: ct.profile.bio ?? undefined,
-            tags: ct.profile.tags,
-            minBid: ct.profile.minBid,
-          },
+          { handle: ct.profile.handle, bio: ct.profile.bio ?? undefined, tags: ct.profile.tags, minBid: ct.profile.minBid },
           config.goal ?? "general",
         );
+        if (!result.proceed || result.score < config.minFitScore) continue;
 
-        if (result.proceed && result.score >= config.minFitScore) {
-          scored.push({
-            ...ct,
-            score: result.score,
-            bidAmount: result.bidAmount,
-          });
+        // The AI's amount is a hint. Clamp it to the creator's floor and the
+        // bidder's per-creator cap; skip creators priced above the cap.
+        const amount = resolveAgentBidAmount({
+          suggested: result.bidAmount,
+          creatorMinBid: ct.profile.minBid,
+          maxBidPerCreator: config.maxBidPerCreator,
+        });
+        if (amount === null) {
+          errors.push(`Skipping ${ct.profile.handle}: floor is above your ${formatUsd(BigInt(config.maxBidPerCreator))} per-creator cap`);
+          continue;
         }
+        scored.push({ profile: ct.profile, score: result.score, bidAmount: amount });
       } catch (err) {
         errors.push(`Score error for ${ct.profile.handle}: ${err}`);
       }
     }
 
-    // Sort by score descending, take top 5
     scored.sort((a, b) => b.score - a.score);
     const topCreators = scored.slice(0, 5);
 
-    // Place bids
-    const bidderWallet = await db.query.wallets.findFirst({
-      where: eq(wallets.userId, userId),
-    });
-
-    if (!bidderWallet) {
-      errors.push("No wallet found for bidder");
-      return { bidsPlaced: 0, creatorsFound, errors, logId: uuidv4() };
-    }
-
-    const escrowAddr = process.env.ATTN_ESCROW_CONTRACT as `0x${string}`;
-
     for (const tc of topCreators) {
-      // Re-check budget before each bid — prevents overspending in loop
-      const freshSpent = await db
-        .select({ total: sql<string>`COALESCE(SUM(CAST(amount_usdc AS BIGINT)), '0')` })
-        .from(bids)
-        .where(and(eq(bids.bidderUserId, userId), gte(bids.createdAt, today)));
-      const currentSpent = BigInt(freshSpent[0]?.total ?? "0");
-      const remaining = budget - currentSpent;
-      const bidAmount = BigInt(tc.bidAmount);
-
+      // Re-check budget before each bid — placing intents count immediately.
+      const currentSpent = await spentToday(userId);
       if (currentSpent >= budget) {
         await logAgentAction(userId, "agent_stopped", { reason: "Daily budget exhausted mid-run" });
-        break; // Stop immediately — no more bids
+        break;
       }
-
-      if (bidAmount > remaining) {
+      if (tc.bidAmount > budget - currentSpent) {
         errors.push(`Skipping ${tc.profile.handle}: bid exceeds remaining budget`);
         continue;
       }
 
       try {
-        // Step 1: Approve escrow to spend USDC
-        const usdcAddr = process.env.ATTN_USDC_ADDRESS ?? "0x3600000000000000000000000000000000000000";
-        const { usdcAbi } = await import("@/lib/arc");
-        await executeContractCall({
-          walletId: bidderWallet.circleWalletId,
-          contractAddress: usdcAddr,
-          abi: usdcAbi,
-          functionName: "approve",
-          args: [escrowAddr, tc.bidAmount],
-        });
-
-        // Wait for approval to settle on Arc
-        await new Promise(r => setTimeout(r, 15000));
-
-        // Step 2: Place the bid
-        const result = await executeContractCall({
-          walletId: bidderWallet.circleWalletId,
-          contractAddress: escrowAddr,
-          abi: escrowAbi,
-          functionName: "placeBid",
-          args: [tc.address, tc.bidAmount, config.defaultMessage ?? "AI-discovered opportunity", false],
-        });
-
-        const [insertedBid] = await db.insert(bids).values({
+        const intent = await createBidIntent({
           bidderUserId: userId,
           creatorUserId: tc.profile.userId,
-          bidderAddress: bidderWallet.address,
-          creatorAddress: tc.address,
           amountUsdc: tc.bidAmount,
           message: config.defaultMessage ?? "AI-discovered opportunity",
-          status: "pending",
           score: tc.score,
-          bidTxHash: result.txId,
-        }).returning({ id: bids.id });
-
-        // Hand the bid to the creator's agent, same event shape as /api/bid/place.
-        // A failed send must not abort the run: the bid is already on-chain.
-        if (insertedBid) {
-          try {
-            await inngest.send({
-              name: "attnn/bid.placed",
-              data: { bidId: insertedBid.id, creatorUserId: tc.profile.userId },
-            });
-          } catch (err) {
-            console.error(`Failed to send attnn/bid.placed for bid ${insertedBid.id}:`, err);
-          }
-        }
-
+        });
         await logAgentAction(userId, "bid_placed", {
           creator: tc.profile.handle,
-          amount: tc.bidAmount,
+          amount: tc.bidAmount.toString(),
           score: tc.score,
-          txId: result.txId,
+          bidId: intent.id,
+          status: "placing",
         });
-
         bidsPlaced++;
       } catch (err) {
-        const errMsg = `Failed to place bid on ${tc.profile.handle}: ${err}`;
-        errors.push(errMsg);
-        await logAgentAction(userId, "error", {
-          creator: tc.profile.handle,
-          error: String(err),
-        });
+        const message = err instanceof BidError ? err.message : String(err);
+        errors.push(`Failed to bid on ${tc.profile.handle}: ${message}`);
+        await logAgentAction(userId, "error", { creator: tc.profile.handle, error: message });
+        // Out of funds affects every remaining bid in this run.
+        if (err instanceof BidError && message.startsWith("Not enough USDC")) break;
       }
     }
 
-    await logAgentAction(userId, "creator_discovered", {
-      count: creatorsFound,
-      scored: scored.length,
-      bidsPlaced,
-    });
+    await logAgentAction(userId, "creator_discovered", { count: creatorsFound, scored: scored.length, bidsPlaced });
   } catch (err) {
     errors.push(`Agent run failed: ${err}`);
   }
 
   return { bidsPlaced, creatorsFound, errors, logId: uuidv4() };
-}
-
-// ─── Auto-Accept (via Webhook) ───────────────────────────────────────────────
-
-export interface AutoAcceptResult {
-  accepted: boolean;
-  reply?: string;
-  error?: string;
-}
-
-export async function autoAcceptBid(bidId: string, creatorUserId: string): Promise<AutoAcceptResult> {
-  try {
-    const creatorProfile = await db.query.profiles.findFirst({
-      where: eq(profiles.userId, creatorUserId),
-    });
-    if (!creatorProfile) return { accepted: false, error: "Creator profile not found" };
-
-    const bid = await db.query.bids.findFirst({
-      where: eq(bids.id, bidId),
-    });
-    if (!bid) return { accepted: false, error: "Bid not found" };
-    if (bid.status !== "pending") return { accepted: false, error: `Bid already ${bid.status}` };
-
-    const scoring = await scoreBidForCreator(
-      { amountUsdc: bid.amountUsdc, message: bid.message ?? "", bidderAddress: bid.bidderAddress },
-      { handle: creatorProfile.handle, bio: creatorProfile.bio ?? undefined, tags: creatorProfile.tags, minBid: creatorProfile.minBid },
-    );
-
-    if (scoring.recommendation === "accept" && scoring.score >= (creatorProfile.autoAcceptThreshold ?? 5)) {
-      const reply = await draftReply(bid.message ?? "", { handle: creatorProfile.handle, bio: creatorProfile.bio ?? undefined });
-
-      if (reply.length < 10) {
-        return { accepted: false, error: "Reply too short (minimum 10 characters)" };
-      }
-
-      // Accept on-chain via Circle wallet
-      const creatorWallet = await db.query.wallets.findFirst({
-        where: eq(wallets.userId, creatorUserId),
-      });
-
-      if (!creatorWallet) return { accepted: false, error: "Creator wallet not found" };
-
-      const escrowAddr = process.env.ATTN_ESCROW_CONTRACT as `0x${string}`;
-
-      const result = await executeContractCall({
-        walletId: creatorWallet.circleWalletId,
-        contractAddress: escrowAddr,
-        abi: escrowAbi,
-        functionName: "acceptBid",
-        args: [BigInt(bid.onChainBidId ?? "0"), reply],
-      });
-
-      await db
-        .update(bids)
-        .set({
-          status: "accepted",
-          reply,
-          settlementTxHash: result.txId,
-          settledAt: new Date(),
-        })
-        .where(eq(bids.id, bidId));
-
-      await logAgentAction(creatorUserId, "bid_accepted", {
-        bidId,
-        reply,
-        txId: result.txId,
-        score: scoring.score,
-      });
-
-      return { accepted: true, reply };
-    }
-
-    return { accepted: false, error: `Score ${scoring.score} below threshold ${creatorProfile.autoAcceptThreshold}` };
-  } catch (err) {
-    return { accepted: false, error: `Auto-accept failed: ${err}` };
-  }
 }
 
 // ─── Logging ─────────────────────────────────────────────────────────────────
@@ -333,11 +188,7 @@ async function logAgentAction(
   data: Record<string, unknown> = {},
 ): Promise<void> {
   try {
-    await db.insert(agentLogs).values({
-      userId,
-      action,
-      data,
-    });
+    await db.insert(agentLogs).values({ userId, action, data });
   } catch (err) {
     console.error("Failed to log agent action:", err);
   }

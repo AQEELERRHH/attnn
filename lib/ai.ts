@@ -139,9 +139,11 @@ Return JSON: { "score": number, "bidAmount": string (USDC with 6 decimals), "rea
     const parsed = safeJsonParse(raw);
     return EvaluateCreatorForBidderSchema.parse(parsed);
   } catch {
+    // Bid the creator's floor. The agent clamps every amount to the floor and the
+    // bidder's cap anyway (resolveAgentBidAmount), so this can never go below $5.
     return {
       score: 5,
-      bidAmount: "1000000",
+      bidAmount: creator.minBid,
       reason: "Default evaluation — AI unavailable, using mid-range score.",
       proceed: true,
     };

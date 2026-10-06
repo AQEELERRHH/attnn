@@ -1,37 +1,9 @@
-import { defineChain } from "viem";
 import { http, createPublicClient, createWalletClient } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
+import { arc } from "./chain";
 
-export const arcTestnet = /*#__PURE__*/ defineChain({
-  id: 504_2002,
-  name: "Arc Testnet",
-  nativeCurrency: {
-    decimals: 6,
-    name: "USDC",
-    symbol: "USDC",
-  },
-  rpcUrls: {
-    default: {
-      http: ["https://rpc.testnet.arc.network"],
-      webSocket: ["wss://rpc.testnet.arc.network"],
-    },
-    deploy: {
-      http: ["https://arc-testnet.drpc.org"],
-    },
-  },
-  blockExplorers: {
-    default: {
-      name: "ArcScan",
-      url: "https://testnet.arcscan.app",
-    },
-  },
-  contracts: {
-    usdc: {
-      address: "0x3600000000000000000000000000000000000000",
-    },
-  },
-  testnet: true,
-});
+/** The Arc chain selected by ARC_NETWORK (see lib/chain.ts). */
+export const arcChain = arc.chain;
 
 // USDC ERC-20 ABI (minimal)
 export const usdcAbi = [
@@ -277,8 +249,8 @@ export const escrowAbi = [
 
 // Public client for reads
 export const publicClient = createPublicClient({
-  chain: arcTestnet,
-  transport: http("https://rpc.testnet.arc.network"),
+  chain: arcChain,
+  transport: http(arc.rpcUrl),
 });
 
 // Wallet client for deployer
@@ -286,15 +258,16 @@ export const getWalletClient = (privateKey: `0x${string}`) => {
   const account = privateKeyToAccount(privateKey);
   return createWalletClient({
     account,
-    chain: arcTestnet,
-    transport: http("https://arc-testnet.drpc.org"),
+    chain: arcChain,
+    transport: http(process.env.ARC_RPC_DEPLOY || arc.rpcUrl),
   });
 };
 
 // ─── USDC Constants ──────────────────────────────────────────────────────────
 
+/** Decimals of the USDC ERC-20 interface. Arc's native gas balance uses 18. */
 export const USDC_DECIMALS = 6;
-export const USDC_ADDRESS = "0x3600000000000000000000000000000000000000";
+export const USDC_ADDRESS = arc.usdcAddress;
 
 export const parseUsdc = (amount: string): bigint => {
   const [whole = "0", fraction = ""] = amount.split(".");

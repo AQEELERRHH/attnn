@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
+import { arc } from "./chain";
 
-const ARC_TESTNET_NETWORK = "eip155:5042002";
-const ARC_TESTNET_USDC = "0x3600000000000000000000000000000000000000";
-const ARC_TESTNET_GATEWAY_WALLET = "0x0077777d7EBA4688BDeF3E311b846F25870A19B9";
+// Network-specific values come from ARC_NETWORK (lib/chain.ts).
+const ARC_NETWORK_ID = arc.caip2;
+const ARC_USDC = arc.usdcAddress;
+const ARC_GATEWAY_WALLET = arc.gatewayWallet;
 
 const SELLER_ADDRESS = (process.env.SELLER_ADDRESS ?? "") as `0x${string}`;
 const MOCK = process.env.X402_MOCK === "1" || !SELLER_ADDRESS;
@@ -14,15 +16,15 @@ function toAtomic(price: string) {
 function buildRequirements(price: string) {
   return {
     scheme: "exact" as const,
-    network: ARC_TESTNET_NETWORK,
-    asset: ARC_TESTNET_USDC,
+    network: ARC_NETWORK_ID,
+    asset: ARC_USDC,
     amount: toAtomic(price),
     payTo: SELLER_ADDRESS,
     maxTimeoutSeconds: 345600,
     extra: {
       name: "GatewayWalletBatched",
       version: "1",
-      verifyingContract: ARC_TESTNET_GATEWAY_WALLET,
+      verifyingContract: ARC_GATEWAY_WALLET,
     },
   };
 }
@@ -68,7 +70,7 @@ export async function gate(
       ok: true,
       payer: "mock",
       paymentResponseHeader: Buffer.from(
-        JSON.stringify({ success: true, mock: true, network: ARC_TESTNET_NETWORK }),
+        JSON.stringify({ success: true, mock: true, network: ARC_NETWORK_ID }),
       ).toString("base64"),
     };
   }

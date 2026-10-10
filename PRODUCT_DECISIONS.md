@@ -549,11 +549,11 @@ The existing escrow solutions don't support the specific bid lifecycle we needed
 
 "How does the bidder agent actually find creators? Is it centralised or on-chain?"
 
-Fully on-chain. The bidder agent calls getCreatorsByTag() on the AttnnRegistry contract deployed on Arc. It reads directly from the blockchain no centralised database involved in discovery. This is important because it means any external bidder agent, not just Attnn.'s own agent, can discover creators on-chain without going through our servers.
+Both, on purpose. Every creator registers on the AttnnRegistry contract on Arc, so any external bidder agent can discover creators on-chain with getCreatorsByTag() without going through our servers. Attnn.'s own agent matches on each creator's current tags (creators can edit tags at any time, and the testnet registry has no way to update tags after registration), then checks isActiveCreator() on Arc before bidding, so it never bids on a creator the chain doesn't recognise. The mainnet registry adds tag updates so on-chain tags stay current too.
 
 "The x402 gate what happens if Circle Gateway has an outage? Do users lose money?"
 
-Two scenarios. If the outage happens before settlement the payment never goes through and the agent's wallet is untouched. If it happens after settlement but before the profile is returned the USDC has moved but the agent got nothing. This is a known limitation we've documented. The fix is idempotency store the settlement transaction ID after every successful payment, and on retry return the cached profile without re-charging. We're building this post-mainnet.
+Two scenarios. If the outage happens before settlement the payment never goes through and the agent's wallet is untouched. If it happens after settlement but before the profile is returned the USDC has moved but the agent got nothing. This is now handled with idempotency: every settled payment is recorded, and a retry with the same signed payment returns the profile again without charging a second time.
 
 "You mentioned both agents run on Circle Developer-Controlled Wallets. What if Circle has downtime?"
 

@@ -29,6 +29,13 @@
       "when": 1791626040966,
       "tag": "0003_x402_payments",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1791639575870,
+      "tag": "0004_registration_error",
+      "breakpoints": true
     }
   ]
 }

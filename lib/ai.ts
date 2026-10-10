@@ -125,10 +125,17 @@ Respond with JSON: { "score": number, "recommendation": "accept"|"reject"|"revie
   }
 }
 
+/**
+ * Scores how well a creator fits the bidder's goal.
+ *
+ * Returns null when the AI can't produce a valid answer (outage, timeout, bad JSON).
+ * There is deliberately no rule-based fallback here: the bidder agent spends real
+ * USDC, so a creator it couldn't score is skipped, never bid on blind.
+ */
 export async function evaluateCreatorForBidder(
   creator: CreatorProfile,
   bidderGoal: string,
-): Promise<z.infer<typeof EvaluateCreatorForBidderSchema>> {
+): Promise<z.infer<typeof EvaluateCreatorForBidderSchema> | null> {
   const systemPrompt = `You are an AI evaluation agent for a bidder on a creator attention marketplace.
 Evaluate how well a creator fits the bidder's goal on a scale of 0-10.
 Return JSON: { "score": number, "bidAmount": string (USDC with 6 decimals), "reason": string, "proceed": boolean }`;
@@ -139,15 +146,9 @@ Return JSON: { "score": number, "bidAmount": string (USDC with 6 decimals), "rea
     const raw = await callAI(prompt, systemPrompt);
     const parsed = safeJsonParse(raw);
     return EvaluateCreatorForBidderSchema.parse(parsed);
-  } catch {
-    // Bid the creator's floor. The agent clamps every amount to the floor and the
-    // bidder's cap anyway (resolveAgentBidAmount), so this can never go below $5.
-    return {
-      score: 5,
-      bidAmount: creator.minBid,
-      reason: "Default evaluation — AI unavailable, using mid-range score.",
-      proceed: true,
-    };
+  } catch (err) {
+    console.warn(`evaluateCreatorForBidder: AI unavailable for @${creator.handle}:`, err instanceof Error ? err.message : err);
+    return null;
   }
 }
 

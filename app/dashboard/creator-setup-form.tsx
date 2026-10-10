@@ -93,7 +93,11 @@ export function CreatorSetupForm({
         const activateRes = await fetch("/api/profile/activate", { method: "POST" });
         const activateData = await activateRes.json().catch(() => ({}));
         if (activateData.success) {
-          toast({ title: "Market open", description: "Registered on Arc", variant: "success" });
+          toast(
+            activateData.status === "active"
+              ? { title: "Market open", description: "Registered on Arc", variant: "success" }
+              : { title: "Registering on Arc", description: "Your market goes live as soon as Arc confirms it, usually within a minute." },
+          );
           onComplete();
         } else {
           // The profile row exists now, so close the form: the market card shows

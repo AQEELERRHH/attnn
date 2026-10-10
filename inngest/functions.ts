@@ -6,7 +6,7 @@ import { BidError, createBidIntent, declineReplacedBid, submitSettlement } from 
 import { applyVerdict, classifyOpenRows, findOrphans, indexOnChainBids, loadClosedRows, loadOpenRows, reopenOrphan } from "@/lib/reconcile";
 import { REFUND_PERIOD_MS } from "@/lib/bid-rules";
 import { escrowAddress } from "@/lib/chain";
-import { confirmSettlement, listUnsyncedPendingBids, placeBid, sweepInFlightBids } from "./bid-lifecycle";
+import { confirmRegistration, confirmSettlement, listUnsyncedPendingBids, placeBid, sweepInFlightBids } from "./bid-lifecycle";
 
 // ─── Auto-Refund Cron ─────────────────────────────────────────────────────────
 // Hourly. Claims refunds for escrowed bids nobody replied to within the escrow's
@@ -393,4 +393,5 @@ export const functions = [
   placeBid,
   confirmSettlement,
   sweepInFlightBids,
+  confirmRegistration,
 ];

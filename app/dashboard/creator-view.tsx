@@ -126,9 +126,12 @@ function CreatorMarketDesk({
     .slice(0, 8);
 
   const paused = profile.availabilityStatus === "not_accepting";
-  const avail = !profile.isActive
-    ? { label: "Not registered on Arc", tone: "danger" as const }
-    : AVAILABILITY[profile.availabilityStatus] ?? AVAILABILITY.available!;
+  const registering = profile.registration === "registering";
+  const avail = profile.isActive
+    ? AVAILABILITY[profile.availabilityStatus] ?? AVAILABILITY.available!
+    : registering
+      ? { label: "Registering on Arc…", tone: "pending" as const }
+      : { label: "Not registered on Arc", tone: "danger" as const };
 
   async function activate() {
     setActivating(true);
@@ -136,7 +139,11 @@ function CreatorMarketDesk({
       const res = await fetch("/api/profile/activate", { method: "POST" });
       const data = await res.json().catch(() => ({}));
       if (data.success) {
-        toast({ title: "Registered on Arc", description: "Your market is live.", variant: "success" });
+        toast(
+          data.status === "active"
+            ? { title: "Registered on Arc", description: "Your market is live.", variant: "success" }
+            : { title: "Registering on Arc", description: "Your market goes live as soon as Arc confirms it, usually within a minute." },
+        );
         router.refresh();
       } else {
         toast({ title: "Activation failed", description: data.error ?? "Try again", variant: "destructive" });
@@ -187,9 +194,9 @@ function CreatorMarketDesk({
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
-            {!profile.isActive && (
+            {!profile.isActive && !registering && (
               <Button size="sm" onClick={activate} disabled={activating}>
-                {activating ? "Registering…" : "Activate on Arc"}
+                {activating ? "Registering…" : profile.registration === "failed" ? "Retry registration" : "Activate on Arc"}
               </Button>
             )}
             {profile.isActive && (
@@ -202,7 +209,17 @@ function CreatorMarketDesk({
             </Button>
           </div>
         </div>
-        {!profile.isActive && (
+        {registering && (
+          <p role="status" className="mt-3 text-[13px] text-text-secondary">
+            Waiting for Arc to confirm your registration. Your market goes live as soon as it does, usually within a minute.
+          </p>
+        )}
+        {profile.registration === "failed" && (
+          <p role="alert" className="mt-3 text-[13px] text-arc-coral">
+            Registration didn&apos;t go through: {profile.registrationError}. Check your wallet has at least $1 USDC, then press Retry registration.
+          </p>
+        )}
+        {profile.registration === "none" && (
           <p className="mt-3 text-[13px] text-arc-gold">
             Not live yet. Add at least $1 USDC to your wallet, then press Activate on Arc. It covers the small network fees for registering and replying.
           </p>

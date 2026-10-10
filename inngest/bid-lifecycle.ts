@@ -5,7 +5,8 @@
  *
  *   attnn/bid.requested        → placeBid       approve → placeBid → finalize
  *   attnn/settlement.submitted → confirmSettlement
- *   cron every 10 min          → sweepInFlightBids (backstop for both)
+ *   attnn/creator.registering  → confirmRegistration (creator market goes live)
+ *   cron every 10 min          → sweepInFlightBids (backstop for all three)
  */
 import { and, eq, inArray, isNotNull, isNull, lt } from "drizzle-orm";
 import { inngest } from "@/lib/inngest";
@@ -20,6 +21,7 @@ import {
   getTransactionStatus,
 } from "@/lib/circle";
 import { failPlacement, finalizePlacement, finalizeSettlement, notifyBidEscrowed } from "@/lib/bids";
+import { loadRegisteringUserIds, refreshRegistration } from "@/lib/registration";
 
 /** Wait schedule: quick checks first (Arc finalises in under a second), then slower. */
 function waitFor(attempt: number): string {
@@ -185,6 +187,21 @@ export const confirmSettlement = inngest.createFunction(
   },
 );
 
+/** Marks a creator's market live once the registry confirms their registration. */
+export const confirmRegistration = inngest.createFunction(
+  { id: "confirm-registration", name: "Confirm Creator Registration", retries: 4 },
+  { event: "attnn/creator.registering" },
+  async ({ event, step }) => {
+    const { userId } = event.data as { userId: string };
+    for (let i = 0; i < MAX_CHECKS; i++) {
+      const state = await step.run(`check-${i}`, () => refreshRegistration(userId));
+      if (state !== "registering") return { state };
+      await step.sleep(`wait-${i}`, waitFor(i));
+    }
+    return { state: "registering" };
+  },
+);
+
 /**
  * Backstop: finishes placements and settlements whose own job ran out of time,
  * missed an event, or was interrupted by a deploy.
@@ -247,7 +264,22 @@ export const sweepInFlightBids = inngest.createFunction(
       if (outcome === "settled") settled++;
     }
 
-    return { placingChecked: placing.length, escrowed, failed, settlingChecked: settling.length, settled };
+    const registering = await step.run("load-registering", () => loadRegisteringUserIds());
+    let registered = 0;
+    for (const userId of registering) {
+      const state = await step.run(`registering-${userId}`, () => refreshRegistration(userId));
+      if (state === "active") registered++;
+    }
+
+    return {
+      placingChecked: placing.length,
+      escrowed,
+      failed,
+      settlingChecked: settling.length,
+      settled,
+      registeringChecked: registering.length,
+      registered,
+    };
   },
 );
 

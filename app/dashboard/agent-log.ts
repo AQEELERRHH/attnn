@@ -40,6 +40,8 @@ export function logMessage(action: string, data: LogPayload): string {
         `${agent} found ${plural(d.count, "creator")}`,
         d.scored !== undefined ? `scored ${d.scored}` : null,
         d.bidsPlaced !== undefined ? `queued ${plural(d.bidsPlaced, "bid")}` : null,
+        typeof d.unscored === "number" && d.unscored > 0 ? `skipped ${d.unscored} (AI unavailable)` : null,
+        typeof d.reason === "string" ? d.reason.toLowerCase() : null,
       ]
         .filter(Boolean)
         .join(", ") + ".";

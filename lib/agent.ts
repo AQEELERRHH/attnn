@@ -1,10 +1,10 @@
 import { db } from "./db/client";
 import { bids, agentLogs, profiles, bidderConfigs, wallets } from "./db/schema";
 import { evaluateCreatorForBidder } from "./ai";
-import { registryAbi, publicClient } from "./arc";
+import { isActiveOnRegistry } from "./registration";
 import { BidError, createBidIntent } from "./bids";
 import { formatUsd, resolveAgentBidAmount } from "./bid-rules";
-import { eq, and, gte, ne, sql } from "drizzle-orm";
+import { eq, and, gte, inArray, ne, sql } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
 
 // ─── Bidder Agent Run ────────────────────────────────────────────────────────
@@ -57,38 +57,16 @@ export async function runBidderAgent(userId: string): Promise<AgentRunResult> {
       return { bidsPlaced: 0, creatorsFound: 0, errors: ["Daily budget exhausted"], logId: "" };
     }
 
-    // Discover creators by tags (on-chain registry)
-    const registryAddr = process.env.ATTN_REGISTRY_CONTRACT as `0x${string}`;
-    const creatorAddresses = new Set<string>();
-    for (const tag of config.searchTags) {
-      try {
-        const addresses = await publicClient.readContract({
-          address: registryAddr,
-          abi: registryAbi,
-          functionName: "getCreatorsByTag",
-          args: [tag],
-        });
-        addresses.forEach((a) => creatorAddresses.add(a.toLowerCase()));
-      } catch (err) {
-        errors.push(`Failed to query tag "${tag}": ${err}`);
-      }
+    // Discover creators by their CURRENT tags (the DB; tags edited after registration
+    // never reach the on-chain registry), then confirm on Arc that each one really is
+    // a registered, active creator before it can receive a bid.
+    const wanted = new Set(config.searchTags.map((t) => t.trim().toLowerCase()).filter(Boolean));
+    if (wanted.size === 0) {
+      await logAgentAction(userId, "creator_discovered", { count: 0, reason: "No search tags set" });
+      return { bidsPlaced: 0, creatorsFound: 0, errors: ["No search tags set"], logId: uuidv4() };
     }
 
-    if (creatorAddresses.size === 0) {
-      await logAgentAction(userId, "creator_discovered", { count: 0 });
-      return { bidsPlaced: 0, creatorsFound: 0, errors, logId: uuidv4() };
-    }
-
-    // Active creators in the DB whose wallet is in the registry results
     const activeProfiles = await db.query.profiles.findMany({ where: eq(profiles.isActive, true) });
-    const creatorsToScore: { profile: typeof profiles.$inferSelect; address: string }[] = [];
-    for (const profile of activeProfiles) {
-      if (profile.userId === userId || profile.availabilityStatus === "not_accepting") continue;
-      const wallet = await db.query.wallets.findFirst({ where: eq(wallets.userId, profile.userId) });
-      if (wallet && creatorAddresses.has(wallet.address.toLowerCase())) {
-        creatorsToScore.push({ profile, address: wallet.address });
-      }
-    }
 
     // No re-bidding the same creator in one UTC day. Failed attempts count too, so a
     // creator the agent can't afford isn't retried every 30 minutes.
@@ -97,7 +75,35 @@ export async function runBidderAgent(userId: string): Promise<AgentRunResult> {
       .from(bids)
       .where(and(eq(bids.bidderUserId, userId), gte(bids.createdAt, startOfUtcDay())));
     const alreadyBidToday = new Set(todayBids.map((b) => b.creatorUserId));
-    const filteredCreators = creatorsToScore.filter((ct) => !alreadyBidToday.has(ct.profile.userId));
+
+    // Best tag overlap first.
+    const matches = activeProfiles
+      .filter((p) => p.userId !== userId && p.availabilityStatus !== "not_accepting" && !alreadyBidToday.has(p.userId))
+      .map((p) => ({ profile: p, overlap: p.tags.filter((t) => wanted.has(t.trim().toLowerCase())).length }))
+      .filter((m) => m.overlap > 0)
+      .sort((a, b) => b.overlap - a.overlap);
+
+    const walletRows = matches.length
+      ? await db
+          .select({ userId: wallets.userId, address: wallets.address })
+          .from(wallets)
+          .where(inArray(wallets.userId, matches.map((m) => m.profile.userId)))
+      : [];
+    const walletByUser = new Map(walletRows.map((w) => [w.userId, w.address]));
+
+    // Verify on the registry, stopping once there are enough to score.
+    const MAX_TO_SCORE = 10;
+    const filteredCreators: { profile: typeof profiles.$inferSelect; address: string }[] = [];
+    for (const m of matches) {
+      if (filteredCreators.length >= MAX_TO_SCORE) break;
+      const address = walletByUser.get(m.profile.userId);
+      if (!address) continue;
+      try {
+        if (await isActiveOnRegistry(address)) filteredCreators.push({ profile: m.profile, address });
+      } catch (err) {
+        errors.push(`Couldn't verify @${m.profile.handle} on Arc: ${err instanceof Error ? err.message : err}`);
+      }
+    }
     creatorsFound = filteredCreators.length;
 
     if (creatorsFound === 0) {
@@ -106,13 +112,19 @@ export async function runBidderAgent(userId: string): Promise<AgentRunResult> {
     }
 
     // Score up to 10; keep those above the bidder's fit threshold.
+    // A creator the AI couldn't score is skipped, never bid on blind.
     const scored: { profile: typeof profiles.$inferSelect; score: number; bidAmount: bigint }[] = [];
-    for (const ct of filteredCreators.slice(0, 10)) {
+    let unscored = 0;
+    for (const ct of filteredCreators) {
       try {
         const result = await evaluateCreatorForBidder(
           { handle: ct.profile.handle, bio: ct.profile.bio ?? undefined, tags: ct.profile.tags, minBid: ct.profile.minBid },
           config.goal ?? "general",
         );
+        if (!result) {
+          unscored++;
+          continue;
+        }
         if (!result.proceed || result.score < config.minFitScore) continue;
 
         // The AI's amount is a hint. Clamp it to the creator's floor and the
@@ -131,6 +143,15 @@ export async function runBidderAgent(userId: string): Promise<AgentRunResult> {
         errors.push(`Score error for ${ct.profile.handle}: ${err}`);
       }
     }
+
+    if (unscored === filteredCreators.length) {
+      await logAgentAction(userId, "agent_stopped", {
+        reason: "AI unavailable: no creators could be scored, so no bids were placed. The agent tries again on its next run",
+        creatorsFound,
+      });
+      return { bidsPlaced: 0, creatorsFound, errors: [...errors, "AI unavailable; no bids placed"], logId: uuidv4() };
+    }
+    if (unscored > 0) errors.push(`${unscored} creator(s) skipped: AI couldn't score them`);
 
     scored.sort((a, b) => b.score - a.score);
     const topCreators = scored.slice(0, 5);
@@ -172,7 +193,7 @@ export async function runBidderAgent(userId: string): Promise<AgentRunResult> {
       }
     }
 
-    await logAgentAction(userId, "creator_discovered", { count: creatorsFound, scored: scored.length, bidsPlaced });
+    await logAgentAction(userId, "creator_discovered", { count: creatorsFound, scored: scored.length, unscored, bidsPlaced });
   } catch (err) {
     errors.push(`Agent run failed: ${err}`);
   }

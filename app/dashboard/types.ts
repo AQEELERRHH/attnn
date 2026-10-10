@@ -19,6 +19,9 @@ export interface ProfileData {
   autoAcceptThreshold: number | null;
   autoReplyTemplate: string | null;
   isActive: boolean;
+  /** "registering" while registerCreator confirms on Arc; "failed" with registrationError. */
+  registration: "active" | "registering" | "failed" | "none";
+  registrationError: string | null;
   availabilityStatus: string;
   openTo: string[];
   avatarUrl: string | null;

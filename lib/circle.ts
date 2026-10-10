@@ -64,9 +64,7 @@ export async function provisionUserWallet(
   const { data } = await client.createWallets({
     idempotencyKey,
     walletSetId: wsId,
-    // SDK 10.3.0's Blockchain type predates Arc mainnet ("ARC"); the API accepts it.
-    // Upgrade @circle-fin/developer-controlled-wallets before the mainnet move and drop this cast.
-    blockchains: [arc.circleBlockchain as "ARC-TESTNET"],
+    blockchains: [arc.circleBlockchain],
     count: 1,
   });
 

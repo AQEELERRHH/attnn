@@ -365,7 +365,7 @@ function InboxRow({
         : counterAtomic <= BigInt(bid.amountUsdc)
           ? `Must be more than ${formatMoney(bid.amountUsdc)}.`
           : counterAtomic < ESCROW_MIN_BID || counterAtomic > ESCROW_MAX_BID
-            ? "Between $5.00 and $1,000.00."
+            ? `Between ${formatMoney(ESCROW_MIN_BID)} and $1,000.00.`
             : null;
 
   React.useEffect(() => {

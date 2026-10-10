@@ -141,7 +141,7 @@ Return JSON: { "score": number, "bidAmount": string (USDC with 6 decimals), "rea
     return EvaluateCreatorForBidderSchema.parse(parsed);
   } catch {
     // Bid the creator's floor. The agent clamps every amount to the floor and the
-    // bidder's cap anyway (resolveAgentBidAmount), so this can never go below $5.
+    // bidder's cap anyway (resolveAgentBidAmount), so this can never go below the escrow minimum.
     return {
       score: 5,
       bidAmount: creator.minBid,
@@ -190,7 +190,7 @@ function usableTemplate(template: string | null | undefined): string | undefined
 
 /**
  * What the creator agent asks for when it counters: 85% of the highest escrowed
- * bid, never below the creator's floor or $5. Returns undefined (so the bid is
+ * bid, never below the creator's floor or the escrow minimum. Returns undefined (so the bid is
  * surfaced instead) unless that is strictly more than this bid and within the
  * $1,000 maximum, the same rules /api/bid/counter enforces for creators.
  */

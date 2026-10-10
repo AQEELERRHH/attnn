@@ -4,6 +4,7 @@ import { db } from "@/lib/db/client";
 import { profiles, bidderConfigs } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { validateCreatorFloor } from "@/lib/bid-rules";
+import { validateReplyTemplate } from "@/lib/reply-rules";
 
 export async function POST(req: NextRequest) {
   try {
@@ -24,7 +25,11 @@ export async function POST(req: NextRequest) {
     if (updates.bio !== undefined) profileUpdates.bio = updates.bio;
     if (updates.profileURI !== undefined) profileUpdates.profileURI = updates.profileURI;
     if (updates.autoAcceptThreshold !== undefined) profileUpdates.autoAcceptThreshold = updates.autoAcceptThreshold;
-    if (updates.autoReplyTemplate !== undefined) profileUpdates.autoReplyTemplate = updates.autoReplyTemplate;
+    if (updates.autoReplyTemplate !== undefined) {
+      const template = validateReplyTemplate(updates.autoReplyTemplate);
+      if (!template.ok) return NextResponse.json({ error: template.error }, { status: 400 });
+      profileUpdates.autoReplyTemplate = template.value;
+    }
     if (updates.availabilityStatus !== undefined) profileUpdates.availabilityStatus = updates.availabilityStatus;
     if (updates.openTo !== undefined) profileUpdates.openTo = updates.openTo;
 

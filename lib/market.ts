@@ -22,6 +22,8 @@ export interface MarketBid {
   settledAt: Date | null;
   settlementOnChainTxHash: string | null;
   settlementTxHash: string | null;
+  replySource: "creator" | "template" | "ai" | null;
+  replyRating: number | null;
 }
 
 export interface Fill {
@@ -31,6 +33,10 @@ export interface Fill {
   settledAt: string; // ISO
   replyMs: number;
   txHash: string;
+  /** True when the creator's template or agent AI wrote the reply; null if unknown (old rows). */
+  autoReply: boolean | null;
+  /** The bidder's rating: 1, -1, or null if unrated. */
+  rating: number | null;
 }
 
 export interface CreatorMarketStats {
@@ -52,6 +58,12 @@ export interface CreatorMarketStats {
   fills: Fill[];
   /** True once the creator has at least one cleared bid. */
   hasHistory: boolean;
+  /** Bidders' ratings of paid replies, last 30 days. */
+  ratingsUp: number;
+  ratingsDown: number;
+  /** Paid replies in the last 30 days whose author is known, and how many were auto-replies. */
+  repliesKnown: number;
+  autoReplies: number;
 }
 
 const OPEN: BidStatus[] = ["pending", "counter_offered"];
@@ -102,8 +114,14 @@ export function computeCreatorStats(bidsForCreator: MarketBid[], floorUsdc: stri
       settledAt: b.settledAt.toISOString(),
       replyMs: b.settledAt.getTime() - b.createdAt.getTime(),
       txHash: b.settlementOnChainTxHash,
+      autoReply: b.replySource === null ? null : b.replySource !== "creator",
+      rating: b.replyRating,
     })),
     hasHistory: cleared.length > 0,
+    ratingsUp: cleared30.filter((b) => b.replyRating === 1).length,
+    ratingsDown: cleared30.filter((b) => b.replyRating === -1).length,
+    repliesKnown: cleared30.filter((b) => b.replySource !== null).length,
+    autoReplies: cleared30.filter((b) => b.replySource === "template" || b.replySource === "ai").length,
   };
 }
 
@@ -147,6 +165,8 @@ const marketColumns = {
   settledAt: true,
   settlementOnChainTxHash: true,
   settlementTxHash: true,
+  replySource: true,
+  replyRating: true,
 } as const;
 
 /** Open bids plus anything settled in the last 30 days, optionally for one creator. */

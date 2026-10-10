@@ -6,6 +6,7 @@ import { Panel } from "@/components/market";
 import { toast } from "@/hooks/use-toast";
 import { ESCROW_MAX_BID, ESCROW_MIN_BID } from "@/lib/bid-rules";
 import { atomicToDollarInput, dollarsToAtomic } from "@/lib/format";
+import { validateReplyTemplate } from "@/lib/reply-rules";
 import type { ProfileData } from "./types";
 
 export const fieldClass =
@@ -50,9 +51,12 @@ export function CreatorSetupForm({
           ? "The highest floor is $1,000.00."
           : null;
 
+  const templateCheck = validateReplyTemplate(autoReplyTemplate);
+  const templateError = templateCheck.ok ? null : templateCheck.error;
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (floorError || floor === null) return;
+    if (floorError || floor === null || templateError) return;
     setLoading(true);
     setError("");
     const payload = {
@@ -203,10 +207,16 @@ export function CreatorSetupForm({
             placeholder="Sent when your agent accepts a bid for you"
             value={autoReplyTemplate}
             onChange={(e) => setAutoReplyTemplate(e.target.value)}
+            aria-invalid={!!templateError}
           />
-          <p className="mt-1 text-xs text-text-secondary">
-            Sent on your behalf when your agent accepts a bid, and offered as a starting point when you reply yourself.
-          </p>
+          {templateError ? (
+            <p className="mt-1 text-xs text-arc-coral">{templateError}</p>
+          ) : (
+            <p className="mt-1 text-xs text-text-secondary">
+              Sent on your behalf when your agent accepts a bid, and offered as a starting point when you reply yourself. At least 100
+              characters. Bidders see replies sent from it labelled as auto-replies.
+            </p>
+          )}
         </div>
         {error && (
           <p role="alert" className="text-sm text-arc-coral sm:col-span-2">
@@ -219,7 +229,7 @@ export function CreatorSetupForm({
               Cancel
             </Button>
           )}
-          <Button type="submit" className="flex-1" disabled={loading || !!floorError}>
+          <Button type="submit" className="flex-1" disabled={loading || !!floorError || !!templateError}>
             {loading ? "Saving…" : isEdit ? "Save changes" : "Create & register on Arc"}
           </Button>
         </div>

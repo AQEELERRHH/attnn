@@ -265,7 +265,7 @@ export default function AboutPage() {
               },
               {
                 q: "How do you make sure a reply is actually meaningful and not just thanks bye?",
-                a: "Three layers: First, Attnn. requires a reply of at least 10 characters before it accepts a bid, so empty one-word replies are blocked. Second, the marketplace self-regulates: creators who give low-quality replies will get fewer bids over time as bidders stop returning to them. Third, a creator-side AI agent will score incoming replies for quality before releasing funds, and creators with a pattern of low-quality replies will be flagged in their public profile."
+                a: "Three layers. First, a reply must be at least 100 characters before a bid can be accepted, so a quick \"thanks, bye\" can't collect the money. Second, every bidder can rate the reply they paid for (worth it or not), and each creator's market shows the share of replies rated worth it. Third, replies sent automatically, from a creator's saved template or written by their AI agent, are labelled as auto-replies, and each market shows how many of its replies were auto-replies. Bidders can see who actually answers before they bid."
               },
             ].map(({ q, a }) => (
               <Card key={q} className="p-6">

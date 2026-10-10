@@ -36,6 +36,13 @@
       "when": 1791639575870,
       "tag": "0004_registration_error",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1791643926093,
+      "tag": "0005_reply_quality",
+      "breakpoints": true
     }
   ]
 }

@@ -212,7 +212,13 @@ export const creatorAgentTriage = inngest.createFunction(
     } else if (triageResult.decision === "accept" && triageResult.draftedReply) {
       action = await step.run("auto-accept-bid", async () => {
         try {
-          const { txId } = await submitSettlement({ bidId, action: "accept", actorUserId: creatorUserId, reply: triageResult.draftedReply });
+          const { txId } = await submitSettlement({
+            bidId,
+            action: "accept",
+            actorUserId: creatorUserId,
+            reply: triageResult.draftedReply,
+            replySource: triageResult.replySource ?? "template",
+          });
           return { submitted: true, txId };
         } catch (err) {
           if (err instanceof BidError) return { submitted: false, error: err.message };

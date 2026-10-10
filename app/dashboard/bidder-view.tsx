@@ -6,6 +6,7 @@ import { CreatorAvatar, MarketTable, Money, Num, Panel, StatStrip, StatusChip, t
 import { bidDisplay } from "@/lib/bid-display";
 import { cn } from "@/lib/cn";
 import { formatMoney, refundCountdown, shortAddress, timeAgo } from "@/lib/format";
+import { ReplyRating, ReplySourceTag } from "./reply-rating";
 import type { BidData, BidderConfigData, PortfolioSummary } from "./types";
 
 const OPEN_STATUSES = new Set(["placing", "pending", "counter_offered"]);
@@ -207,8 +208,16 @@ export function BidderView({
         const text = b.status === "failed" ? bidDisplay(b, "bidder").note : b.reply;
         if (!text) return <span className="text-text-secondary">—</span>;
         return (
-          <span title={text} className={cn("line-clamp-2 text-[13px]", b.status === "failed" ? "text-arc-coral" : "text-text-secondary")}>
-            {text}
+          <span className="flex flex-col gap-1.5">
+            <span title={text} className={cn("line-clamp-2 text-[13px]", b.status === "failed" ? "text-arc-coral" : "text-text-secondary")}>
+              {text}
+            </span>
+            {b.status === "accepted" && (
+              <span className="flex flex-wrap items-center gap-2">
+                <ReplySourceTag source={b.replySource} />
+                <ReplyRating bid={b} />
+              </span>
+            )}
           </span>
         );
       },
@@ -361,6 +370,12 @@ export function BidderView({
                     <TxLinks bid={b} hideEmpty />
                   </div>
                   {text && <span className={cn("line-clamp-3 text-xs", b.status === "failed" ? "text-arc-coral" : "text-text-secondary")}>{text}</span>}
+                  {b.status === "accepted" && (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <ReplySourceTag source={b.replySource} />
+                      <ReplyRating bid={b} />
+                    </div>
+                  )}
                 </div>
               );
             }}

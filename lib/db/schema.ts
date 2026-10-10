@@ -197,6 +197,13 @@ export const bids = pgTable("bids", {
   status: bidStatusEnum("status").default("pending").notNull(),
   score: integer("score"),
   reply: text("reply"),
+  // Who wrote the reply: "creator" (typed it), "template" (their saved template,
+  // sent by them or their agent) or "ai" (drafted by the creator agent). Null on
+  // rows from before this column. See lib/reply-rules.ts.
+  replySource: text("reply_source").$type<"creator" | "template" | "ai">(),
+  // The bidder's verdict on a paid reply: 1 = worth it, -1 = not. Null = not rated.
+  replyRating: integer("reply_rating"),
+  replyRatedAt: timestamp("reply_rated_at", { withTimezone: true }),
   bidTxHash: text("bid_tx_hash"),
   settlementTxHash: text("settlement_tx_hash"),
   createdAt: timestamp("created_at", { withTimezone: true })

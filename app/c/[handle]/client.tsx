@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Lock } from "lucide-react";
+import { Lock, ThumbsDown, ThumbsUp } from "lucide-react";
 import {
   BidTicket,
   Change,
@@ -22,6 +22,7 @@ import {
 } from "@/components/market";
 import { cn } from "@/lib/cn";
 import { formatChange, formatDuration, shortAddress, timeAgo } from "@/lib/format";
+import { ratingShare } from "@/lib/reply-rules";
 
 export interface CreatorFill {
   id: string;
@@ -31,6 +32,10 @@ export interface CreatorFill {
   replyMs: number;
   txHash: string;
   txHref: string;
+  /** Template/AI auto-reply; null when unknown (older fills). */
+  autoReply: boolean | null;
+  /** Bidder's rating: 1 worth it, -1 not, null unrated. */
+  rating: number | null;
 }
 
 export interface CreatorMarketProps {
@@ -49,6 +54,10 @@ export interface CreatorMarketProps {
     medianReplyMs: number | null;
     openBids: number;
     hasHistory: boolean;
+    ratingsUp: number;
+    ratingsDown: number;
+    repliesKnown: number;
+    autoReplies: number;
   };
   book: OrderBookBid[];
   fills: CreatorFill[];
@@ -99,6 +108,7 @@ export function CreatorMarket(props: CreatorMarketProps) {
     { key: "amount", label: "Cleared at", align: "right", render: (f) => <Money atomic={f.amountUsdc} tone="success" className="font-medium" /> },
     { key: "agent", label: "Bidder agent", render: (f) => <span className="font-medium">{f.agent}</span> },
     { key: "reply", label: "Reply time", render: (f) => <Num>{formatDuration(f.replyMs)}</Num> },
+    { key: "quality", label: "Reply", render: (f) => <ReplyQuality fill={f} /> },
     { key: "when", label: "Settled", render: (f) => <Num className="text-text-secondary">{timeAgo(f.settledAt, now)}</Num> },
     {
       key: "tx",
@@ -182,6 +192,24 @@ export function CreatorMarket(props: CreatorMarketProps) {
               { label: "7d volume", value: <Money atomic={stats.hasHistory ? stats.volume7dUsdc : null} /> },
               { label: "Reply rate", value: <Num>{stats.replyRate === null ? "—" : `${Math.round(stats.replyRate * 100)}%`}</Num> },
               { label: "Median reply", value: <Num>{formatDuration(stats.medianReplyMs)}</Num> },
+              {
+                label: "Rated worth it",
+                value: <Num>{ratingShare(stats.ratingsUp, stats.ratingsDown) === null ? "—" : `${Math.round(ratingShare(stats.ratingsUp, stats.ratingsDown)! * 100)}%`}</Num>,
+                sub:
+                  stats.ratingsUp + stats.ratingsDown > 0 ? (
+                    <span className="text-xs text-text-secondary" title="Bidder ratings of paid replies, last 30 days">
+                      (<Num>{stats.ratingsUp + stats.ratingsDown}</Num>)
+                    </span>
+                  ) : undefined,
+              },
+              {
+                label: "Auto-replies",
+                value: (
+                  <Num title="Paid replies sent from a template or written by the creator's AI agent, last 30 days">
+                    {stats.repliesKnown ? `${stats.autoReplies} of ${stats.repliesKnown}` : "—"}
+                  </Num>
+                ),
+              },
               { label: "Open bids", value: <Num>{stats.openBids}</Num> },
             ]}
           />
@@ -220,7 +248,7 @@ export function CreatorMarket(props: CreatorMarketProps) {
                     <div className="min-w-0 flex-1">
                       <div className="truncate font-medium">{f.agent}</div>
                       <div className="text-xs text-text-secondary">
-                        <Num>{timeAgo(f.settledAt, now)}</Num> · replied in <Num>{formatDuration(f.replyMs)}</Num> ·{" "}
+                        <Num>{timeAgo(f.settledAt, now)}</Num> · replied in <Num>{formatDuration(f.replyMs)}</Num> · <ReplyQuality fill={f} /> ·{" "}
                         <a href={f.txHref} target="_blank" rel="noopener noreferrer" className="text-arc-lavender hover:underline">
                           tx ↗
                         </a>
@@ -313,5 +341,22 @@ export function CreatorMarket(props: CreatorMarketProps) {
         </aside>
       </div>
     </main>
+  );
+}
+
+/** "Written" or "Auto-reply", plus the bidder's 👍/👎 if they rated it. */
+function ReplyQuality({ fill }: { fill: CreatorFill }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 text-xs">
+      {fill.autoReply === null ? (
+        <span className="text-text-secondary">—</span>
+      ) : fill.autoReply ? (
+        <span className="text-text-secondary">Auto-reply</span>
+      ) : (
+        <span className="text-text-primary">Written</span>
+      )}
+      {fill.rating === 1 && <ThumbsUp aria-label="Bidder rated it worth it" className="h-3.5 w-3.5 text-green" />}
+      {fill.rating === -1 && <ThumbsDown aria-label="Bidder rated it not worth it" className="h-3.5 w-3.5 text-arc-coral" />}
+    </span>
   );
 }

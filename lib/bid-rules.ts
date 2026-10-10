@@ -1,11 +1,21 @@
 import { createHash } from "crypto";
 
 /**
- * Bid rules that mirror contracts/src/AttnnEscrow.sol. If the contract constants
- * change, change them here too — the app checks them before sending a transaction
- * so users get a clear error instead of a reverted (and gas-burning) transaction.
+ * Bid rules that mirror contracts/src/AttnnEscrow.sol. The app checks them before
+ * sending a transaction so users get a clear error instead of a reverted (and
+ * gas-burning) transaction.
+ *
+ * The minimum depends on the DEPLOYED contract: the testnet escrow live since
+ * October 2026 was built with MIN_BID = $5; the source (and mainnet) uses $1.
+ * NEXT_PUBLIC_ESCROW_MIN_BID_USDC (atomic USDC) must equal the deployed
+ * contract's MIN_BID. Unset = $5, matching the current testnet contract.
  */
-export const ESCROW_MIN_BID = BigInt(5_000_000); // $5.00
+function minBidFromEnv(): bigint {
+  const raw = process.env.NEXT_PUBLIC_ESCROW_MIN_BID_USDC?.trim();
+  if (raw && /^\d{1,15}$/.test(raw) && BigInt(raw) > BigInt(0)) return BigInt(raw);
+  return BigInt(5_000_000);
+}
+export const ESCROW_MIN_BID = minBidFromEnv();
 export const ESCROW_MAX_BID = BigInt(1_000_000_000); // $1,000.00
 export const REFUND_PERIOD_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
 

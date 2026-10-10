@@ -4,7 +4,7 @@ import * as React from "react";
 import { Button } from "@/components/ui/button";
 import { Panel } from "@/components/market";
 import { toast } from "@/hooks/use-toast";
-import { ESCROW_MAX_BID, ESCROW_MIN_BID } from "@/lib/bid-rules";
+import { ESCROW_MAX_BID, ESCROW_MIN_BID, formatUsd } from "@/lib/bid-rules";
 import { atomicToDollarInput, dollarsToAtomic } from "@/lib/format";
 import { fieldClass, labelClass } from "./creator-setup-form";
 import type { BidderConfigData } from "./types";
@@ -36,9 +36,9 @@ export function BidderSetupForm({
   const budget = dollarsToAtomic(dailyBudget);
   const cap = dollarsToAtomic(maxBid);
   const score = Number(minFitScore);
-  const budgetError = budget === null ? "Enter an amount like 50." : budget < ESCROW_MIN_BID ? "At least $5.00." : null;
+  const budgetError = budget === null ? "Enter an amount like 50." : budget < ESCROW_MIN_BID ? `At least ${formatUsd(ESCROW_MIN_BID)}.` : null;
   const capError =
-    cap === null ? "Enter an amount like 20." : cap < ESCROW_MIN_BID || cap > ESCROW_MAX_BID ? "Between $5.00 and $1,000.00." : null;
+    cap === null ? "Enter an amount like 20." : cap < ESCROW_MIN_BID || cap > ESCROW_MAX_BID ? `Between ${formatUsd(ESCROW_MIN_BID)} and $1,000.00.` : null;
   const scoreError = !Number.isInteger(score) || score < 0 || score > 10 ? "A whole number from 0 to 10." : null;
   const invalid = !!(budgetError || capError || scoreError);
 

@@ -15,7 +15,7 @@ contract AttnnEscrowTest is Test {
     address public bidder = makeAddr("bidder");
     address public anotherBidder = makeAddr("anotherBidder");
 
-    uint256 constant MIN_BID = 5 * 10**6;
+    uint256 constant MIN_BID = 1 * 10**6;
     uint256 constant MAX_BID = 1000 * 10**6;
 
     function setUp() public {

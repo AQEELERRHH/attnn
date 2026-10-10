@@ -47,8 +47,8 @@ contract AttnnRegistryTest is Test {
     function test_RegisterCreator_MinBidTooLow() public {
         vm.startPrank(creator);
         string[] memory tags;
-        vm.expectRevert("AttnnRegistry: minBid too low (min 5 USDC)");
-        registry.registerCreator("alice", 4 * 10**6, tags, "");
+        vm.expectRevert("AttnnRegistry: minBid too low (min 1 USDC)");
+        registry.registerCreator("alice", 1 * 10**6 - 1, tags, "");
         vm.stopPrank();
     }
 

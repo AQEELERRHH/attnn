@@ -201,7 +201,7 @@ function usableTemplate(template: string | null | undefined): string | undefined
 
 /**
  * What the creator agent asks for when it counters: 85% of the highest escrowed
- * bid, never below the creator's floor or $5. Returns undefined (so the bid is
+ * bid, never below the creator's floor or the escrow minimum. Returns undefined (so the bid is
  * surfaced instead) unless that is strictly more than this bid and within the
  * $1,000 maximum, the same rules /api/bid/counter enforces for creators.
  */

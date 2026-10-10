@@ -47,7 +47,7 @@ contract AttnnEscrow is IAttnnEscrow {
     mapping(address => uint256[]) private _bidderBids;
 
     // Minimum bid amount (5 USDC, 6 decimals)
-    uint256 public constant MIN_BID = 5 * 10**6;
+    uint256 public constant MIN_BID = 1 * 10**6;
     // Maximum bid amount (1000 USDC, 6 decimals)
     uint256 public constant MAX_BID = 1000 * 10**6;
     // Refund period (3 days in seconds)

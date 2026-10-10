@@ -103,7 +103,7 @@ Shared UI for market screens; reference page at `/design` (local + Vercel previe
 
 ## Data model essentials
 
-- **USDC amounts are stored as `text` in atomic units (6 decimals)**: `"1000000"` = $1. Handle them with `BigInt`, never float math. Bid limits and helpers live in `lib/bid-rules.ts` (`ESCROW_MIN_BID` $5, `ESCROW_MAX_BID` $1,000, `validateBidAmount`, `resolveAgentBidAmount`, `formatUsd`). Arc's *native* gas balance has 18 decimals; the app only uses the 6-decimal ERC-20 view.
+- **USDC amounts are stored as `text` in atomic units (6 decimals)**: `"1000000"` = $1. Handle them with `BigInt`, never float math. Bid limits and helpers live in `lib/bid-rules.ts` (`ESCROW_MIN_BID` from `NEXT_PUBLIC_ESCROW_MIN_BID_USDC`, which **must equal the deployed escrow's `MIN_BID`**: unset = $5 for the current testnet contract; the contract source and mainnet deployment use **$1**, as does the registry's creator-floor check. `ESCROW_MAX_BID` $1,000, `validateBidAmount`, `resolveAgentBidAmount`, `formatUsd`). Arc's *native* gas balance has 18 decimals; the app only uses the 6-decimal ERC-20 view.
 - Bid statuses: `placing | pending | accepted | rejected | refunded | counter_offered | failed`.
   - `placing`: recorded, not yet escrowed. `failed`: placement failed, **no USDC moved** (`failReason` says why).
   - `pending`: escrowed on-chain; `onChainBidId` + `onChainTxHash` are always set from the transaction receipt.
@@ -115,7 +115,7 @@ Shared UI for market screens; reference page at `/design` (local + Vercel previe
 - Earnings, volume and anything shown as money moved must count only `accepted` (settled on-chain) bids; spend/budget counts everything except `failed`.
 - `agent_logs.action` is a pg enum, so new actions need a schema change plus a migration (ask before pushing).
 - **Wallets** (`lib/wallets.ts`): each user has a `main` wallet and, once they use the bidder agent, an `agent` wallet (`wallets.purpose`, unique per user + purpose, migration 0006; a duplicate wallet set aside by hand is `legacy` and is never picked as main or agent). **Never look a wallet up by userId alone**: user actions, creator registration/payouts and Send use `mainWallet()`; the bidder agent and counter re-bids bid with `createBidIntent({ fromAgentWallet: true })`; settling a bid uses `walletByAddress(userId, bid.bidderAddress | bid.creatorAddress)`, so an agent bid's refund goes back to the agent wallet. The agent stops ("agent_stopped") if it has no agent wallet or less than the minimum bid in it. `POST /api/wallet/agent` `{action: "create" | "fund" | "withdraw", amount}` (user session only) creates it or moves USDC main ⇄ agent, keeping $0.05 behind for the transfer's gas. `bidder-config/create` creates the agent wallet best-effort. Shown on the Agent tab (`agent-wallet-card.tsx`) and as the first Spending policy line. This caps what a buggy agent can spend; it does not protect against a compromised Attnn server (Attnn holds both keys).
-- One `profile` and one `bidder_config` per user (both are `unique` on `userId`). `profiles.minBid` is never below $5 (validated in the profile routes). `profiles.avatarUrl` is the market photo (see Market design system).
+- One `profile` and one `bidder_config` per user (both are `unique` on `userId`). `profiles.minBid` is never below `ESCROW_MIN_BID` (validated in the profile routes). `profiles.avatarUrl` is the market photo (see Market design system).
 
 ## How on-chain writes work (Circle)
 

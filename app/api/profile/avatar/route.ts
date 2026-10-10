@@ -7,6 +7,7 @@ import {
   AVATAR_MAX_BYTES,
   avatarStorageConfigured,
   deleteAvatar,
+  describeStorageError,
   sniffImageType,
   uploadAvatar,
 } from "@/lib/avatar-storage";
@@ -28,7 +29,7 @@ export async function POST(req: NextRequest) {
   const ctx = await requireProfile();
   if ("error" in ctx) return ctx.error;
   if (!avatarStorageConfigured()) {
-    return NextResponse.json({ error: "Photo upload isn't set up yet. Use your Google photo for now." }, { status: 503 });
+    return NextResponse.json({ error: "Photo upload isn't set up yet: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY need to be set." }, { status: 503 });
   }
 
   const form = await req.formData().catch(() => null);
@@ -45,8 +46,11 @@ export async function POST(req: NextRequest) {
     await db.update(profiles).set({ avatarUrl: url }).where(eq(profiles.userId, ctx.userId));
     return NextResponse.json({ success: true, avatarUrl: url });
   } catch (err) {
-    console.error("avatar upload failed:", err);
-    return NextResponse.json({ error: "Upload failed. Please try again." }, { status: 502 });
+    const reason = describeStorageError(err);
+    // Log the raw error too (status and message only; the key is never in it).
+    const e = err as { message?: string; statusCode?: string; status?: number; name?: string } | null;
+    console.error("avatar upload failed:", { name: e?.name, status: e?.statusCode ?? e?.status, message: e?.message, reason });
+    return NextResponse.json({ error: reason }, { status: 502 });
   }
 }
 

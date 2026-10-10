@@ -15,11 +15,51 @@ export function avatarStorageConfigured(): boolean {
   return !!process.env.SUPABASE_URL && !!process.env.SUPABASE_SERVICE_ROLE_KEY;
 }
 
+/**
+ * The project's base URL. People often paste the REST URL
+ * ("https://x.supabase.co/rest/v1/") or add a trailing slash; keep only the origin.
+ */
+function projectUrl(): string {
+  const raw = (process.env.SUPABASE_URL ?? "").trim();
+  try {
+    return new URL(raw).origin;
+  } catch {
+    throw new AvatarStorageError("SUPABASE_URL isn't a valid URL. It should look like https://abcd1234.supabase.co");
+  }
+}
+
 function client() {
-  const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) throw new Error("Photo storage is not configured");
-  return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
+  if (!process.env.SUPABASE_URL || !key) throw new AvatarStorageError("Photo storage is not configured");
+  return createClient(projectUrl(), key, { auth: { persistSession: false, autoRefreshToken: false } });
+}
+
+/** A storage failure with a message that's safe to show (never contains the key). */
+export class AvatarStorageError extends Error {}
+
+/**
+ * Turns a Supabase storage failure into a reason the creator (usually the site
+ * owner, while setting this up) can act on. Messages never include the key.
+ */
+export function describeStorageError(err: unknown): string {
+  if (err instanceof AvatarStorageError) return err.message;
+  const e = err as { message?: unknown; statusCode?: unknown; status?: unknown; cause?: { code?: unknown } } | null;
+  const msg = typeof e?.message === "string" ? e.message : "";
+  const status = String(e?.statusCode ?? e?.status ?? "");
+  const cause = typeof e?.cause?.code === "string" ? e.cause.code : "";
+
+  if (/row-level security|violates.*policy/i.test(msg)) {
+    return "Photo storage refused the upload: SUPABASE_SERVICE_ROLE_KEY looks like the anon/publishable key. Use the service_role (or sb_secret_…) key.";
+  }
+  if (/jws|jwt|signature|invalid api key|unauthorized|invalid key/i.test(msg) || status === "401" || status === "403") {
+    return "Photo storage rejected the server key. Check SUPABASE_SERVICE_ROLE_KEY is this project's service_role (or sb_secret_…) key, with no extra spaces.";
+  }
+  if (/ENOTFOUND|EAI_AGAIN|ECONNREFUSED/.test(cause) || /fetch failed|getaddrinfo|ENOTFOUND/i.test(msg)) {
+    return "Couldn't reach photo storage. Check SUPABASE_URL is your project URL, like https://abcd1234.supabase.co";
+  }
+  if (/bucket not found/i.test(msg)) return "The avatars storage bucket couldn't be created. Create a public bucket called \"avatars\" in Supabase Storage.";
+  if (/payload too large|maximum allowed size|exceeded/i.test(msg)) return "That photo is too large for storage. Try a smaller image.";
+  return "Upload failed. Please try again.";
 }
 
 /** Detects the image type from its first bytes. Never trust the declared type. */

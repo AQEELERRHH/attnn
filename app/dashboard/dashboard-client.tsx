@@ -6,6 +6,7 @@ import { signOut } from "next-auth/react";
 import { Bot, Coins, Inbox, LogOut } from "lucide-react";
 import { SiteHeader } from "@/components/market/site-header";
 import { Num } from "@/components/market";
+import { BrandMark } from "@/components/market/brand-mark";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/hooks/use-toast";
 import { cn } from "@/lib/cn";
@@ -123,9 +124,7 @@ export function DashboardClient({
     return (
       <div className="flex min-h-screen items-center justify-center bg-arc-bg-0 px-4">
         <div className="text-center" role="status">
-          <span aria-hidden className="mx-auto mb-4 flex h-12 w-12 animate-pulse items-center justify-center rounded-xl border-2 border-arc-gold">
-            <span className="h-3 w-3 rounded-[3px] bg-arc-gold" />
-          </span>
+          <BrandMark className="mx-auto mb-4 h-12 w-auto animate-pulse" />
           <h1 className="mb-2 font-display text-xl font-bold">Setting up your wallet</h1>
           <p className="text-sm text-text-secondary">Creating a Circle wallet on {networkLabel}…</p>
         </div>

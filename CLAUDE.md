@@ -60,6 +60,7 @@ app/
     auth/[...nextauth]/                Auth.js handlers
     wallet/{provision,balance,send,agent}  Circle wallet create / USDC balance / USDC transfer / agent wallet create + move USDC main⇄agent
     profile/{create,update,activate}   creator profile CRUD; activate = registerCreator() on-chain
+    onboarding                         first-run guide state: welcome seen (+ role), checklist hidden/shown
     bidder-config/create               upsert bidder agent config
     bid/{place,accept,reject,counter,rate}  escrow actions (manual/UI path); rate = bidder's 👍/👎 on a paid reply
     agent/run                          run the bidder agent once, on demand
@@ -102,6 +103,16 @@ Shared UI for market screens; reference page at `/design` (local + Vercel previe
 - **Market photo:** `profiles.avatarUrl`. Upload via `POST /api/profile/avatar` (browser resizes to 256×256 and re-encodes, server sniffs type, ≤512 KB) to Supabase Storage bucket `avatars` (needs `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`; bucket auto-created); `DELETE` removes. Upload is the only way to set a photo (the "Use my Google photo" option was removed; photos linked earlier keep showing, which is why `next.config.ts` still allows `lh3.googleusercontent.com`).
 - Bids to creators with `availabilityStatus = "not_accepting"` are refused by `createBidIntent` and skipped by the bidder agent.
 - Components: `Panel`, `StatStrip`, `StatInline`, `StatusChip`, `Tag`, `CreatorAvatar`, `Sparkline`, `PlatformStats`, `LiveFills` (server-safe), and `MarketTable`, `OrderBook`, `BidTicket` (client). `MarketTable` takes render functions, so use it from client components only; pass `mobileCard` to get a stacked card list below `sm` instead of a sideways-scrolling table. Every page uses `SiteHeader` and must not scroll sideways at 320 px. Buttons: primary is solid gold with dark text.
+
+## Onboarding (first-run guide)
+
+Part of the dashboard, not a separate tour. Copy is plain English for people new to crypto.
+
+- **Welcome** (`app/dashboard/welcome-dialog.tsx`): shown while `users.onboarding_seen_at` is null (migration 0007; existing users were backfilled as seen). The value in one line, the money rules (USDC = $1, bids are locked in the escrow, reply in `REFUND_PERIOD` or it refunds; a decline refunds at once) and "What brings you here?", which sets `users.role` (bidder / creator / both; UI only, never a permission). Every exit (Get started, Skip, Esc, X) records it as seen via `POST /api/onboarding {action:"welcome", role?}`. Help → "Welcome guide" reopens it.
+- **"Get started" checklist** (`getting-started.tsx`): steps come from `computeChecklist()` in `lib/onboarding.ts` (pure, client-safe), worked out from **real data only** (wallet, balances vs `ESCROW_MIN_BID`, lifetime non-failed bid placed, profile, `registrationState`, avatar, a received bid accepted). Never add a "mark done" flag. Done steps disappear; optional steps (photo) don't hold it open; it hides itself when complete. Dismissing sets `users.checklist_dismissed_at`; Help → "Show getting-started checklist" clears it.
+- **Field hints**: `FieldHint` (`components/market/field-hint.tsx`) is always-visible helper text plus a tap-to-open ⓘ (no hover-only tooltips, so it works on phones). Wording lives in `lib/glossary.ts`; reuse it, and keep it true to the code and `AttnnEscrow.sol` like the Spending policy card. Never claim Attnn. can't access funds: it holds the wallet keys; the escrow contract is what limits where escrowed USDC can go.
+- **Help menu** (`help-menu.tsx`, dashboard header): welcome guide, checklist, `/about#agent-safety`, FAQ, faucet (testnet only).
+- **Network-aware money copy**: faucet links and "Arc Testnet" steps show only when `arc.network === "testnet"` (passed down as `isTestnet`); on mainnet the wallet dialog and funding card say to send **USDC on Arc** only.
 
 ## Data model essentials
 

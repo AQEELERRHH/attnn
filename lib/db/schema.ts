@@ -63,6 +63,10 @@ export const users = pgTable("users", {
   emailVerified: timestamp("email_verified", { withTimezone: true }),
   image: text("image"),
   role: roleEnum("role").default("bidder").notNull(),
+  /** First-run welcome closed (finished or skipped). Null = show it. Migration 0007. */
+  onboardingSeenAt: timestamp("onboarding_seen_at", { withTimezone: true }),
+  /** "Get started" checklist hidden by the user. Help → reopen clears it. */
+  checklistDismissedAt: timestamp("checklist_dismissed_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),

@@ -2,7 +2,8 @@
 
 import * as React from "react";
 import { Button } from "@/components/ui/button";
-import { Panel } from "@/components/market";
+import { FieldHint, Panel } from "@/components/market";
+import { glossary } from "@/lib/glossary";
 import { toast } from "@/hooks/use-toast";
 import { ESCROW_MAX_BID, ESCROW_MIN_BID, formatUsd } from "@/lib/bid-rules";
 import { atomicToDollarInput, dollarsToAtomic } from "@/lib/format";
@@ -93,7 +94,17 @@ export function BidderSetupForm({
           <label htmlFor="bs-tags" className={labelClass}>
             Search tags (comma-separated)
           </label>
-          <input id="bs-tags" className={fieldClass} placeholder="ai, crypto, defi" value={searchTags} onChange={(e) => setSearchTags(e.target.value)} />
+          <input
+            id="bs-tags"
+            className={fieldClass}
+            placeholder="ai, crypto, defi"
+            value={searchTags}
+            onChange={(e) => setSearchTags(e.target.value)}
+            aria-describedby="bs-tags-hint"
+          />
+          <FieldHint id="bs-tags-hint" more={glossary.searchTags}>
+            Topics your agent looks for.
+          </FieldHint>
         </div>
         <div className="sm:col-span-2">
           <label htmlFor="bs-goal" className={labelClass}>
@@ -111,18 +122,46 @@ export function BidderSetupForm({
           <label htmlFor="bs-budget" className={labelClass}>
             Daily budget (USDC)
           </label>
-          <input id="bs-budget" inputMode="decimal" className={`${fieldClass} num`} value={dailyBudget} onChange={(e) => setDailyBudget(e.target.value)} />
-          {budgetError ? <p className="mt-1 text-xs text-arc-coral">{budgetError}</p> : <p className="mt-1 text-xs text-text-secondary">Resets at 00:00 UTC.</p>}
+          <input
+            id="bs-budget"
+            inputMode="decimal"
+            className={`${fieldClass} num`}
+            value={dailyBudget}
+            onChange={(e) => setDailyBudget(e.target.value)}
+            aria-invalid={!!budgetError}
+            aria-describedby="bs-budget-hint"
+          />
+          {budgetError ? (
+            <p id="bs-budget-hint" className="mt-1 text-xs text-arc-coral">
+              {budgetError}
+            </p>
+          ) : (
+            <FieldHint id="bs-budget-hint" more={glossary.dailyBudget}>
+              The most your agent spends in a day. Resets at 00:00 UTC.
+            </FieldHint>
+          )}
         </div>
         <div>
           <label htmlFor="bs-cap" className={labelClass}>
             Max bid per creator (USDC)
           </label>
-          <input id="bs-cap" inputMode="decimal" className={`${fieldClass} num`} value={maxBid} onChange={(e) => setMaxBid(e.target.value)} />
+          <input
+            id="bs-cap"
+            inputMode="decimal"
+            className={`${fieldClass} num`}
+            value={maxBid}
+            onChange={(e) => setMaxBid(e.target.value)}
+            aria-invalid={!!capError}
+            aria-describedby="bs-cap-hint"
+          />
           {capError ? (
-            <p className="mt-1 text-xs text-arc-coral">{capError}</p>
+            <p id="bs-cap-hint" className="mt-1 text-xs text-arc-coral">
+              {capError}
+            </p>
           ) : (
-            <p className="mt-1 text-xs text-text-secondary">Creators whose floor is above this are skipped.</p>
+            <FieldHint id="bs-cap-hint" more={glossary.maxBidPerCreator}>
+              The most it offers any one creator.
+            </FieldHint>
           )}
         </div>
         <div>
@@ -138,8 +177,18 @@ export function BidderSetupForm({
             className={`${fieldClass} num`}
             value={minFitScore}
             onChange={(e) => setMinFitScore(e.target.value)}
+            aria-invalid={!!scoreError}
+            aria-describedby="bs-score-hint"
           />
-          {scoreError && <p className="mt-1 text-xs text-arc-coral">{scoreError}</p>}
+          {scoreError ? (
+            <p id="bs-score-hint" className="mt-1 text-xs text-arc-coral">
+              {scoreError}
+            </p>
+          ) : (
+            <FieldHint id="bs-score-hint" more={glossary.fitScore}>
+              Higher means pickier. 5 is a good start.
+            </FieldHint>
+          )}
         </div>
         <div>
           <label htmlFor="bs-msg" className={labelClass}>

@@ -3,6 +3,8 @@
 import * as React from "react";
 import { cn } from "@/lib/cn";
 import { ESCROW_MAX_BID, creatorFloor, formatUsd } from "@/lib/bid-rules";
+import { glossary } from "@/lib/glossary";
+import { FieldHint } from "./field-hint";
 import { atomicToDollarInput, dollarsToAtomic, shortAddress } from "@/lib/format";
 
 export interface BidTicketProps {
@@ -104,6 +106,7 @@ export function BidTicket({
               setResult(null);
             }}
             aria-invalid={belowFloor || aboveMax || amount === null}
+            aria-describedby="bid-amount-hint"
             className="num min-w-0 flex-1 bg-transparent text-[22px] text-text-primary outline-none"
           />
           <span className="text-[13px] text-text-secondary">USDC</span>
@@ -143,6 +146,11 @@ export function BidTicket({
             Enter an amount like 25 or 25.50.
           </p>
         )}
+        {!belowFloor && !aboveMax && (amount !== null || amountInput.trim() === "") && (
+          <FieldHint id="bid-amount-hint" className="mt-2" more={glossary.bidFloor}>
+            Minimum bid here: <span className="num text-text-primary">{formatUsd(floor)}</span> USDC (1 USDC = $1).
+          </FieldHint>
+        )}
       </div>
 
       <div>
@@ -174,6 +182,9 @@ export function BidTicket({
         <dt className="text-text-secondary">No reply in</dt>
         <dd className="num text-right">3 days → full refund</dd>
       </dl>
+      <FieldHint className="-mt-1.5" more={`${glossary.escrow} ${glossary.refund(3)}`}>
+        Locked, not paid: the creator only gets it by replying.
+      </FieldHint>
 
       <button
         type="submit"

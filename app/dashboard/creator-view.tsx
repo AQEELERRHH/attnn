@@ -41,6 +41,7 @@ export function CreatorView({
   bids,
   summary,
   now,
+  isTestnet,
 }: {
   profile: ProfileData | null;
   wallet: WalletData | null;
@@ -48,6 +49,7 @@ export function CreatorView({
   bids: BidData[];
   summary: PortfolioSummary;
   now: number;
+  isTestnet: boolean;
 }) {
   const router = useRouter();
   const [editing, setEditing] = React.useState(false);
@@ -66,6 +68,7 @@ export function CreatorView({
     if (!profile && !editing && wallet && funded === false) {
       return (
         <FundWalletCard
+          isTestnet={isTestnet}
           address={wallet.address}
           onFunded={() => {
             try {

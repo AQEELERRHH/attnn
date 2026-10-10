@@ -2,10 +2,11 @@ import { auth } from "@/lib/auth";
 import { agentWallet, mainWallet } from "@/lib/wallets";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db/client";
-import { profiles, bidderConfigs, bids, agentLogs } from "@/lib/db/schema";
-import { and, desc, eq, gte, inArray, isNotNull, or, sql } from "drizzle-orm";
+import { profiles, bidderConfigs, bids, agentLogs, users } from "@/lib/db/schema";
+import { and, desc, eq, gte, inArray, isNotNull, ne, or, sql } from "drizzle-orm";
 import { addressUrl, arc, escrowAddress, txUrl } from "@/lib/chain";
-import { ESCROW_MAX_BID, ESCROW_MIN_BID, REFUND_PERIOD_MS } from "@/lib/bid-rules";
+import { ESCROW_MAX_BID, ESCROW_MIN_BID, REFUND_PERIOD_MS, formatUsd } from "@/lib/bid-rules";
+import { computeChecklist } from "@/lib/onboarding";
 import { getUsdcBalance } from "@/lib/activation";
 import { spentToday } from "@/lib/agent";
 import { registrationState } from "@/lib/registration";
@@ -26,11 +27,18 @@ export default async function DashboardPage() {
   const userId = session.user.id;
   const now = Date.now();
 
-  const [wallet, agentWalletRow, profile, bidderCfg] = await Promise.all([
+  const [wallet, agentWalletRow, profile, bidderCfg, userRow, everBid, everReplied] = await Promise.all([
     mainWallet(userId),
     agentWallet(userId),
     db.query.profiles.findFirst({ where: eq(profiles.userId, userId) }),
     db.query.bidderConfigs.findFirst({ where: eq(bidderConfigs.userId, userId) }),
+    db.query.users.findFirst({
+      where: eq(users.id, userId),
+      columns: { role: true, onboardingSeenAt: true, checklistDismissedAt: true },
+    }),
+    // Lifetime "firsts" for the checklist (the bid list below only covers 30 days).
+    db.query.bids.findFirst({ where: and(eq(bids.bidderUserId, userId), ne(bids.status, "failed")), columns: { id: true } }),
+    db.query.bids.findFirst({ where: and(eq(bids.creatorUserId, userId), eq(bids.status, "accepted")), columns: { id: true } }),
   ]);
 
   // Everything still open, plus the last 30 days of history, on either side of the market.
@@ -140,8 +148,33 @@ export default async function DashboardPage() {
     },
   };
 
+  const role = userRow?.role ?? session.user.role;
+  const isTestnet = arc.network === "testnet";
+  const checklist = computeChecklist({
+    role,
+    hasWallet: !!wallet,
+    walletUsdc,
+    agentWalletUsdc,
+    minBid: ESCROW_MIN_BID,
+    minBidLabel: formatUsd(ESCROW_MIN_BID),
+    placedStatuses: everBid ? ["pending"] : [],
+    received: [
+      ...(everReplied ? [{ status: "accepted" }] : []),
+      ...myBids.filter((b) => b.creatorUserId === userId).map((b) => ({ status: b.status })),
+    ],
+    profile: profile ? { registration: registrationState(profile), avatarUrl: profile.avatarUrl ?? null } : null,
+    hasAgent: !!bidderCfg,
+    isTestnet,
+  });
+
   return (
     <DashboardClient
+      onboarding={{
+        showWelcome: !userRow?.onboardingSeenAt,
+        checklistDismissed: !!userRow?.checklistDismissedAt,
+        checklist,
+        isTestnet,
+      }}
       now={now}
       networkLabel={arc.chain.name}
       policy={{
@@ -202,7 +235,7 @@ export default async function DashboardPage() {
         createdAt: l.createdAt.toISOString(),
       }))}
       userId={userId}
-      userRole={session.user.role}
+      userRole={role}
     />
   );
 }

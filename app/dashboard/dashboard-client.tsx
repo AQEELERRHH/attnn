@@ -15,6 +15,10 @@ import { AgentConsole } from "./agent-console";
 import { BidderView } from "./bidder-view";
 import { CreatorView } from "./creator-view";
 import { WalletDialog } from "./wallet-dialog";
+import { WelcomeDialog } from "./welcome-dialog";
+import { GettingStarted } from "./getting-started";
+import { HelpMenu } from "./help-menu";
+import { onboardingRole, type ChecklistStep, type OnboardingRole } from "@/lib/onboarding";
 import type { AgentPolicyInfo, BidData, BidderConfigData, LogData, PortfolioSummary, ProfileData, WalletData } from "./types";
 
 type View = "bidder" | "creator" | "agent";
@@ -40,6 +44,7 @@ export function DashboardClient({
   now,
   networkLabel,
   policy,
+  onboarding,
 }: {
   wallet: WalletData | null;
   profile: ProfileData | null;
@@ -53,6 +58,12 @@ export function DashboardClient({
   now: number;
   networkLabel: string;
   policy: AgentPolicyInfo;
+  onboarding: {
+    showWelcome: boolean;
+    checklistDismissed: boolean;
+    checklist: { steps: ChecklistStep[]; done: number; total: number; complete: boolean };
+    isTestnet: boolean;
+  };
 }) {
   const router = useRouter();
   const [provisioning, setProvisioning] = React.useState(!wallet);
@@ -63,8 +74,29 @@ export function DashboardClient({
   const inboxCount = received.filter((b) => b.status === "pending" || b.status === "counter_offered").length;
 
   const [view, setView] = React.useState<View>(() =>
-    inboxCount > 0 || (!profile && userRole === "creator") ? "creator" : "bidder",
+    inboxCount > 0 || userRole === "creator" ? "creator" : "bidder",
   );
+
+  // First-run guide. The welcome shows until it's closed once (stored server-side);
+  // Help reopens it. Dismissing the checklist is optimistic, then saved.
+  const [welcomeOpen, setWelcomeOpen] = React.useState(onboarding.showWelcome);
+  const [welcomeFirstVisit, setWelcomeFirstVisit] = React.useState(onboarding.showWelcome);
+  const [checklistDismissed, setChecklistDismissed] = React.useState(onboarding.checklistDismissed);
+  const saveChecklist = (action: "dismiss-checklist" | "show-checklist") =>
+    fetch("/api/onboarding", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action }),
+    }).catch(() => {});
+  const closeWelcome = (role?: OnboardingRole) => {
+    setWelcomeOpen(false);
+    setWelcomeFirstVisit(false);
+    if (role) {
+      if (role === "creator") setView("creator");
+      else if (role === "bidder") setView("bidder");
+      router.refresh(); // the checklist depends on the role
+    }
+  };
 
   // Auto-provision the Circle wallet on first visit.
   React.useEffect(() => {
@@ -144,7 +176,19 @@ export function DashboardClient({
         networkLabel={networkLabel}
         actions={
           <>
-            {wallet && <WalletDialog address={wallet.address} balanceUsdc={summary.walletUsdc} />}
+            <HelpMenu
+              isTestnet={onboarding.isTestnet}
+              checklistHidden={checklistDismissed && !onboarding.checklist.complete}
+              onOpenGuide={() => {
+                setWelcomeFirstVisit(false);
+                setWelcomeOpen(true);
+              }}
+              onShowChecklist={() => {
+                setChecklistDismissed(false);
+                void saveChecklist("show-checklist");
+              }}
+            />
+            {wallet && <WalletDialog address={wallet.address} balanceUsdc={summary.walletUsdc} isTestnet={onboarding.isTestnet} />}
             <button
               type="button"
               onClick={() => signOut({ callbackUrl: "/" })}
@@ -195,6 +239,23 @@ export function DashboardClient({
           </div>
         </div>
 
+        {!checklistDismissed && !onboarding.checklist.complete && (
+          <GettingStarted
+            steps={onboarding.checklist.steps}
+            done={onboarding.checklist.done}
+            total={onboarding.checklist.total}
+            walletAddress={wallet?.address ?? null}
+            handle={profile?.handle ?? null}
+            isTestnet={onboarding.isTestnet}
+            onOpenView={setView}
+            onDismiss={() => {
+              setChecklistDismissed(true);
+              void saveChecklist("dismiss-checklist");
+              toast({ title: "Checklist hidden", description: "Bring it back any time from Help (?) at the top." });
+            }}
+          />
+        )}
+
         {inFlight && pollTimedOut && (
           <div role="status" className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-arc-bg-1 px-4 py-3 text-sm">
             <span className="text-text-secondary">Something is still confirming on Arc. Auto-refresh has paused.</span>
@@ -216,11 +277,20 @@ export function DashboardClient({
             <BidderView bids={placed} summary={summary} bidderConfig={bidderConfig} now={now} onOpenAgent={() => setView("agent")} />
           )}
           {view === "creator" && (
-            <CreatorView profile={profile} wallet={wallet} bids={received} summary={summary} now={now} />
+            <CreatorView profile={profile} wallet={wallet} bids={received} summary={summary} now={now} isTestnet={onboarding.isTestnet} />
           )}
           {view === "agent" && <AgentConsole config={bidderConfig} bids={placed} logs={logs} summary={summary} now={now} policy={policy} />}
         </div>
       </main>
+
+      <WelcomeDialog
+        open={welcomeOpen}
+        onClose={closeWelcome}
+        currentRole={onboardingRole(userRole)}
+        firstVisit={welcomeFirstVisit}
+        minBid={policy.minBid}
+        refundDays={policy.refundDays}
+      />
     </div>
   );
 }

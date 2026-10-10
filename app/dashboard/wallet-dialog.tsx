@@ -12,8 +12,8 @@ import { dollarsToAtomic, formatMoney, shortAddress } from "@/lib/format";
 const field =
   "focus-ring w-full rounded-lg border border-border-bright bg-arc-bg-0 px-3 py-2.5 text-sm text-text-primary placeholder:text-text-dim";
 
-/** Header wallet button: balance, address, faucet link and Send USDC. */
-export function WalletDialog({ address, balanceUsdc }: { address: string; balanceUsdc: string | null }) {
+/** Header wallet button: the main wallet's balance, address, how to add USDC, and Send USDC. */
+export function WalletDialog({ address, balanceUsdc, isTestnet }: { address: string; balanceUsdc: string | null; isTestnet: boolean }) {
   const router = useRouter();
   const [open, setOpen] = React.useState(false);
   const [to, setTo] = React.useState("");
@@ -72,8 +72,8 @@ export function WalletDialog({ address, balanceUsdc }: { address: string; balanc
       </DialogTrigger>
       <DialogContent className="w-[calc(100%-2rem)] max-w-md">
         <DialogHeader>
-          <DialogTitle>Agent wallet</DialogTitle>
-          <DialogDescription>Circle wallet on Arc. It pays for bids and the small USDC network fees.</DialogDescription>
+          <DialogTitle>Your wallet</DialogTitle>
+          <DialogDescription>Your USDC wallet on Arc. It pays for your bids and the tiny USDC network fees, and creator earnings land here.</DialogDescription>
         </DialogHeader>
 
         <div className="rounded-lg border border-border bg-arc-bg-0 p-4">
@@ -85,15 +85,22 @@ export function WalletDialog({ address, balanceUsdc }: { address: string; balanc
             <Button variant="outline" size="sm" onClick={copy}>
               <Copy aria-hidden className="mr-1.5 h-3 w-3" /> Copy address
             </Button>
-            <a
-              href="https://faucet.circle.com"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="focus-ring inline-flex h-8 items-center gap-1 rounded-lg px-2 text-xs text-arc-lavender hover:underline"
-            >
-              Get testnet USDC <ExternalLink aria-hidden className="h-3 w-3" />
-            </a>
+            {isTestnet && (
+              <a
+                href="https://faucet.circle.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="focus-ring inline-flex h-8 items-center gap-1 rounded-lg px-2 text-xs text-arc-lavender hover:underline"
+              >
+                Get free test USDC <ExternalLink aria-hidden className="h-3 w-3" />
+              </a>
+            )}
           </div>
+          {!isTestnet && (
+            <p className="mt-3 text-xs text-arc-coral">
+              Only send USDC on the Arc network to this address. USDC sent from another network may be lost.
+            </p>
+          )}
         </div>
 
         <form onSubmit={send} className="flex flex-col gap-3">

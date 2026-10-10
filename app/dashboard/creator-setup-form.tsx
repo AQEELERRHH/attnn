@@ -2,7 +2,8 @@
 
 import * as React from "react";
 import { Button } from "@/components/ui/button";
-import { Panel } from "@/components/market";
+import { FieldHint, Panel } from "@/components/market";
+import { glossary } from "@/lib/glossary";
 import { toast } from "@/hooks/use-toast";
 import { ESCROW_MAX_BID, ESCROW_MIN_BID, formatUsd } from "@/lib/bid-rules";
 import { atomicToDollarInput, dollarsToAtomic } from "@/lib/format";
@@ -177,20 +178,32 @@ export function CreatorSetupForm({
             value={minBid}
             onChange={(e) => setMinBid(e.target.value)}
             aria-invalid={!!floorError}
+            aria-describedby="cs-floor-hint"
             required
           />
           {floorError ? (
-            <p className="mt-1 text-xs text-arc-coral">{floorError}</p>
+            <p id="cs-floor-hint" className="mt-1 text-xs text-arc-coral">{floorError}</p>
           ) : (
-            <p className="mt-1 text-xs text-text-secondary">The lowest bid you&apos;ll accept. {formatUsd(ESCROW_MIN_BID)} to $1,000.00.</p>
+            <FieldHint id="cs-floor-hint" more={glossary.creatorFloor}>
+              The lowest bid you&apos;ll accept, in USDC (1 USDC = $1). {formatUsd(ESCROW_MIN_BID)} to $1,000.00.
+            </FieldHint>
           )}
         </div>
         <div>
           <label htmlFor="cs-tags" className={labelClass}>
             Tags (comma-separated)
           </label>
-          <input id="cs-tags" className={fieldClass} placeholder="ai, crypto, design" value={tags} onChange={(e) => setTags(e.target.value)} />
-          <p className="mt-1 text-xs text-text-secondary">Up to 10. Bidder agents discover you by these.</p>
+          <input
+            id="cs-tags"
+            className={fieldClass}
+            placeholder="ai, crypto, design"
+            value={tags}
+            onChange={(e) => setTags(e.target.value)}
+            aria-describedby="cs-tags-hint"
+          />
+          <FieldHint id="cs-tags-hint" more={glossary.creatorTags}>
+            Up to 10. Bidder agents discover you by these.
+          </FieldHint>
         </div>
         <div>
           <label htmlFor="cs-avail" className={labelClass}>
@@ -201,6 +214,7 @@ export function CreatorSetupForm({
             <option value="limited">Limited availability</option>
             <option value="not_accepting">Not accepting bids (market paused)</option>
           </select>
+          <FieldHint more={glossary.availability}>You can pause your market any time.</FieldHint>
         </div>
         <div className="sm:col-span-2">
           <label htmlFor="cs-bio" className={labelClass}>
@@ -232,14 +246,14 @@ export function CreatorSetupForm({
             value={autoReplyTemplate}
             onChange={(e) => setAutoReplyTemplate(e.target.value)}
             aria-invalid={!!templateError}
+            aria-describedby="cs-template-hint"
           />
           {templateError ? (
-            <p className="mt-1 text-xs text-arc-coral">{templateError}</p>
+            <p id="cs-template-hint" className="mt-1 text-xs text-arc-coral">{templateError}</p>
           ) : (
-            <p className="mt-1 text-xs text-text-secondary">
-              Sent on your behalf when your agent accepts a bid, and offered as a starting point when you reply yourself. At least 100
-              characters. Bidders see replies sent from it labelled as auto-replies.
-            </p>
+            <FieldHint id="cs-template-hint" more={glossary.replyTemplate}>
+              Your agent&apos;s reply when it accepts a bid for you, and a starting point when you reply yourself. At least 100 characters.
+            </FieldHint>
           )}
         </div>
         {error && (

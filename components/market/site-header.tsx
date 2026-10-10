@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { cn } from "@/lib/cn";
+import { BrandMark } from "./brand-mark";
 
 const NAV = [
   { href: "/creators", label: "Markets" },
@@ -21,9 +22,7 @@ export function SiteHeader({ networkLabel, actions }: { networkLabel: string; ac
     <header className="border-b border-border bg-arc-bg-1">
       <div className="mx-auto flex max-w-[1320px] flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3 sm:px-6">
         <Link href="/" className="focus-ring flex items-center gap-2.5 rounded-md text-text-primary">
-          <span aria-hidden className="flex h-7 w-7 items-center justify-center rounded-[7px] border-2 border-arc-gold">
-            <span className="h-2 w-2 rounded-[2px] bg-arc-gold" />
-          </span>
+          <BrandMark className="h-7 w-auto" />
           <span className="font-display text-xl font-extrabold tracking-tight">attnn.</span>
         </Link>
         <nav aria-label="Main" className="order-3 flex w-full gap-1 sm:order-none sm:w-auto">

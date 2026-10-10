@@ -4,6 +4,7 @@ import { db } from "@/lib/db/client";
 import { profiles, wallets } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { validateCreatorFloor } from "@/lib/bid-rules";
+import { validateReplyTemplate } from "@/lib/reply-rules";
 
 export async function POST(req: NextRequest) {
   try {
@@ -11,7 +12,7 @@ export async function POST(req: NextRequest) {
     if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const body = await req.json();
-    const { handle, minBid, tags, bio, profileURI, availabilityStatus, openTo } = body;
+    const { handle, minBid, tags, bio, profileURI, availabilityStatus, openTo, autoReplyTemplate } = body;
 
     if (!handle || !minBid) {
       return NextResponse.json({ error: "Handle and minBid are required" }, { status: 400 });
@@ -19,6 +20,12 @@ export async function POST(req: NextRequest) {
     const floor = validateCreatorFloor(minBid);
     if (!floor.ok) return NextResponse.json({ error: floor.error }, { status: 400 });
     const minBidAtomic = floor.amount.toString();
+
+    // The reply template the creator typed (it used to be dropped here). Omitted →
+    // keep the default template.
+    const template = autoReplyTemplate === undefined ? null : validateReplyTemplate(autoReplyTemplate);
+    if (template && !template.ok) return NextResponse.json({ error: template.error }, { status: 400 });
+    const templateField = template?.ok ? { autoReplyTemplate: template.value } : {};
 
     // Check handle uniqueness — allow if it's this user's own handle
     const existingHandle = await db.query.profiles.findFirst({ where: eq(profiles.handle, handle) });
@@ -45,6 +52,7 @@ export async function POST(req: NextRequest) {
           profileURI: profileURI ?? null,
           availabilityStatus: availabilityStatus ?? "available",
           openTo: openTo ?? [],
+          ...templateField,
         })
         .where(eq(profiles.userId, session.user.id))
         .returning();
@@ -62,6 +70,7 @@ export async function POST(req: NextRequest) {
       profileURI: profileURI ?? null,
       availabilityStatus: availabilityStatus ?? "available",
       openTo: openTo ?? [],
+      ...templateField,
       isActive: false,
     }).returning();
 

@@ -14,6 +14,7 @@
  *   finalizeSettlement → "accepted" / "rejected" / "refunded", or cleared for retry
  */
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { replyError, type ReplySource } from "./reply-rules";
 import { parseEventLogs, type Hex } from "viem";
 import { db } from "./db/client";
 import { bids, profiles, wallets } from "./db/schema";
@@ -386,6 +387,8 @@ export async function submitSettlement(params: {
   /** Who is acting. accept/reject must be the creator, refund the bidder. */
   actorUserId: string;
   reply?: string;
+  /** Who wrote the reply (accept only). Defaults to "creator". */
+  replySource?: ReplySource;
 }): Promise<{ txId: string }> {
   const { action } = params;
   const bid = await db.query.bids.findFirst({ where: eq(bids.id, params.bidId) });
@@ -410,6 +413,11 @@ export async function submitSettlement(params: {
   if (bid.settlementTxHash && !isReservation(bid.settlementTxHash)) {
     return { txId: bid.settlementTxHash }; // same action already sent
   }
+  // Refuse a too-short reply before any chain reads.
+  if (action === "accept") {
+    const problem = replyError(params.reply ?? "");
+    if (problem) throw new BidError(problem);
+  }
   if (!bid.onChainBidId) throw new BidError("This bid has no on-chain id yet", 409);
 
   // Old rows may sit in an earlier escrow deployment; settle them where they are.
@@ -419,11 +427,6 @@ export async function submitSettlement(params: {
     throw new BidError("This bid lives in an unknown escrow contract and needs manual handling", 409);
   }
 
-  if (action === "accept") {
-    const reply = params.reply?.trim() ?? "";
-    if (reply.length < 10) throw new BidError("Reply must be at least 10 characters");
-    if (reply.length > 2000) throw new BidError("Reply must be under 2000 characters");
-  }
 
   // Check the chain before spending gas, so users get a clear reason.
   const onChain = await readOnChainBid(escrow, bid.onChainBidId);
@@ -499,7 +502,10 @@ export async function submitSettlement(params: {
 
   await db
     .update(bids)
-    .set({ settlementTxHash: txId, ...(action === "accept" ? { reply: params.reply!.trim() } : {}) })
+    .set({
+      settlementTxHash: txId,
+      ...(action === "accept" ? { reply: params.reply!.trim(), replySource: params.replySource ?? "creator" } : {}),
+    })
     .where(and(eq(bids.id, bid.id), eq(bids.settlementTxHash, reservation)));
 
   try {

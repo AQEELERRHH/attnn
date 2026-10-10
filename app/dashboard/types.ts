@@ -51,6 +51,10 @@ export interface BidData {
   /** Creator agent's triage score, 0–10. */
   score: number | null;
   reply: string | null;
+  /** Who wrote the reply (null on old rows). */
+  replySource: "creator" | "template" | "ai" | null;
+  /** The bidder's rating of the reply: 1 = worth it, -1 = not, null = unrated. */
+  replyRating: number | null;
   /** Circle id of an in-flight settlement (or a reservation sentinel). */
   settlementTxHash: string | null;
   settlementAction: "accept" | "reject" | "refund" | null;

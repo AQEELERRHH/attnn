@@ -59,7 +59,7 @@ app/
     wallet/{provision,balance,send}    Circle wallet create / USDC balance / USDC transfer
     profile/{create,update,activate}   creator profile CRUD; activate = registerCreator() on-chain
     bidder-config/create               upsert bidder agent config
-    bid/{place,accept,reject,counter}  escrow actions (manual/UI path)
+    bid/{place,accept,reject,counter,rate}  escrow actions (manual/UI path); rate = bidder's 👍/👎 on a paid reply
     agent/run                          run the bidder agent once, on demand
     agent/score                        ad-hoc AI scoring (not used by the UI)
     agent/stream                       SSE of agent_logs (not used by the UI)
@@ -108,6 +108,7 @@ Shared UI for market screens; reference page at `/design` (local + Vercel previe
   - `placing`: recorded, not yet escrowed. `failed`: placement failed, **no USDC moved** (`failReason` says why).
   - `pending`: escrowed on-chain; `onChainBidId` + `onChainTxHash` are always set from the transaction receipt.
   - `accepted` / `rejected` / `refunded`: written **only after the settlement transaction is COMPLETE** on Arc. While one is in flight the bid stays `pending` with `settlementTxHash` (Circle id) + `settlementAction` ("confirming"). A failed settlement clears both, bumps `settlementAttempt` and sets `failReason`.
+- **Replies** (`lib/reply-rules.ts`, client-safe): at least `REPLY_MIN_CHARS` (100) and at most 2,000 characters, checked by the composer, `/api/bid/accept`, `submitSettlement` and for reply templates (profile create/update; a template is optional but if set must pass). `bids.replySource` records who wrote it: `creator`, `template` (the saved template word for word, sent by the creator or the agent) or `ai` (creator agent's `draftReply`); null on old rows. `bids.replyRating` (1 / -1 / null) is the bidder's verdict, set via `POST /api/bid/rate` (bidder only, cleared bids only, can change or clear). `computeCreatorStats` reports `ratingsUp/Down`, `repliesKnown`, `autoReplies` (30 days); the market page shows "Rated worth it" and "Auto-replies" and tags each fill. Migration 0005.
 - `replacesBidId` (nullable self-reference): set on a re-bid placed at a creator's counter price; points at the countered original. Unique where not null.
 - `(escrowAddress, onChainBidId)` is a bid's on-chain identity: every escrow deployment numbers bids from 1. Unique index `bids_escrow_onchain_id_uq`. Rows from before this column have `escrowAddress = null` and on testnet live in the **original 14-day escrow** (`0x3066…8ab3`), not the current one. Never assume null = current: `resolveBidEscrow()` finds the bid among `knownEscrowAddresses()` (current + `legacyEscrowAddresses()`, from `ATTN_LEGACY_ESCROW_CONTRACTS`, testnet default the old escrow) by matching id + bidder + creator + amount on-chain, and stamps the row.
 - `bidTxHash` / `settlementTxHash` hold **Circle transaction ids**; `onChainTxHash` / `settlementOnChainTxHash` hold chain hashes.
@@ -154,7 +155,7 @@ The **Spending policy** card (`app/dashboard/agent-policy.tsx`, Agent tab) and t
 Triggered by `attnn/bid.placed`, which is sent only **after** the bid is escrowed (so `onChainBidId` is always set; there is no chain-sync wait any more). Concurrency 5 (the Inngest plan maximum; anything higher makes the whole app sync fail).
 
 1. Loads the bid, the creator's profile and their pending bids (`queueDepth`, `highestBidAmount`).
-2. `triageBidForCreator` (`lib/ai.ts`) returns a 0–10 score; thresholds are **hard-coded**: `≥ 8` accept (template or AI `draftReply`), `5–7` counter via `counterAmountFor()` (85% of the highest pending bid, at least the creator's floor, only if that is more than this bid and ≤ $1,000) else surface, `< 5` reject. `autoAcceptThreshold` is AI context only. Fallback when AISA fails: ≥ 2× minBid → 8, ≥ minBid → 5, else 3.
+2. `triageBidForCreator` (`lib/ai.ts`) returns a 0–10 score (accepts reply with the creator's template if it passes the reply rules, else an AI `draftReply`, which has **no canned fallback**: if the AI fails or writes under 100 characters the bid is surfaced for the creator instead); thresholds are **hard-coded**: `≥ 8` accept (template or AI `draftReply`), `5–7` counter via `counterAmountFor()` (85% of the highest pending bid, at least the creator's floor, only if that is more than this bid and ≤ $1,000) else surface, `< 5` reject. `autoAcceptThreshold` is AI context only. Fallback when AISA fails: ≥ 2× minBid → 8, ≥ minBid → 5, else 3.
 3. Records the score, then acts through `submitSettlement` (accept/reject) or sets `counter_offered`. A re-bid (`replacesBidId` set) is never countered or rejected by the agent; those outcomes become `surface`. A `BidError` (e.g. window passed) is returned in the run result, not thrown.
 
 ### Counter-offer handler: `handleCounterOffer`

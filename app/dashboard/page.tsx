@@ -105,6 +105,8 @@ export default async function DashboardPage() {
     status: b.status,
     score: b.score,
     reply: b.reply,
+    replySource: b.replySource ?? null,
+    replyRating: b.replyRating ?? null,
     settlementTxHash: b.settlementTxHash,
     settlementAction: b.settlementAction ?? null,
     failReason: b.failReason ?? null,

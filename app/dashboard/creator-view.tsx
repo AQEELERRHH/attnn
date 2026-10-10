@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ExternalLink } from "lucide-react";
+import { ExternalLink, ThumbsDown, ThumbsUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Slider } from "@/components/ui/slider";
@@ -16,12 +16,12 @@ import { cn } from "@/lib/cn";
 import { atomicToDollarInput, dollarsToAtomic, formatDuration, formatMoney, refundCountdown, shortAddress, timeAgo } from "@/lib/format";
 import { CreatorSetupForm, fieldClass, labelClass } from "./creator-setup-form";
 import { FundWalletCard } from "./fund-wallet-card";
+import { ReplySourceTag } from "./reply-rating";
+import { REPLY_MAX_CHARS, REPLY_MIN_CHARS } from "@/lib/reply-rules";
 import type { BidData, PortfolioSummary, ProfileData, WalletData } from "./types";
 
-const REPLY_MIN = 10;
 /** Statuses of a re-bid that still stands in for the countered bid it replaces. */
 const LIVE_REBID = new Set(["placing", "pending", "counter_offered", "accepted"]);
-const REPLY_MAX = 2000;
 
 const AVAILABILITY: Record<string, { label: string; tone: "success" | "pending" | "danger" }> = {
   available: { label: "Accepting bids", tone: "success" },
@@ -295,6 +295,13 @@ function CreatorMarketDesk({
                   <Money atomic={b.amountUsdc} tone={b.status === "accepted" && b.settlementTxHref ? "success" : "muted"} className="w-20 font-medium" />
                   <StatusChip tone={d.tone}>{d.label}</StatusChip>
                   <span className="order-last min-w-0 basis-full truncate text-xs text-text-secondary sm:order-none sm:basis-auto sm:flex-1 sm:text-sm">{b.agentName ?? shortAddress(b.bidderAddress)}</span>
+                  {b.status === "accepted" && (b.replySource === "template" || b.replySource === "ai") && <ReplySourceTag source={b.replySource} />}
+                  {b.replyRating !== null && (
+                    <span className={cn("inline-flex items-center gap-1 text-xs", b.replyRating > 0 ? "text-green" : "text-arc-coral")}>
+                      {b.replyRating > 0 ? <ThumbsUp aria-hidden className="h-3.5 w-3.5" /> : <ThumbsDown aria-hidden className="h-3.5 w-3.5" />}
+                      {b.replyRating > 0 ? "Bidder found it worth it" : "Bidder didn't find it worth it"}
+                    </span>
+                  )}
                   <span className="ml-auto flex items-center gap-3">
                     <Num className="text-xs text-text-secondary">{timeAgo(b.settledAt ?? b.createdAt, now)}</Num>
                     {b.settlementTxHref && (
@@ -316,7 +323,7 @@ function CreatorMarketDesk({
         </Panel>
         <Panel
           title="Your agent's standards"
-          description="How picky your creator agent should be when it scores incoming bids. Bids it scores 8 or higher are accepted for you with your reply template."
+          description="How picky your creator agent should be when it scores incoming bids. Bids it scores 8 or higher are accepted for you with your reply template, or a reply its AI writes for that bid. Bidders see these labelled as auto-replies."
         >
           <div className="flex items-center gap-4">
             <Slider
@@ -371,7 +378,7 @@ function InboxRow({
   const refund = refundCountdown(bid.createdAt, now);
   const windowPassed = refund.due;
   const trimmed = reply.trim();
-  const replyValid = trimmed.length >= REPLY_MIN && trimmed.length <= REPLY_MAX;
+  const replyValid = trimmed.length >= REPLY_MIN_CHARS && trimmed.length <= REPLY_MAX_CHARS;
 
   const counterAtomic = dollarsToAtomic(counter);
   const counterError =
@@ -513,7 +520,7 @@ function InboxRow({
             id={`reply-${bid.id}`}
             ref={replyRef}
             rows={4}
-            maxLength={REPLY_MAX}
+            maxLength={REPLY_MAX_CHARS}
             value={reply}
             onChange={(e) => setReply(e.target.value)}
             placeholder="Answer their question, share a contact, or say what happens next."
@@ -521,11 +528,11 @@ function InboxRow({
           />
           <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-text-secondary">
             <span>
-              <Num className={trimmed.length > 0 && trimmed.length < REPLY_MIN ? "text-arc-coral" : undefined}>{trimmed.length}</Num> / {REPLY_MAX} · at least{" "}
-              {REPLY_MIN} characters. The bidder sees this when the payment clears.
+              <Num className={trimmed.length > 0 && trimmed.length < REPLY_MIN_CHARS ? "text-arc-coral" : undefined}>{trimmed.length}</Num> / {REPLY_MAX_CHARS} · at least{" "}
+              {REPLY_MIN_CHARS} characters. Give them a real answer: the bidder sees this when the payment clears and can rate it on your market.
             </span>
             {template && (
-              <button type="button" onClick={() => setReply(template)} className="focus-ring rounded text-arc-lavender hover:underline">
+              <button type="button" onClick={() => setReply(template)} title="Replies sent from your template are labelled as auto-replies" className="focus-ring rounded text-arc-lavender hover:underline">
                 Use my template
               </button>
             )}

@@ -1,4 +1,5 @@
 import { ESCROW_MAX_BID, creatorFloor } from "./bid-rules";
+import { REPLY_MIN_CHARS, replyError } from "./reply-rules";
 import { z } from "zod";
 
 // ─── AI Client ───────────────────────────────────────────────────────────────
@@ -152,23 +153,30 @@ Return JSON: { "score": number, "bidAmount": string (USDC with 6 decimals), "rea
   }
 }
 
+/**
+ * Drafts a reply in the creator's voice. Returns undefined when the AI fails or
+ * writes something too short: there is no generic fallback, because a canned
+ * "thanks for reaching out" is exactly the kind of reply that shouldn't collect
+ * a bid. The creator agent then leaves the bid for the creator to answer.
+ */
 export async function draftReply(
   bidMessage: string,
   creatorContext: { handle: string; bio?: string },
-): Promise<string> {
-  const systemPrompt = `You are a creator on an attention marketplace. 
-Write a reply to a bidder's message. The reply must be at least 10 characters (on-chain requirement).
-Be authentic, professional, and engaging. Return JSON: { "reply": string }`;
+): Promise<string | undefined> {
+  const systemPrompt = `You are a creator on an attention marketplace, replying to someone who paid for your attention.
+Write a genuine, specific reply to their message: answer what they asked or say concretely how you can help and the next step.
+Between ${REPLY_MIN_CHARS + 50} and 800 characters. No generic thank-you filler.
+Return JSON: { "reply": string }`;
 
   const prompt = JSON.stringify({ bidMessage, creatorContext });
 
   try {
     const raw = await callAI(prompt, systemPrompt);
     const parsed = safeJsonParse(raw);
-    const result = DraftReplySchema.parse(parsed);
-    return result.reply;
+    const reply = DraftReplySchema.parse(parsed).reply.trim();
+    return replyError(reply) ? undefined : reply;
   } catch {
-    return `Thanks for reaching out! I appreciate your bid on my attention and would be happy to discuss further.`;
+    return undefined;
   }
 }
 
@@ -179,14 +187,16 @@ export interface TriageResult {
   score: number;
   reason: string;
   draftedReply?: string;
+  /** Who wrote draftedReply: the creator's saved template or the AI. */
+  replySource?: "template" | "ai";
   counterOfferAmount?: string;
 }
 
 
-/** The creator's reply template if it is long enough to accept with (10–2,000 chars). */
+/** The creator's reply template if it meets the reply rules (lib/reply-rules.ts). */
 function usableTemplate(template: string | null | undefined): string | undefined {
   const t = template?.trim();
-  return t && t.length >= 10 && t.length <= 2000 ? t : undefined;
+  return t && !replyError(t) ? t : undefined;
 }
 
 /**
@@ -247,14 +257,20 @@ Return JSON: { "score": number, "decision": "accept"|"surface"|"reject", "reason
     }
 
     let draftedReply: string | undefined;
+    let replySource: "template" | "ai" | undefined;
     if (decision === "accept") {
-      // The escrow app requires a 10+ character reply; an empty or too-short template
-      // would make the accept fail, so draft one instead.
-      draftedReply = usableTemplate(creatorProfile.autoReplyTemplate) ??
-        await draftReply(bid.message, { handle: creatorProfile.handle, bio: creatorProfile.bio });
+      // Use the creator's template if it meets the reply rules, else have the AI
+      // write a specific reply. If neither works, the bid is left for the creator.
+      draftedReply = usableTemplate(creatorProfile.autoReplyTemplate);
+      if (draftedReply) {
+        replySource = "template";
+      } else {
+        draftedReply = await draftReply(bid.message, { handle: creatorProfile.handle, bio: creatorProfile.bio });
+        if (draftedReply) replySource = "ai";
+      }
     }
 
-    return { decision, score, reason, draftedReply, counterOfferAmount };
+    return { decision, score, reason, draftedReply, replySource, counterOfferAmount };
   } catch {
     const bidAmount = BigInt(bid.amountUsdc);
     const minBid = BigInt(creatorProfile.minBid);
@@ -274,6 +290,7 @@ Return JSON: { "score": number, "decision": "accept"|"surface"|"reject", "reason
       score,
       reason: "Fallback triage — AI unavailable.",
       draftedReply: decisionFallback === "accept" ? usableTemplate(creatorProfile.autoReplyTemplate) : undefined,
+      replySource: decisionFallback === "accept" && usableTemplate(creatorProfile.autoReplyTemplate) ? "template" : undefined,
       counterOfferAmount: counterOfferAmountFallback,
     };
   }

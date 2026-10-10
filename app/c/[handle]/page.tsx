@@ -64,6 +64,10 @@ export default async function CreatorMarketPage({ params }: { params: Promise<{ 
       medianReplyMs: stats.medianReplyMs,
       openBids: stats.openBids,
       hasHistory: stats.hasHistory,
+      ratingsUp: stats.ratingsUp,
+      ratingsDown: stats.ratingsDown,
+      repliesKnown: stats.repliesKnown,
+      autoReplies: stats.autoReplies,
     },
     book: openRows.map((b) => ({
       id: b.id,
@@ -81,6 +85,8 @@ export default async function CreatorMarketPage({ params }: { params: Promise<{ 
       replyMs: f.replyMs,
       txHash: f.txHash,
       txHref: txUrl(f.txHash),
+      autoReply: f.autoReply,
+      rating: f.rating,
     })),
     viewer: viewerId
       ? { signedIn: true, isOwner, biddingAs: agentBy.get(viewerId) || (handleBy.get(viewerId) ? `@${handleBy.get(viewerId)}` : "You") }

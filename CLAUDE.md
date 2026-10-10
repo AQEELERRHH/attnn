@@ -165,14 +165,16 @@ Triggered by `attnn/counter.received`. Skips if the original is no longer `count
 
 ## x402 flow (`GET /api/c/[handle]`)
 
-1. If there's a valid Auth.js session, the profile is returned free (`payer: "authenticated-user"`).
-2. Otherwise `gate(req, "$0.001", endpoint)` in `lib/x402.ts` runs:
-   - **No `payment-signature` header:** responds `402` with a base64 `PAYMENT-REQUIRED` header: `x402Version: 2`, `scheme: "exact"`, `network` = `arc.caip2` (`eip155:5042002` on testnet), `asset` = Arc USDC `0x3600…0000`, `amount: "1000"`, `payTo: SELLER_ADDRESS`, and `extra: { name: "GatewayWalletBatched", version: "1", verifyingContract: arc.gatewayWallet }`.
-   - **Header present, mock mode** (`X402_MOCK=1`, local dev): any header is accepted.
-   - **Header present, real mode:** base64-decodes the header, then `BatchFacilitatorClient.verify` → `settle`, and returns 402 or 500 on failure.
-3. It returns `{ handle, unlocked, payer, profile: { handle, bio, tags, minBid, isActive } }`. Payment settles **before** the profile lookup, so an unknown handle returns 404 after the charge. The computed `paymentResponseHeader` isn't attached to the response. There's no idempotency yet (planned).
+1. The profile is looked up **first**; an unknown handle is a 404 and nobody is charged.
+2. With a valid Auth.js session, the profile is free (`payer: "authenticated-user"`).
+3. Otherwise `gate(req, { price: "$0.001", endpoint, resource: "profile:<handle>", description })` in `lib/x402.ts`:
+   - **No `SELLER_ADDRESS` and no `X402_MOCK=1`:** 503 "payments not configured" (fails closed; it used to fall back to mock = free).
+   - **No `Payment-Signature` header:** `402` with a base64 `PAYMENT-REQUIRED` header: `x402Version: 2`, `scheme: "exact"`, `network` = `arc.caip2`, `asset` = Arc USDC, `amount: "1000"`, `payTo: SELLER_ADDRESS`, `extra: { name: "GatewayWalletBatched", version: "1", verifyingContract: arc.gatewayWallet }`. This is what Circle's `GatewayClient.pay()` expects.
+   - **Header present:** sha256 of the header is the idempotency key in `x402_payments` (migration 0003). Seen before for the same resource → returns the stored receipt (`replay: true`), no second settlement; for another resource → 409. Otherwise decode (400 if malformed; 400 if `accepted.network` isn't ours) → `BatchFacilitatorClient.verify` → `settle` → insert the `x402_payments` row (resource, payer, amount, network, Gateway `transaction`).
+   - `X402_MOCK=1` (local only): any header accepted, receipt `transaction: "mock"`.
+4. Paid responses carry a **`PAYMENT-RESPONSE`** header (base64 `{ success, transaction, network, payer, amount }`, read by `GatewayClient.pay()`) and the same receipt as `payment` in the JSON body, plus the profile (`handle, bio, tags, openTo, availabilityStatus, minBid, isActive, market`).
 
-`/api/x402/access` is a separate stub that only simulates access.
+`GET /api/x402/receipts` is a public proof endpoint: totals and the latest 20 Gateway receipts. `scripts/x402-demo.mjs` is the buyer-side proof: `BUYER_PRIVATE_KEY=0x… node scripts/x402-demo.mjs <handle> [--deposit 0.10] [--base URL]` uses `GatewayClient` on `arcTestnet` (testnet key only; fund it from the faucet, deposit into Gateway once). `@circle-fin/x402-batching` 3.0.4 lists **Arc Testnet but not Arc mainnet**; confirm Arc mainnet Gateway support with Circle before the mainnet switch. `/api/x402/access` is a separate stub that only simulates access.
 
 ## Webhooks
 

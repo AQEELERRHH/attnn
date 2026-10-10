@@ -275,6 +275,24 @@ export const webhookEvents = pgTable("webhook_events", {
     .notNull(),
 });
 
+// ─── x402 payments ───────────────────────────────────────────────────────────
+// One row per paid x402 request (e.g. an agent unlocking a creator profile via
+// Circle Gateway). signatureHash makes retries idempotent: the same signed payment
+// returns the same resource instead of being settled twice. Also the audit trail.
+
+export const x402Payments = pgTable("x402_payments", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  // sha256 of the Payment-Signature header
+  signatureHash: text("signature_hash").notNull().unique(),
+  resource: text("resource").notNull(),
+  payer: text("payer").notNull(),
+  amountUsdc: text("amount_usdc").notNull(),
+  network: text("network").notNull(),
+  // Gateway settlement reference returned by the facilitator
+  transaction: text("transaction").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [index("x402_payments_resource_idx").on(t.resource, t.createdAt)]);
+
 // ─── Sessions (NextAuth) ─────────────────────────────────────────────────────
 
 export const sessions = pgTable("sessions", {

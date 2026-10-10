@@ -92,10 +92,16 @@ export const wallets = pgTable("wallets", {
   address: text("address").notNull(),
   blockchain: text("blockchain").default("ARC-TESTNET").notNull(),
   state: walletStateEnum("state").default("pending").notNull(),
+  // "main": the user's own wallet (manual bids, creator payouts, Send).
+  // "agent": the bidder agent's separate wallet; the agent can only spend what the
+  // user moves into it. At most one of each per user. See lib/wallets.ts.
+  // "legacy": an unused duplicate set aside by hand (never picked as main/agent,
+  // still found by walletByAddress for anything already tied to it).
+  purpose: text("purpose").$type<"main" | "agent" | "legacy">().default("main").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
-});
+}, (t) => [uniqueIndex("wallets_user_purpose_uq").on(t.userId, t.purpose)]);
 
 export const walletsRelations = relations(wallets, ({ one }) => ({
   user: one(users, {

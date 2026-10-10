@@ -122,4 +122,8 @@ export interface AgentPolicyInfo {
   minBid: string;
   maxBid: string;
   refundDays: number;
+  /** The agent's own wallet (it bids only from this). null until created. */
+  agentWallet: { address: string; href: string; usdc: string | null } | null;
+  /** Main wallet balance, for "Move to agent". */
+  mainWalletUsdc: string | null;
 }

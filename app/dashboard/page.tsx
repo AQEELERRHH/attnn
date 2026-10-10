@@ -1,7 +1,8 @@
 import { auth } from "@/lib/auth";
+import { agentWallet, mainWallet } from "@/lib/wallets";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db/client";
-import { wallets, profiles, bidderConfigs, bids, agentLogs } from "@/lib/db/schema";
+import { profiles, bidderConfigs, bids, agentLogs } from "@/lib/db/schema";
 import { and, desc, eq, gte, inArray, isNotNull, or, sql } from "drizzle-orm";
 import { addressUrl, arc, escrowAddress, txUrl } from "@/lib/chain";
 import { ESCROW_MAX_BID, ESCROW_MIN_BID, REFUND_PERIOD_MS } from "@/lib/bid-rules";
@@ -25,8 +26,9 @@ export default async function DashboardPage() {
   const userId = session.user.id;
   const now = Date.now();
 
-  const [wallet, profile, bidderCfg] = await Promise.all([
-    db.query.wallets.findFirst({ where: eq(wallets.userId, userId) }),
+  const [wallet, agentWalletRow, profile, bidderCfg] = await Promise.all([
+    mainWallet(userId),
+    agentWallet(userId),
     db.query.profiles.findFirst({ where: eq(profiles.userId, userId) }),
     db.query.bidderConfigs.findFirst({ where: eq(bidderConfigs.userId, userId) }),
   ]);
@@ -51,8 +53,9 @@ export default async function DashboardPage() {
     ),
   ];
 
-  const [walletUsdc, spent, earnedRow, creatorMarket, creatorProfiles, agentConfigs, openBook, logs] = await Promise.all([
+  const [walletUsdc, agentWalletUsdc, spent, earnedRow, creatorMarket, creatorProfiles, agentConfigs, openBook, logs] = await Promise.all([
     wallet ? getUsdcBalance(wallet.address).then((v) => v.toString()).catch(() => null) : Promise.resolve(null),
+    agentWalletRow ? getUsdcBalance(agentWalletRow.address).then((v) => v.toString()).catch(() => null) : Promise.resolve(null),
     spentToday(userId),
     db
       .select({ total: sql<string>`COALESCE(SUM(CAST(${bids.amountUsdc} AS BIGINT)), 0)` })
@@ -148,6 +151,10 @@ export default async function DashboardPage() {
         minBid: ESCROW_MIN_BID.toString(),
         maxBid: ESCROW_MAX_BID.toString(),
         refundDays: Math.round(REFUND_PERIOD_MS / DAY),
+        agentWallet: agentWalletRow
+          ? { address: agentWalletRow.address, href: addressUrl(agentWalletRow.address), usdc: agentWalletUsdc }
+          : null,
+        mainWalletUsdc: walletUsdc,
       }}
       wallet={wallet ? { id: wallet.id, address: wallet.address, circleWalletId: wallet.circleWalletId, blockchain: wallet.blockchain, state: wallet.state } : null}
       profile={

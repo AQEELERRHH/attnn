@@ -10,6 +10,7 @@ import { cn } from "@/lib/cn";
 import { timeAgo } from "@/lib/format";
 import { logKind, logMessage, type LogKind } from "./agent-log";
 import { AgentPolicy } from "./agent-policy";
+import { AgentWalletCard } from "./agent-wallet-card";
 import { BidderSetupForm } from "./bidder-setup-form";
 import type { AgentPolicyInfo, BidData, BidderConfigData, LogData, PortfolioSummary } from "./types";
 
@@ -173,6 +174,8 @@ export function AgentConsole({
         </div>
         {!config.isActive && <p className="mt-3 text-[13px] text-text-secondary">Paused agents don&apos;t bid. Open bids stay escrowed and still refund after 3 days.</p>}
       </Panel>
+
+      <AgentWalletCard policy={policy} />
 
       <StatStrip
         items={[

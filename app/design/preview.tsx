@@ -20,6 +20,7 @@ import {
   type OrderBookBid,
 } from "@/components/market";
 import { AgentPolicy } from "@/app/dashboard/agent-policy";
+import { AgentWalletCard } from "@/app/dashboard/agent-wallet-card";
 import { bidDisplay } from "@/lib/bid-display";
 import type { BidStatus } from "@/lib/db/schema";
 import { formatChange } from "@/lib/format";
@@ -210,6 +211,19 @@ export function DesignPreview() {
       </div>
 
       <section className="space-y-3">
+        <h2 className="font-display text-lg font-bold">Agent wallet</h2>
+        <AgentWalletCard
+          policy={{
+            escrowAddress: null,
+            escrowHref: null,
+            walletHref: null,
+            minBid: "5000000",
+            maxBid: "1000000000",
+            refundDays: 3,
+            agentWallet: { address: "0x00000000000000000000000000000000000000a1", href: "https://testnet.arcscan.app/address/0x00000000000000000000000000000000000000a1", usdc: "40000000" },
+            mainWalletUsdc: "120000000",
+          }}
+        />
         <h2 className="font-display text-lg font-bold">Agent spending policy</h2>
         <AgentPolicy
           config={{
@@ -231,6 +245,8 @@ export function DesignPreview() {
             minBid: "5000000",
             maxBid: "1000000000",
             refundDays: 3,
+            agentWallet: { address: "0x00000000000000000000000000000000000000a1", href: "https://testnet.arcscan.app/address/0x00000000000000000000000000000000000000a1", usdc: "40000000" },
+            mainWalletUsdc: "120000000",
           }}
         />
       </section>

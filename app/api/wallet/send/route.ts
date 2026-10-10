@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { mainWallet } from "@/lib/wallets";
 import { auth } from "@/lib/auth";
-import { db } from "@/lib/db/client";
-import { wallets } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
 import { transferUSDC } from "@/lib/circle";
 import { dollarsToAtomic } from "@/lib/format";
 
@@ -19,9 +17,7 @@ export async function POST(req: NextRequest) {
     const atomic = dollarsToAtomic(String(amount ?? ""));
     if (atomic === null || atomic <= BigInt(0)) return NextResponse.json({ error: "Invalid amount" }, { status: 400 });
 
-    const wallet = await db.query.wallets.findFirst({
-      where: eq(wallets.userId, session.user.id),
-    });
+    const wallet = await mainWallet(session.user.id);
     if (!wallet) return NextResponse.json({ error: "Wallet not found" }, { status: 404 });
 
     const result = await transferUSDC(wallet.circleWalletId, to, atomic.toString());

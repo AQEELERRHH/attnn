@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { ensureAgentWallet } from "@/lib/wallets";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db/client";
 import { bidderConfigs } from "@/lib/db/schema";
@@ -60,6 +61,10 @@ export async function POST(req: NextRequest) {
       maxBidPerCreator: maxBidPerCreator ?? "20000000",
       isActive: false,
     }).returning();
+
+    // Give the new agent its own wallet straight away. Best effort: if Circle is
+    // slow, the Agent tab offers "Create agent wallet".
+    await ensureAgentWallet(session.user.id).catch((err) => console.warn("bidder-config: agent wallet not created yet:", err));
 
     return NextResponse.json({ config, success: true });
   } catch (err) {

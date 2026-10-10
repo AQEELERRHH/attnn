@@ -25,6 +25,13 @@ import { dollarsToAtomic } from "./format";
 const SELLER_ADDRESS = (process.env.SELLER_ADDRESS ?? "").trim() as `0x${string}` | "";
 const MOCK = process.env.X402_MOCK === "1";
 
+/**
+ * How long a signed payment stays valid. Circle's GatewayClient always signs for
+ * at least 7 days + 100 s and Circle's own seller middleware advertises exactly
+ * that, so we match it (a shorter window made Gateway reject the signature).
+ */
+const GATEWAY_VALIDITY_SECONDS = 7 * 24 * 60 * 60 + 100;
+
 export interface X402Receipt {
   success: true;
   transaction: string;
@@ -48,7 +55,7 @@ function buildRequirements(price: string) {
     asset: arc.usdcAddress,
     amount: atomicPrice(price),
     payTo: SELLER_ADDRESS,
-    maxTimeoutSeconds: 345600,
+    maxTimeoutSeconds: GATEWAY_VALIDITY_SECONDS,
     extra: {
       name: "GatewayWalletBatched",
       version: "1",
@@ -141,11 +148,14 @@ export async function gate(
     }
 
     const { BatchFacilitatorClient } = await import("@circle-fin/x402-batching/server");
-    const facilitator = new BatchFacilitatorClient();
+    // The client defaults to the MAINNET Gateway API, which can't see testnet
+    // balances; always use the API for the network we charge on.
+    const facilitator = new BatchFacilitatorClient({ url: arc.gatewayApiUrl });
     const requirements = buildRequirements(opts.price);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- facilitator takes the decoded x402 payload as-is
     const verified = await facilitator.verify(payload as any, requirements);
     if (!verified.isValid) {
+      console.warn("x402: Gateway rejected payment", { resource: opts.resource, reason: verified.invalidReason });
       return {
         ok: false,
         response: NextResponse.json({ error: "payment verification failed", reason: verified.invalidReason }, { status: 402 }),
@@ -155,6 +165,7 @@ export async function gate(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- see above
     const settled = await facilitator.settle(payload as any, requirements);
     if (!settled.success) {
+      console.warn("x402: Gateway settlement failed", { resource: opts.resource, reason: settled.errorReason });
       return {
         ok: false,
         response: NextResponse.json({ error: "payment settlement failed", reason: settled.errorReason }, { status: 402 }),

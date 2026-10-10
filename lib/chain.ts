@@ -22,6 +22,8 @@ interface ArcNetworkConfig {
   caip2: `eip155:${number}`;
   usdcAddress: `0x${string}`;
   gatewayWallet: `0x${string}`;
+  /** Circle Gateway API that verifies and settles x402 payments on this network. */
+  gatewayApiUrl: string;
   rpcUrl: string;
   explorerUrl: string;
 }
@@ -67,6 +69,7 @@ function load(): ArcNetworkConfig {
       caip2: "eip155:5042",
       usdcAddress: USDC,
       gatewayWallet: "0x77777777Dcc4d5A8B6E418Fd04D8997ef11000eE",
+      gatewayApiUrl: "https://gateway-api.circle.com",
       rpcUrl,
       explorerUrl,
     };
@@ -80,6 +83,7 @@ function load(): ArcNetworkConfig {
     caip2: "eip155:5042002",
     usdcAddress: USDC,
     gatewayWallet: "0x0077777d7EBA4688BDeF3E311b846F25870A19B9",
+    gatewayApiUrl: "https://gateway-api-testnet.circle.com",
     rpcUrl,
     explorerUrl,
   };

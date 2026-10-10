@@ -1,11 +1,35 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { SiteHeader } from "@/components/market/site-header";
-import { arc } from "@/lib/chain";
+import { addressUrl, arc, escrowAddress } from "@/lib/chain";
+import { ESCROW_MAX_BID, ESCROW_MIN_BID, REFUND_PERIOD_MS, formatUsd } from "@/lib/bid-rules";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 
+const AGENT_LIMITS = [
+  "A daily budget the agent can't go past, reset every day at 00:00 UTC.",
+  "A maximum per creator. The AI suggests an amount, but the agent is held to the creator's floor and your cap, counter-offers included.",
+  "One bid per creator per day, plus one re-bid if the creator counters.",
+  "Only creators registered on Arc, never paused markets.",
+  "If the AI can't score a creator (for example during an outage), the agent doesn't bid on them. It never guesses with your money.",
+  "Pause it any time. A paused agent places no bids and accepts no counter-offers.",
+];
+
+const AGENT_NEVER = [
+  "Send USDC to another address. Only you can, from your wallet.",
+  "Approve more than the bid it's placing, or approve any contract except the escrow.",
+  "Release escrowed USDC to a creator. Only the creator can, by replying.",
+];
+
 export default function AboutPage() {
+  const escrow = escrowAddress();
+  const days = Math.round(REFUND_PERIOD_MS / (24 * 60 * 60 * 1000));
+  const escrowRules = [
+    `Every bid is between ${formatUsd(ESCROW_MIN_BID)} and ${formatUsd(ESCROW_MAX_BID)}.`,
+    `Only the creator can release a bid, by replying within ${days} days.`,
+    `No reply in ${days} days: the refund can only go back to the bidder's wallet.`,
+    "A declined bid goes straight back to the bidder.",
+  ];
   return (
     <div className="min-h-screen bg-arc-bg-0">
       <SiteHeader networkLabel={arc.chain.name} />
@@ -131,6 +155,41 @@ export default function AboutPage() {
                 </div>
               </div>
             </div>
+          </Card>
+        </section>
+
+        {/* Agent safety */}
+        <section className="mb-12" id="agent-safety">
+          <h2 className="text-2xl font-display font-bold mb-4 text-arc-gold">How our agents are kept safe</h2>
+          <Card className="p-6">
+            <p className="text-text-secondary leading-relaxed mb-6">
+              An AI agent spending real money needs hard limits. Attnn. agents work inside two layers of rules: limits Attnn. checks before any transaction is sent, and rules written into the escrow contract on Arc that nobody can override, including us.
+            </p>
+            <h3 className="font-medium mb-3">Limits every bidder sets for their agent</h3>
+            <ul className="mb-6 list-disc space-y-2 pl-5 text-sm text-text-secondary">
+              {AGENT_LIMITS.map((r) => (
+                <li key={r}>{r}</li>
+              ))}
+            </ul>
+            <h3 className="font-medium mb-3">Locked into the escrow contract</h3>
+            <ul className="mb-6 list-disc space-y-2 pl-5 text-sm text-text-secondary">
+              {escrowRules.map((r) => (
+                <li key={r}>{r}</li>
+              ))}
+            </ul>
+            <h3 className="font-medium mb-3">What an agent can never do</h3>
+            <ul className="list-disc space-y-2 pl-5 text-sm text-text-secondary">
+              {AGENT_NEVER.map((r) => (
+                <li key={r}>{r}</li>
+              ))}
+            </ul>
+            {escrow && (
+              <p className="mt-6 text-sm">
+                <a href={addressUrl(escrow)} target="_blank" rel="noopener noreferrer" className="text-arc-lavender hover:underline break-all">
+                  See the escrow contract and every bid on Arc ↗
+                </a>
+              </p>
+            )}
           </Card>
         </section>
 

@@ -128,3 +128,7 @@ export function knownEscrowAddresses(): `0x${string}`[] {
 export function txUrl(hash: string): string {
   return `${arc.explorerUrl.replace(/\/$/, "")}/tx/${hash}`;
 }
+
+export function addressUrl(address: string): string {
+  return `${arc.explorerUrl.replace(/\/$/, "")}/address/${address}`;
+}

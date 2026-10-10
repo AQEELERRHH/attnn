@@ -108,3 +108,14 @@ export interface PortfolioSummary {
     medianReplyMs: number | null;
   };
 }
+
+/** On-chain facts for the agent's spending-policy card (built on the server). */
+export interface AgentPolicyInfo {
+  escrowAddress: string | null;
+  escrowHref: string | null;
+  walletHref: string | null;
+  /** Escrow limits in atomic USDC. */
+  minBid: string;
+  maxBid: string;
+  refundDays: number;
+}

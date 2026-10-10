@@ -352,7 +352,13 @@ export const handleCounterOffer = inngest.createFunction(
         return { decision: "skip", reason: `Original bid is ${bid.settlementTxHash ? "settling" : bid.status}` };
       }
 
+      // Same policy as the agent's own bids: a paused agent doesn't bid, and a counter
+      // above the bidder's per-creator cap is declined (the original still refunds).
+      if (!config.isActive) return { decision: "skip", reason: "Agent is paused" };
       const counterAmount = BigInt(counterOfferAmount);
+      if (counterAmount > BigInt(config.maxBidPerCreator)) {
+        return { decision: "reject", reason: "Counter offer is above your max bid per creator" };
+      }
       const today = new Date();
       today.setUTCHours(0, 0, 0, 0);
       const [spentRow] = await db

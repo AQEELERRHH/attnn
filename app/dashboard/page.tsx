@@ -4,7 +4,8 @@ import { db } from "@/lib/db/client";
 import { wallets, profiles, bidderConfigs, bids, agentLogs, users } from "@/lib/db/schema";
 import { isGooglePhoto } from "@/lib/avatar-storage";
 import { and, desc, eq, gte, inArray, isNotNull, or, sql } from "drizzle-orm";
-import { arc, txUrl } from "@/lib/chain";
+import { addressUrl, arc, escrowAddress, txUrl } from "@/lib/chain";
+import { ESCROW_MAX_BID, ESCROW_MIN_BID, REFUND_PERIOD_MS } from "@/lib/bid-rules";
 import { getUsdcBalance } from "@/lib/activation";
 import { spentToday } from "@/lib/agent";
 import { registrationState } from "@/lib/registration";
@@ -140,6 +141,14 @@ export default async function DashboardPage() {
     <DashboardClient
       now={now}
       networkLabel={arc.chain.name}
+      policy={{
+        escrowAddress: escrowAddress(),
+        escrowHref: escrowAddress() ? addressUrl(escrowAddress()!) : null,
+        walletHref: wallet ? addressUrl(wallet.address) : null,
+        minBid: ESCROW_MIN_BID.toString(),
+        maxBid: ESCROW_MAX_BID.toString(),
+        refundDays: Math.round(REFUND_PERIOD_MS / DAY),
+      }}
       wallet={wallet ? { id: wallet.id, address: wallet.address, circleWalletId: wallet.circleWalletId, blockchain: wallet.blockchain, state: wallet.state } : null}
       profile={
         profile

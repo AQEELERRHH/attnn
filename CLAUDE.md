@@ -147,6 +147,8 @@ Triggered by the `runActiveBidders` Inngest cron (`*/30 * * * *`, rechecks `isAc
 4. Scores them with `evaluateCreatorForBidder`, keeps `proceed && score >= minFitScore`. It returns `null` when the AI fails, and **there is no fallback**: an unscored creator is skipped, never bid on blind. If no creator could be scored the run logs `agent_stopped` ("AI unavailable") and places nothing. The AI's `bidAmount` is only a hint: `resolveAgentBidAmount` clamps it to [creator floor, min(`maxBidPerCreator`, $1,000)] and skips creators whose floor is above the cap. Top 5 by score.
 5. For each, rechecks the budget and calls `createBidIntent` (see Escrow flow). The agent never calls the chain itself and no longer sleeps between calls.
 
+The **Spending policy** card (`app/dashboard/agent-policy.tsx`, Agent tab) and the About page's "How our agents are kept safe" list state these limits and the escrow's rules to users. Every line must stay true to `lib/agent.ts`, `createBidIntent`, `handleCounterOffer` and `AttnnEscrow.sol`; change them together.
+
 ### Creator agent (reactive): `creatorAgentTriage` in `inngest/functions.ts`
 
 Triggered by `attnn/bid.placed`, which is sent only **after** the bid is escrowed (so `onChainBidId` is always set; there is no chain-sync wait any more). Concurrency 5 (the Inngest plan maximum; anything higher makes the whole app sync fail).
@@ -157,7 +159,7 @@ Triggered by `attnn/bid.placed`, which is sent only **after** the bid is escrowe
 
 ### Counter-offer handler: `handleCounterOffer`
 
-Triggered by `attnn/counter.received`. Skips if the original is no longer `counter_offered` or is settling. If the counter fits the bidder's remaining daily budget, it calls `createBidIntent({ …, replacesBidId })` for a **new** bid at the counter amount (placed by the `placeBid` job like any other; a retry returns the same re-bid). The original stays `counter_offered` until `declineReplacedBidJob` (`attnn/rebid.escrowed`) releases it, the creator settles it, or `autoRefund` claims it.
+Triggered by `attnn/counter.received`. Skips if the original is no longer `counter_offered` or is settling, or if the bidder's agent is paused; declines counters above `maxBidPerCreator`. If the counter fits the bidder's remaining daily budget, it calls `createBidIntent({ …, replacesBidId })` for a **new** bid at the counter amount (placed by the `placeBid` job like any other; a retry returns the same re-bid). The original stays `counter_offered` until `declineReplacedBidJob` (`attnn/rebid.escrowed`) releases it, the creator settles it, or `autoRefund` claims it.
 
 ### Other Inngest functions
 

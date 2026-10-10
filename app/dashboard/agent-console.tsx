@@ -9,8 +9,9 @@ import { toast } from "@/hooks/use-toast";
 import { cn } from "@/lib/cn";
 import { timeAgo } from "@/lib/format";
 import { logKind, logMessage, type LogKind } from "./agent-log";
+import { AgentPolicy } from "./agent-policy";
 import { BidderSetupForm } from "./bidder-setup-form";
-import type { BidData, BidderConfigData, LogData, PortfolioSummary } from "./types";
+import type { AgentPolicyInfo, BidData, BidderConfigData, LogData, PortfolioSummary } from "./types";
 
 const FILTERS: { id: "all" | LogKind; label: string }[] = [
   { id: "all", label: "All" },
@@ -35,6 +36,7 @@ export function AgentConsole({
   logs,
   summary,
   now,
+  policy,
 }: {
   config: BidderConfigData | null;
   /** Only bids this user placed. */
@@ -42,6 +44,7 @@ export function AgentConsole({
   logs: LogData[];
   summary: PortfolioSummary;
   now: number;
+  policy: AgentPolicyInfo;
 }) {
   const router = useRouter();
   const [editing, setEditing] = React.useState(false);
@@ -208,6 +211,8 @@ export function AgentConsole({
           { label: "Min fit score", value: <Num>{config.minFitScore}/10</Num>, sub: "Creators below this are skipped" },
         ]}
       />
+
+      <AgentPolicy config={config} spent={spent} policy={policy} />
 
       <div className="flex flex-wrap items-start gap-5">
         <Panel title="Strategy" className="min-w-0 flex-[1_1_300px]">

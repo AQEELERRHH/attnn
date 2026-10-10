@@ -19,6 +19,7 @@ import {
   type MarketColumn,
   type OrderBookBid,
 } from "@/components/market";
+import { AgentPolicy } from "@/app/dashboard/agent-policy";
 import { bidDisplay } from "@/lib/bid-display";
 import type { BidStatus } from "@/lib/db/schema";
 import { formatChange } from "@/lib/format";
@@ -207,6 +208,32 @@ export function DesignPreview() {
           />
         </section>
       </div>
+
+      <section className="space-y-3">
+        <h2 className="font-display text-lg font-bold">Agent spending policy</h2>
+        <AgentPolicy
+          config={{
+            id: "sample",
+            goal: "Feedback from DeFi founders",
+            dailyBudget: "50000000",
+            maxBidPerCreator: "20000000",
+            minFitScore: 6,
+            searchTags: ["defi"],
+            defaultMessage: null,
+            isActive: true,
+            agentName: "Sample Scout",
+          }}
+          spent={BigInt(12_500_000)}
+          policy={{
+            escrowAddress: "0x7b43b155acc2b191c121fb2fc724669a6f7fbb86",
+            escrowHref: "https://testnet.arcscan.app/address/0x7b43b155acc2b191c121fb2fc724669a6f7fbb86",
+            walletHref: "https://testnet.arcscan.app/address/0x0000000000000000000000000000000000000001",
+            minBid: "5000000",
+            maxBid: "1000000000",
+            refundDays: 3,
+          }}
+        />
+      </section>
 
       <section className="space-y-3">
         <h2 className="font-display text-lg font-bold">Buttons</h2>

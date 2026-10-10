@@ -14,7 +14,7 @@ import { AgentConsole } from "./agent-console";
 import { BidderView } from "./bidder-view";
 import { CreatorView } from "./creator-view";
 import { WalletDialog } from "./wallet-dialog";
-import type { BidData, BidderConfigData, LogData, PortfolioSummary, ProfileData, WalletData } from "./types";
+import type { AgentPolicyInfo, BidData, BidderConfigData, LogData, PortfolioSummary, ProfileData, WalletData } from "./types";
 
 type View = "bidder" | "creator" | "agent";
 
@@ -39,6 +39,7 @@ export function DashboardClient({
   hasGooglePhoto,
   now,
   networkLabel,
+  policy,
 }: {
   wallet: WalletData | null;
   profile: ProfileData | null;
@@ -52,6 +53,7 @@ export function DashboardClient({
   /** Server render time; every relative time uses it so server and browser agree. */
   now: number;
   networkLabel: string;
+  policy: AgentPolicyInfo;
 }) {
   const router = useRouter();
   const [provisioning, setProvisioning] = React.useState(!wallet);
@@ -219,7 +221,7 @@ export function DashboardClient({
           {view === "creator" && (
             <CreatorView profile={profile} wallet={wallet} bids={received} summary={summary} hasGooglePhoto={hasGooglePhoto} now={now} />
           )}
-          {view === "agent" && <AgentConsole config={bidderConfig} bids={placed} logs={logs} summary={summary} now={now} />}
+          {view === "agent" && <AgentConsole config={bidderConfig} bids={placed} logs={logs} summary={summary} now={now} policy={policy} />}
         </div>
       </main>
     </div>

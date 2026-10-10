@@ -24,7 +24,11 @@ interface IAttnnRegistry {
     /// @notice Check if creator is active
     function isActiveCreator(address creator) external view returns (bool);
 
+    /// @notice Replace the caller's floor, tags and profile URI (handle can't change)
+    function updateProfile(uint256 minBid, string[] calldata tags, string calldata profileURI) external;
+
     event CreatorRegistered(address indexed creator, string handle, uint256 minBid);
+    event CreatorUpdated(address indexed creator, uint256 minBid);
     event CreatorDeactivated(address indexed creator);
     event CreatorActivated(address indexed creator);
 }
@@ -40,7 +44,7 @@ interface IAttnnEscrow {
     /// @notice Reject a bid (creator only)
     function rejectBid(uint256 bidId) external;
 
-    /// @notice Claim refund after 14 days (bidder only)
+    /// @notice Claim refund once REFUND_PERIOD has passed (bidder only)
     function claimRefund(uint256 bidId) external;
 
     /// @notice Get bid details

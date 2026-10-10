@@ -46,7 +46,7 @@ contract AttnnEscrow is IAttnnEscrow {
     // Mapping from bidder to list of bid IDs
     mapping(address => uint256[]) private _bidderBids;
 
-    // Minimum bid amount (5 USDC, 6 decimals)
+    // Minimum bid amount (1 USDC, 6 decimals)
     uint256 public constant MIN_BID = 1 * 10**6;
     // Maximum bid amount (1000 USDC, 6 decimals)
     uint256 public constant MAX_BID = 1000 * 10**6;
@@ -108,15 +108,16 @@ contract AttnnEscrow is IAttnnEscrow {
         require(bid.status == BidStatus.Pending, "AttnnEscrow: bid not pending");
         require(bid.createdAt + REFUND_PERIOD > block.timestamp, "AttnnEscrow: bid expired");
 
-        // Transfer USDC to creator
+        // Settle first, pay second (checks-effects-interactions): the bid can't be
+        // settled twice even if the token ever called back into this contract.
+        bid.status = BidStatus.Accepted;
+        bid.reply = reply;
+        bid.updatedAt = block.timestamp;
+
         require(
             IERC20(usdc).transfer(bid.creator, bid.amount),
             "AttnnEscrow: USDC transfer to creator failed"
         );
-
-        bid.status = BidStatus.Accepted;
-        bid.reply = reply;
-        bid.updatedAt = block.timestamp;
 
         emit BidAccepted(bidId, msg.sender, reply);
     }
@@ -127,14 +128,13 @@ contract AttnnEscrow is IAttnnEscrow {
         require(bid.creator == msg.sender, "AttnnEscrow: not the creator");
         require(bid.status == BidStatus.Pending, "AttnnEscrow: bid not pending");
 
-        // Refund USDC to bidder
+        bid.status = BidStatus.Rejected;
+        bid.updatedAt = block.timestamp;
+
         require(
             IERC20(usdc).transfer(bid.bidder, bid.amount),
             "AttnnEscrow: USDC refund failed"
         );
-
-        bid.status = BidStatus.Rejected;
-        bid.updatedAt = block.timestamp;
 
         emit BidRejected(bidId, msg.sender);
     }
@@ -146,14 +146,13 @@ contract AttnnEscrow is IAttnnEscrow {
         require(bid.status == BidStatus.Pending, "AttnnEscrow: bid not pending");
         require(bid.createdAt + REFUND_PERIOD <= block.timestamp, "AttnnEscrow: refund period not passed");
 
-        // Refund USDC to bidder
+        bid.status = BidStatus.Refunded;
+        bid.updatedAt = block.timestamp;
+
         require(
             IERC20(usdc).transfer(bid.bidder, bid.amount),
             "AttnnEscrow: USDC refund failed"
         );
-
-        bid.status = BidStatus.Refunded;
-        bid.updatedAt = block.timestamp;
 
         emit BidRefunded(bidId, msg.sender);
     }

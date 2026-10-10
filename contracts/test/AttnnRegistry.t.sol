@@ -121,4 +121,101 @@ contract AttnnRegistryTest is Test {
         vm.stopPrank();
         assertEq(registry.getCreatorCount(), 2);
     }
+
+    // ---- updateProfile ----
+
+    function _tags(string memory a, string memory b) internal pure returns (string[] memory t) {
+        t = new string[](2);
+        t[0] = a;
+        t[1] = b;
+    }
+
+    function test_UpdateProfile_ReplacesFloorTagsAndURI() public {
+        vm.startPrank(creator);
+        registry.registerCreator("alice", 10 * 10**6, _tags("ai", "tech"), "old");
+        vm.expectEmit(true, false, false, true);
+        emit CreatorUpdated(creator, 3 * 10**6);
+        registry.updateProfile(3 * 10**6, _tags("design", "tech"), "new");
+        vm.stopPrank();
+
+        (, uint256 minBid, string[] memory tags, string memory uri, bool active) = registry.getCreatorProfile("alice");
+        assertEq(minBid, 3 * 10**6);
+        assertEq(tags.length, 2);
+        assertEq(tags[0], "design");
+        assertEq(tags[1], "tech");
+        assertEq(uri, "new");
+        assertTrue(active);
+
+        assertEq(registry.getCreatorsByTag("ai").length, 0);
+        assertEq(registry.getCreatorsByTag("design").length, 1);
+        assertEq(registry.getCreatorsByTag("tech").length, 1);
+        assertEq(registry.getCreatorsByTag("tech")[0], creator);
+    }
+
+    function test_UpdateProfile_KeepsOtherCreatorsListed() public {
+        address carol = makeAddr("carol");
+        vm.prank(creator);
+        registry.registerCreator("alice", 10 * 10**6, _tags("ai", "x"), "");
+        vm.prank(anotherCreator);
+        registry.registerCreator("bob", 10 * 10**6, _tags("ai", "y"), "");
+        vm.prank(carol);
+        registry.registerCreator("carol", 10 * 10**6, _tags("ai", "z"), "");
+
+        // alice (first in the "ai" list) leaves the tag: carol is swapped into her slot
+        vm.prank(creator);
+        registry.updateProfile(10 * 10**6, _tags("x", "w"), "");
+        address[] memory ai = registry.getCreatorsByTag("ai");
+        assertEq(ai.length, 2);
+        assertEq(ai[0], carol);
+        assertEq(ai[1], anotherCreator);
+
+        // carol leaves too, then alice comes back: no stale or duplicate entries
+        vm.prank(carol);
+        registry.updateProfile(10 * 10**6, _tags("z", "w"), "");
+        vm.prank(creator);
+        registry.updateProfile(10 * 10**6, _tags("ai", "ai"), "");
+        ai = registry.getCreatorsByTag("ai");
+        assertEq(ai.length, 2);
+        assertEq(ai[0], anotherCreator);
+        assertEq(ai[1], creator);
+        assertEq(registry.getCreatorsByTag("w").length, 1);
+        assertEq(registry.getCreatorsByTag("w")[0], carol);
+    }
+
+    function test_RegisterCreator_DuplicateTagsListedOnce() public {
+        vm.prank(creator);
+        registry.registerCreator("alice", 10 * 10**6, _tags("ai", "ai"), "");
+        (,, string[] memory tags,,) = registry.getCreatorProfile("alice");
+        assertEq(tags.length, 1);
+        assertEq(registry.getCreatorsByTag("ai").length, 1);
+    }
+
+    function test_UpdateProfile_OnlyRegisteredCreator() public {
+        vm.prank(creator);
+        vm.expectRevert("AttnnRegistry: not a registered creator");
+        registry.updateProfile(10 * 10**6, _tags("ai", "x"), "");
+    }
+
+    function test_UpdateProfile_Bounds() public {
+        vm.startPrank(creator);
+        registry.registerCreator("alice", 10 * 10**6, _tags("ai", "x"), "");
+        vm.expectRevert("AttnnRegistry: minBid too low (min 1 USDC)");
+        registry.updateProfile(1 * 10**6 - 1, _tags("ai", "x"), "");
+        vm.expectRevert("AttnnRegistry: minBid too high (max 1000 USDC)");
+        registry.updateProfile(1001 * 10**6, _tags("ai", "x"), "");
+        vm.expectRevert("AttnnRegistry: too many tags");
+        registry.updateProfile(10 * 10**6, new string[](11), "");
+        vm.stopPrank();
+    }
+
+    function test_UpdateProfile_KeepsActiveFlag() public {
+        vm.startPrank(creator);
+        registry.registerCreator("alice", 10 * 10**6, _tags("ai", "x"), "");
+        registry.deactivateCreator();
+        registry.updateProfile(5 * 10**6, _tags("ai", "y"), "");
+        assertFalse(registry.isActiveCreator(creator));
+        vm.stopPrank();
+    }
+
+    event CreatorUpdated(address indexed creator, uint256 minBid);
 }

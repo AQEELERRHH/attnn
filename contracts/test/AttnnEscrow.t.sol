@@ -5,6 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {AttnnRegistry} from "../src/AttnnRegistry.sol";
 import {AttnnEscrow} from "../src/AttnnEscrow.sol";
 import {MockUSDC} from "./mocks/MockUSDC.sol";
+import {HookUSDC} from "./mocks/HookUSDC.sol";
 
 contract AttnnEscrowTest is Test {
     MockUSDC public usdc;
@@ -211,5 +212,121 @@ contract AttnnEscrowTest is Test {
         escrow.claimRefund(bidId);
 
         assertFalse(escrow.isRefundable(bidId)); // Now refunded, not pending
+    }
+
+    // ---- settled bids stay settled ----
+
+    function _bid(uint256 amount) internal returns (uint256 id) {
+        vm.prank(bidder);
+        id = escrow.placeBid(creator, amount, "hi", false);
+    }
+
+    function test_CannotSettleTwice() public {
+        uint256 a = _bid(MIN_BID);
+        vm.startPrank(creator);
+        escrow.rejectBid(a);
+        vm.expectRevert("AttnnEscrow: bid not pending");
+        escrow.acceptBid(a, "late");
+        vm.expectRevert("AttnnEscrow: bid not pending");
+        escrow.rejectBid(a);
+        vm.stopPrank();
+
+        uint256 b = _bid(MIN_BID);
+        vm.prank(creator);
+        escrow.acceptBid(b, "thanks");
+        vm.warp(block.timestamp + escrow.REFUND_PERIOD());
+        vm.prank(bidder);
+        vm.expectRevert("AttnnEscrow: bid not pending");
+        escrow.claimRefund(b);
+    }
+
+    function test_AcceptBid_ExpiresExactlyAtRefundPeriod() public {
+        uint256 id = _bid(MIN_BID);
+        vm.warp(block.timestamp + escrow.REFUND_PERIOD());
+        vm.prank(creator);
+        vm.expectRevert("AttnnEscrow: bid expired");
+        escrow.acceptBid(id, "too late");
+        // ...and from that same second the bidder can take it back
+        vm.prank(bidder);
+        escrow.claimRefund(id);
+        assertEq(usdc.balanceOf(bidder), 1000 * 10**6);
+    }
+
+    function testFuzz_PlaceBid_Bounds(uint256 amount) public {
+        amount = bound(amount, 0, 2000 * 10**6);
+        usdc.mint(bidder, amount);
+        vm.prank(bidder);
+        if (amount < MIN_BID) {
+            vm.expectRevert("AttnnEscrow: amount below minimum");
+        } else if (amount > MAX_BID) {
+            vm.expectRevert("AttnnEscrow: amount above maximum");
+        }
+        escrow.placeBid(creator, amount, "", false);
+    }
+
+    function testFuzz_EscrowAlwaysHoldsExactlyOpenBids(uint96 a, uint96 b, uint8 action) public {
+        uint256 x = bound(a, MIN_BID, MAX_BID);
+        uint256 y = bound(b, MIN_BID, MAX_BID);
+        usdc.mint(bidder, x + y);
+        uint256 id1 = _bid(x);
+        uint256 id2 = _bid(y);
+        assertEq(escrow.getTotalLocked(), x + y);
+
+        vm.startPrank(creator);
+        if (action % 2 == 0) escrow.acceptBid(id1, "reply");
+        else escrow.rejectBid(id1);
+        vm.stopPrank();
+        assertEq(escrow.getTotalLocked(), y);
+
+        vm.warp(block.timestamp + escrow.REFUND_PERIOD());
+        vm.prank(bidder);
+        escrow.claimRefund(id2);
+        assertEq(escrow.getTotalLocked(), 0);
+    }
+
+    function test_ReentrantCreatorIsPaidOnce() public {
+        HookUSDC hook = new HookUSDC();
+        AttnnEscrow e = new AttnnEscrow(address(hook), address(registry));
+        GreedyCreator greedy = new GreedyCreator(e);
+        string[] memory tags;
+        vm.prank(address(greedy));
+        registry.registerCreator("greedy", MIN_BID, tags, "");
+
+        hook.mint(bidder, 20 * 10**6);
+        hook.mint(address(e), 20 * 10**6); // other bidders' escrowed USDC
+        vm.startPrank(bidder);
+        hook.approve(address(e), type(uint256).max);
+        uint256 id = e.placeBid(address(greedy), 10 * 10**6, "hi", false);
+        vm.stopPrank();
+
+        greedy.accept(id);
+        assertEq(hook.balanceOf(address(greedy)), 10 * 10**6, "paid once");
+        assertTrue(greedy.reentered());
+        assertFalse(greedy.reentrySucceeded());
+    }
+}
+
+/// Accepts a bid and, when paid, tries to accept the same bid again.
+contract GreedyCreator {
+    AttnnEscrow public immutable escrow;
+    uint256 private _bidId;
+    bool public reentered;
+    bool public reentrySucceeded;
+
+    constructor(AttnnEscrow e) {
+        escrow = e;
+    }
+
+    function accept(uint256 bidId) external {
+        _bidId = bidId;
+        escrow.acceptBid(bidId, "reply");
+    }
+
+    function onTokenReceived(uint256) external {
+        if (reentered) return;
+        reentered = true;
+        try escrow.acceptBid(_bidId, "again") {
+            reentrySucceeded = true;
+        } catch {}
     }
 }

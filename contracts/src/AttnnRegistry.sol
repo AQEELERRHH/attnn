@@ -20,8 +20,15 @@ contract AttnnRegistry is IAttnnRegistry {
     mapping(string => address) private _handleToCreator;
     // Mapping from tag to list of creator addresses
     mapping(string => address[]) private _tagToCreators;
+    // Position + 1 of a creator in _tagToCreators[tag] (0 = not listed), so a tag
+    // can be removed in O(1) and never listed twice
+    mapping(string => mapping(address => uint256)) private _tagSlot;
     // Array of all creator addresses
     address[] private _allCreators;
+
+    uint256 private constant MIN_FLOOR = 1 * 10**6;
+    uint256 private constant MAX_FLOOR = 1000 * 10**6;
+    uint256 private constant MAX_TAGS = 10;
 
     modifier onlyCreator() {
         require(_creators[msg.sender].creator != address(0), "AttnnRegistry: not a registered creator");
@@ -38,9 +45,7 @@ contract AttnnRegistry is IAttnnRegistry {
         require(msg.sender != address(0), "AttnnRegistry: zero address");
         require(_creators[msg.sender].creator == address(0), "AttnnRegistry: already registered");
         require(!creatorExists(handle), "AttnnRegistry: handle already taken");
-        require(minBid >= 1 * 10**6, "AttnnRegistry: minBid too low (min 1 USDC)");
-        require(minBid <= 1000 * 10**6, "AttnnRegistry: minBid too high (max 1000 USDC)");
-        require(tags.length <= 10, "AttnnRegistry: too many tags");
+        _checkProfile(minBid, tags);
 
         // Convert handle to lowercase for consistency
         string memory handleLower = _toLower(handle);
@@ -48,19 +53,36 @@ contract AttnnRegistry is IAttnnRegistry {
         Creator storage newCreator = _creators[msg.sender];
         newCreator.creator = msg.sender;
         newCreator.minBid = minBid;
-        newCreator.tags = tags;
         newCreator.profileURI = profileURI;
         newCreator.isActive = true;
+        _setTags(msg.sender, tags);
 
         _handleToCreator[handleLower] = msg.sender;
         _allCreators.push(msg.sender);
 
-        // Add to tag mappings
-        for (uint256 i = 0; i < tags.length; i++) {
-            _tagToCreators[tags[i]].push(msg.sender);
-        }
-
         emit CreatorRegistered(msg.sender, handle, minBid);
+    }
+
+    /// @inheritdoc IAttnnRegistry
+    function updateProfile(
+        uint256 minBid,
+        string[] calldata tags,
+        string calldata profileURI
+    ) external override onlyCreator {
+        _checkProfile(minBid, tags);
+
+        Creator storage c = _creators[msg.sender];
+        c.minBid = minBid;
+        c.profileURI = profileURI;
+
+        // Drop the old tags from the tag index, then list the new ones
+        string[] storage old = c.tags;
+        for (uint256 i = 0; i < old.length; i++) {
+            _unlistTag(old[i], msg.sender);
+        }
+        _setTags(msg.sender, tags);
+
+        emit CreatorUpdated(msg.sender, minBid);
     }
 
     /// @inheritdoc IAttnnRegistry
@@ -112,6 +134,37 @@ contract AttnnRegistry is IAttnnRegistry {
     /// @notice Get total number of registered creators
     function getCreatorCount() external view returns (uint256) {
         return _allCreators.length;
+    }
+
+    function _checkProfile(uint256 minBid, string[] calldata tags) internal pure {
+        require(minBid >= MIN_FLOOR, "AttnnRegistry: minBid too low (min 1 USDC)");
+        require(minBid <= MAX_FLOOR, "AttnnRegistry: minBid too high (max 1000 USDC)");
+        require(tags.length <= MAX_TAGS, "AttnnRegistry: too many tags");
+    }
+
+    /// @dev Stores `tags` as the creator's tag list and lists the creator under each,
+    ///      skipping duplicates. Callers must have unlisted any previous tags.
+    function _setTags(address creator, string[] calldata tags) internal {
+        string[] storage stored = _creators[creator].tags;
+        while (stored.length > 0) stored.pop();
+        for (uint256 i = 0; i < tags.length; i++) {
+            if (_tagSlot[tags[i]][creator] != 0) continue; // duplicate in the input
+            _tagToCreators[tags[i]].push(creator);
+            _tagSlot[tags[i]][creator] = _tagToCreators[tags[i]].length;
+            stored.push(tags[i]);
+        }
+    }
+
+    /// @dev Removes `creator` from `tag`'s list (swap with the last entry, then pop).
+    function _unlistTag(string memory tag, address creator) internal {
+        uint256 slot = _tagSlot[tag][creator];
+        if (slot == 0) return;
+        address[] storage list = _tagToCreators[tag];
+        address last = list[list.length - 1];
+        list[slot - 1] = last;
+        _tagSlot[tag][last] = slot;
+        list.pop();
+        delete _tagSlot[tag][creator];
     }
 
     /// @notice Internal helper to convert string to lowercase

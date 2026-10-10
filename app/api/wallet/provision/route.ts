@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { mainWallet } from "@/lib/wallets";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db/client";
 import { wallets } from "@/lib/db/schema";
 import { provisionUserWallet } from "@/lib/circle";
-import { eq } from "drizzle-orm";
 
 export async function POST(_req: NextRequest) {
   try {
@@ -16,9 +16,7 @@ export async function POST(_req: NextRequest) {
     const userName = session.user.name ?? "Attnn User";
 
     // Check if wallet already exists
-    const existing = await db.query.wallets.findFirst({
-      where: eq(wallets.userId, userId),
-    });
+    const existing = await mainWallet(userId);
     if (existing) {
       return NextResponse.json({
         wallet: {
@@ -36,8 +34,9 @@ export async function POST(_req: NextRequest) {
     // Provision via Circle SDK
     const provisioned = await provisionUserWallet(userId, userName);
 
-    // Store in database
-    const [wallet] = await db
+    // Store in database. Two tabs provisioning at once: the unique (user, purpose)
+    // index keeps the first; the other gets that wallet back.
+    const [inserted] = await db
       .insert(wallets)
       .values({
         userId,
@@ -45,8 +44,11 @@ export async function POST(_req: NextRequest) {
         address: provisioned.address,
         blockchain: provisioned.blockchain,
         state: "active",
+        purpose: "main",
       })
+      .onConflictDoNothing()
       .returning();
+    const wallet = inserted ?? (await mainWallet(userId));
 
     if (!wallet) {
       return NextResponse.json({ error: "Failed to save wallet" }, { status: 500 });

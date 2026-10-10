@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
+import { mainWallet } from "@/lib/wallets";
 import { auth } from "@/lib/auth";
-import { db } from "@/lib/db/client";
-import { wallets } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
 import { CircleDeveloperControlledWalletsClient } from "@circle-fin/developer-controlled-wallets";
 
 export async function GET() {
@@ -10,9 +8,7 @@ export async function GET() {
     const session = await auth();
     if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const wallet = await db.query.wallets.findFirst({
-      where: eq(wallets.userId, session.user.id),
-    });
+    const wallet = await mainWallet(session.user.id);
     if (!wallet) return NextResponse.json({ error: "Wallet not found" }, { status: 404 });
 
     const client = new CircleDeveloperControlledWalletsClient({

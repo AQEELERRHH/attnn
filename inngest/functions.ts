@@ -381,6 +381,7 @@ export const handleCounterOffer = inngest.createFunction(
           amountUsdc: counterAmount,
           message: "I accept your counter offer.",
           replacesBidId: bidId,
+          fromAgentWallet: true,
         });
         return { decision: "accept", newBidId: intent.id };
       } catch (err) {

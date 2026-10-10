@@ -12,8 +12,9 @@
  * creator, so attnn.xyz never shows a market that bidder agents can't find on Arc.
  */
 import { and, eq, isNotNull, isNull, or } from "drizzle-orm";
+import { mainWallet } from "./wallets";
 import { db } from "./db/client";
-import { profiles, wallets } from "./db/schema";
+import { profiles } from "./db/schema";
 import { publicClient, registryAbi } from "./arc";
 import { classifyTxState, describeTxFailure, executeContractCall, getTransactionStatus } from "./circle";
 import { inngest } from "./inngest";
@@ -77,7 +78,7 @@ export class RegistrationError extends Error {
 export async function submitRegistration(userId: string): Promise<RegistrationState> {
   const profile = await db.query.profiles.findFirst({ where: eq(profiles.userId, userId) });
   if (!profile) throw new RegistrationError("Profile not found", 404);
-  const wallet = await db.query.wallets.findFirst({ where: eq(wallets.userId, userId) });
+  const wallet = await mainWallet(userId);
   if (!wallet) throw new RegistrationError("Wallet not found", 404);
   if (!registryAddress()) throw new RegistrationError("Registry not deployed", 500);
 
@@ -157,7 +158,7 @@ export async function refreshRegistration(userId: string): Promise<RegistrationS
     return "failed";
   }
   if (outcome === "complete") {
-    const wallet = await db.query.wallets.findFirst({ where: eq(wallets.userId, userId) });
+    const wallet = await mainWallet(userId);
     if (wallet && (await isActiveOnRegistry(wallet.address))) {
       await markActive(userId);
       return "active";

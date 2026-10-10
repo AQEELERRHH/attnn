@@ -43,6 +43,13 @@
       "when": 1791643926093,
       "tag": "0005_reply_quality",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1791651657952,
+      "tag": "0006_agent_wallet",
+      "breakpoints": true
     }
   ]
 }

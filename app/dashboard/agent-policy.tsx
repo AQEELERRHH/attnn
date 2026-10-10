@@ -28,6 +28,15 @@ export function AgentPolicy({ config, spent, policy }: { config: BidderConfigDat
           <p className="mt-1 text-xs text-text-secondary">Checked by Attnn. before any transaction is sent.</p>
           <ul className="mt-3 flex flex-col gap-2.5 text-[13px]">
             <Rule kind="limit">
+              {policy.agentWallet ? (
+                <>
+                  Spends only from its own wallet: <Money atomic={policy.agentWallet.usdc} /> in it now
+                </>
+              ) : (
+                "Spends only from its own agent wallet (create it above)"
+              )}
+            </Rule>
+            <Rule kind="limit">
               Daily budget <Money atomic={budget} />, <Money atomic={left} /> left today
             </Rule>
             <Rule kind="limit">
@@ -63,7 +72,7 @@ export function AgentPolicy({ config, spent, policy }: { config: BidderConfigDat
           Your agent can never
         </h3>
         <ul className="mt-3 grid gap-2.5 text-[13px] md:grid-cols-3">
-          <Rule kind="never">Send USDC to another address. Only you can, from Wallet</Rule>
+          <Rule kind="never">Touch your main wallet, or send USDC anywhere but the escrow. Only you can move money</Rule>
           <Rule kind="never">Approve more than the bid it&apos;s placing, or approve anything but the escrow</Rule>
           <Rule kind="never">Release your escrowed USDC to a creator</Rule>
         </ul>
@@ -75,9 +84,9 @@ export function AgentPolicy({ config, spent, policy }: { config: BidderConfigDat
             Escrow contract <Num>{shortAddress(policy.escrowAddress)}</Num> <ExternalLink aria-hidden className="h-3 w-3" />
           </a>
         )}
-        {policy.walletHref && (
-          <a href={policy.walletHref} target="_blank" rel="noopener noreferrer" className="focus-ring inline-flex items-center gap-1 rounded text-arc-lavender hover:underline">
-            Every transaction from your wallet <ExternalLink aria-hidden className="h-3 w-3" />
+        {(policy.agentWallet?.href ?? policy.walletHref) && (
+          <a href={(policy.agentWallet?.href ?? policy.walletHref)!} target="_blank" rel="noopener noreferrer" className="focus-ring inline-flex items-center gap-1 rounded text-arc-lavender hover:underline">
+            Every transaction from your {policy.agentWallet ? "agent " : ""}wallet <ExternalLink aria-hidden className="h-3 w-3" />
           </a>
         )}
       </p>

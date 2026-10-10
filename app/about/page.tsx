@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 
 const AGENT_LIMITS = [
+  "Its own wallet. The agent spends only what you move into its agent wallet, never your main wallet, and you can move the rest back any time.",
   "A daily budget the agent can't go past, reset every day at 00:00 UTC.",
   "A maximum per creator. The AI suggests an amount, but the agent is held to the creator's floor and your cap, counter-offers included.",
   "One bid per creator per day, plus one re-bid if the creator counters.",
@@ -16,7 +17,7 @@ const AGENT_LIMITS = [
 ];
 
 const AGENT_NEVER = [
-  "Send USDC to another address. Only you can, from your wallet.",
+  "Touch your main wallet, or send USDC anywhere except into the escrow. Only you can move money.",
   "Approve more than the bid it's placing, or approve any contract except the escrow.",
   "Release escrowed USDC to a creator. Only the creator can, by replying.",
 ];

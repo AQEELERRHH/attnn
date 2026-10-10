@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import { mainWallet } from "@/lib/wallets";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db/client";
-import { profiles, wallets } from "@/lib/db/schema";
+import { profiles } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { validateCreatorFloor } from "@/lib/bid-rules";
 import { validateReplyTemplate } from "@/lib/reply-rules";
@@ -34,7 +35,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Ensure user has a wallet
-    const wallet = await db.query.wallets.findFirst({ where: eq(wallets.userId, session.user.id) });
+    const wallet = await mainWallet(session.user.id);
     if (!wallet) return NextResponse.json({ error: "No wallet found. Please set up a wallet first." }, { status: 400 });
 
     // Check if profile already exists for this user → upsert

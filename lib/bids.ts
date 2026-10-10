@@ -15,9 +15,10 @@
  */
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { replyError, type ReplySource } from "./reply-rules";
+import { agentWallet, mainWallet, walletByAddress } from "./wallets";
 import { parseEventLogs, type Hex } from "viem";
 import { db } from "./db/client";
-import { bids, profiles, wallets } from "./db/schema";
+import { bids, profiles } from "./db/schema";
 import { escrowAbi, publicClient, usdcAbi, USDC_ADDRESS } from "./arc";
 import { escrowAddress, knownEscrowAddresses } from "./chain";
 import {
@@ -48,13 +49,6 @@ export class BidError extends Error {
 
 const lower = (a: string) => a.toLowerCase();
 
-async function walletFor(userId: string) {
-  // Prefer an active wallet; fall back to any wallet for older rows without state.
-  const active = await db.query.wallets.findFirst({
-    where: and(eq(wallets.userId, userId), eq(wallets.state, "active")),
-  });
-  return active ?? (await db.query.wallets.findFirst({ where: eq(wallets.userId, userId) }));
-}
 
 // ─── Placement ───────────────────────────────────────────────────────────────
 
@@ -67,6 +61,11 @@ export interface BidIntentInput {
   score?: number | null;
   /** The countered bid this one answers (counter handler only). */
   replacesBidId?: string | null;
+  /**
+   * Bid from the bidder's agent wallet (the bidder agent and its counter re-bids)
+   * instead of their main wallet (bids they place themselves).
+   */
+  fromAgentWallet?: boolean;
 }
 
 /**
@@ -100,10 +99,12 @@ export async function createBidIntent(input: BidIntentInput): Promise<BidRow> {
   const amount = check.amount;
 
   const [bidderWallet, creatorWallet] = await Promise.all([
-    walletFor(input.bidderUserId),
-    walletFor(input.creatorUserId),
+    input.fromAgentWallet ? agentWallet(input.bidderUserId) : mainWallet(input.bidderUserId),
+    mainWallet(input.creatorUserId),
   ]);
-  if (!bidderWallet) throw new BidError("You need a wallet before bidding", 400);
+  if (!bidderWallet) {
+    throw new BidError(input.fromAgentWallet ? "Your agent has no wallet yet. Create it on the Agent tab." : "You need a wallet before bidding", 400);
+  }
   if (!creatorWallet) throw new BidError("Creator has no wallet", 404);
 
   // Fail fast on an underfunded wallet instead of burning a reverted transaction.
@@ -117,7 +118,7 @@ export async function createBidIntent(input: BidIntentInput): Promise<BidRow> {
     });
     if (balance <= amount) {
       throw new BidError(
-        `Not enough USDC: your wallet has ${formatUsd(balance)}, this bid needs ${formatUsd(amount)} plus a little for network fees`,
+        `Not enough USDC: your ${input.fromAgentWallet ? "agent wallet" : "wallet"} has ${formatUsd(balance)}, this bid needs ${formatUsd(amount)} plus a little for network fees`,
       );
     }
   } catch (err) {
@@ -450,12 +451,11 @@ export async function submitSettlement(params: {
     throw new BidError("The refund window hasn't passed yet", 409);
   }
 
-  const actorWallet = await walletFor(params.actorUserId);
-  if (!actorWallet) throw new BidError("Wallet not found", 404);
+  // Settle from the exact wallet on the bid: a refund of an agent bid goes back to
+  // the agent wallet, a manual bid's refund to the main wallet.
   const expected = action === "refund" ? bid.bidderAddress : bid.creatorAddress;
-  if (lower(actorWallet.address) !== lower(expected)) {
-    throw new BidError("Your current wallet isn't the one this bid was placed with", 409);
-  }
+  const actorWallet = await walletByAddress(params.actorUserId, expected);
+  if (!actorWallet) throw new BidError("This bid was placed with a wallet you no longer have", 409);
 
   const fn = action === "accept" ? "acceptBid" : action === "reject" ? "rejectBid" : "claimRefund";
   const args = action === "accept" ? [bid.onChainBidId, params.reply!.trim()] : [bid.onChainBidId];
@@ -541,7 +541,10 @@ export async function finalizeSettlement(bidId: string): Promise<SettlementOutco
     // submitter time to finish, then look the transaction up by its op key.
     const reservedAt = Number(circleTxId.slice(RESERVATION_PREFIX.length));
     if (Date.now() - reservedAt < RESERVATION_STALE_MS) return "in_flight";
-    const wallet = await walletFor(action === "refund" ? bid.bidderUserId : bid.creatorUserId);
+    const wallet = await walletByAddress(
+      action === "refund" ? bid.bidderUserId : bid.creatorUserId,
+      action === "refund" ? bid.bidderAddress : bid.creatorAddress,
+    );
     const sent = wallet
       ? await findTransactionByRefId(wallet.circleWalletId, settlementOpKey(bid.id, action, bid.settlementAttempt))
       : null;

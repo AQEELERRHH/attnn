@@ -3,7 +3,9 @@ import { bids, agentLogs, profiles, bidderConfigs, wallets } from "./db/schema";
 import { evaluateCreatorForBidder } from "./ai";
 import { isActiveOnRegistry } from "./registration";
 import { BidError, createBidIntent } from "./bids";
-import { formatUsd, resolveAgentBidAmount } from "./bid-rules";
+import { ESCROW_MIN_BID, formatUsd, resolveAgentBidAmount } from "./bid-rules";
+import { getUsdcBalance } from "./activation";
+import { agentWallet } from "./wallets";
 import { eq, and, gte, inArray, ne, sql } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
 
@@ -57,6 +59,26 @@ export async function runBidderAgent(userId: string): Promise<AgentRunResult> {
       return { bidsPlaced: 0, creatorsFound: 0, errors: ["Daily budget exhausted"], logId: "" };
     }
 
+    // The agent spends only from its own wallet. Without one, or with less than the
+    // smallest possible bid in it, there's nothing to do (and no AI calls to pay for).
+    const wallet = await agentWallet(userId);
+    if (!wallet) {
+      await logAgentAction(userId, "agent_stopped", { reason: "No agent wallet yet. Create it on the Agent tab and move USDC into it" });
+      return { bidsPlaced: 0, creatorsFound: 0, errors: ["No agent wallet"], logId: "" };
+    }
+    try {
+      const available = await getUsdcBalance(wallet.address);
+      if (available <= ESCROW_MIN_BID) {
+        await logAgentAction(userId, "agent_stopped", {
+          reason: `Agent wallet has ${formatUsd(available)}. Move USDC into it on the Agent tab so it can bid`,
+        });
+        return { bidsPlaced: 0, creatorsFound: 0, errors: ["Agent wallet is empty"], logId: "" };
+      }
+    } catch (err) {
+      // RPC hiccup: carry on; createBidIntent re-checks the balance per bid.
+      console.warn("runBidderAgent: agent wallet balance check skipped:", err);
+    }
+
     // Discover creators by their CURRENT tags (the DB; tags edited after registration
     // never reach the on-chain registry), then confirm on Arc that each one really is
     // a registered, active creator before it can receive a bid.
@@ -87,7 +109,7 @@ export async function runBidderAgent(userId: string): Promise<AgentRunResult> {
       ? await db
           .select({ userId: wallets.userId, address: wallets.address })
           .from(wallets)
-          .where(inArray(wallets.userId, matches.map((m) => m.profile.userId)))
+          .where(and(inArray(wallets.userId, matches.map((m) => m.profile.userId)), eq(wallets.purpose, "main")))
       : [];
     const walletByUser = new Map(walletRows.map((w) => [w.userId, w.address]));
 
@@ -175,6 +197,7 @@ export async function runBidderAgent(userId: string): Promise<AgentRunResult> {
           amountUsdc: tc.bidAmount,
           message: config.defaultMessage ?? "AI-discovered opportunity",
           score: tc.score,
+          fromAgentWallet: true,
         });
         await logAgentAction(userId, "bid_placed", {
           creator: tc.profile.handle,

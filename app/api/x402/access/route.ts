@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import { mainWallet } from "@/lib/wallets";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db/client";
-import { profiles, wallets } from "@/lib/db/schema";
+import { profiles } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 // x402 imports removed
 
@@ -29,9 +30,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Get the current user's wallet
-    const userWallet = await db.query.wallets.findFirst({
-      where: eq(wallets.userId, session.user.id),
-    });
+    const userWallet = await mainWallet(session.user.id);
     if (!userWallet) {
       return NextResponse.json({ error: "Wallet not found" }, { status: 404 });
     }

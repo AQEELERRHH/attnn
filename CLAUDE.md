@@ -56,7 +56,7 @@ app/
   c/[handle]/                          public creator profile page (UI)
   api/
     auth/[...nextauth]/                Auth.js handlers
-    wallet/{provision,balance,send}    Circle wallet create / USDC balance / USDC transfer
+    wallet/{provision,balance,send,agent}  Circle wallet create / USDC balance / USDC transfer / agent wallet create + move USDC main⇄agent
     profile/{create,update,activate}   creator profile CRUD; activate = registerCreator() on-chain
     bidder-config/create               upsert bidder agent config
     bid/{place,accept,reject,counter,rate}  escrow actions (manual/UI path); rate = bidder's 👍/👎 on a paid reply
@@ -114,6 +114,7 @@ Shared UI for market screens; reference page at `/design` (local + Vercel previe
 - `bidTxHash` / `settlementTxHash` hold **Circle transaction ids**; `onChainTxHash` / `settlementOnChainTxHash` hold chain hashes.
 - Earnings, volume and anything shown as money moved must count only `accepted` (settled on-chain) bids; spend/budget counts everything except `failed`.
 - `agent_logs.action` is a pg enum, so new actions need a schema change plus a migration (ask before pushing).
+- **Wallets** (`lib/wallets.ts`): each user has a `main` wallet and, once they use the bidder agent, an `agent` wallet (`wallets.purpose`, unique per user + purpose, migration 0006). **Never look a wallet up by userId alone**: user actions, creator registration/payouts and Send use `mainWallet()`; the bidder agent and counter re-bids bid with `createBidIntent({ fromAgentWallet: true })`; settling a bid uses `walletByAddress(userId, bid.bidderAddress | bid.creatorAddress)`, so an agent bid's refund goes back to the agent wallet. The agent stops ("agent_stopped") if it has no agent wallet or less than the minimum bid in it. `POST /api/wallet/agent` `{action: "create" | "fund" | "withdraw", amount}` (user session only) creates it or moves USDC main ⇄ agent, keeping $0.05 behind for the transfer's gas. `bidder-config/create` creates the agent wallet best-effort. Shown on the Agent tab (`agent-wallet-card.tsx`) and as the first Spending policy line. This caps what a buggy agent can spend; it does not protect against a compromised Attnn server (Attnn holds both keys).
 - One `profile` and one `bidder_config` per user (both are `unique` on `userId`). `profiles.minBid` is never below $5 (validated in the profile routes). `profiles.avatarUrl` is the market photo (see Market design system).
 
 ## How on-chain writes work (Circle)
@@ -146,7 +147,7 @@ Triggered by the `runActiveBidders` Inngest cron (`*/30 * * * *`, rechecks `isAc
 2. Daily budget: sums today's (UTC) `bids.amount_usdc` for this bidder, **excluding `failed`**. Stops if the total is ≥ `dailyBudget`.
 3. Discovery: active DB profiles whose **current** tags overlap `searchTags` (case-insensitive, best overlap first; the testnet registry can't update tags, so on-chain tags go stale), excluding self, paused markets and any creator already bid on today (failed attempts count, so an unaffordable creator isn't retried every run). Each candidate must pass `registry.isActiveCreator(wallet)` on Arc (`isActiveOnRegistry` in `lib/registration.ts`); stops at 10 verified.
 4. Scores them with `evaluateCreatorForBidder`, keeps `proceed && score >= minFitScore`. It returns `null` when the AI fails, and **there is no fallback**: an unscored creator is skipped, never bid on blind. If no creator could be scored the run logs `agent_stopped` ("AI unavailable") and places nothing. The AI's `bidAmount` is only a hint: `resolveAgentBidAmount` clamps it to [creator floor, min(`maxBidPerCreator`, $1,000)] and skips creators whose floor is above the cap. Top 5 by score.
-5. For each, rechecks the budget and calls `createBidIntent` (see Escrow flow). The agent never calls the chain itself and no longer sleeps between calls.
+5. For each, rechecks the budget and calls `createBidIntent({ …, fromAgentWallet: true })` (see Escrow flow). The agent never calls the chain itself and no longer sleeps between calls.
 
 The **Spending policy** card (`app/dashboard/agent-policy.tsx`, Agent tab) and the About page's "How our agents are kept safe" list state these limits and the escrow's rules to users. Every line must stay true to `lib/agent.ts`, `createBidIntent`, `handleCounterOffer` and `AttnnEscrow.sol`; change them together.
 

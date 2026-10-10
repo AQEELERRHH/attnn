@@ -57,14 +57,3 @@ export async function deleteAvatar(userId: string): Promise<void> {
   if (!avatarStorageConfigured()) return;
   await client().storage.from(BUCKET).remove(["webp", "png", "jpeg"].map((e) => `${userId}.${e}`));
 }
-
-/** Only Google-hosted profile photos may be linked directly. */
-export function isGooglePhoto(url: string | null | undefined): url is string {
-  if (!url) return false;
-  try {
-    const u = new URL(url);
-    return u.protocol === "https:" && /(^|\.)googleusercontent\.com$/.test(u.hostname);
-  } catch {
-    return false;
-  }
-}

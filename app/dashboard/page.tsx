@@ -1,8 +1,7 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db/client";
-import { wallets, profiles, bidderConfigs, bids, agentLogs, users } from "@/lib/db/schema";
-import { isGooglePhoto } from "@/lib/avatar-storage";
+import { wallets, profiles, bidderConfigs, bids, agentLogs } from "@/lib/db/schema";
 import { and, desc, eq, gte, inArray, isNotNull, or, sql } from "drizzle-orm";
 import { addressUrl, arc, escrowAddress, txUrl } from "@/lib/chain";
 import { ESCROW_MAX_BID, ESCROW_MIN_BID, REFUND_PERIOD_MS } from "@/lib/bid-rules";
@@ -26,11 +25,10 @@ export default async function DashboardPage() {
   const userId = session.user.id;
   const now = Date.now();
 
-  const [wallet, profile, bidderCfg, account] = await Promise.all([
+  const [wallet, profile, bidderCfg] = await Promise.all([
     db.query.wallets.findFirst({ where: eq(wallets.userId, userId) }),
     db.query.profiles.findFirst({ where: eq(profiles.userId, userId) }),
     db.query.bidderConfigs.findFirst({ where: eq(bidderConfigs.userId, userId) }),
-    db.query.users.findFirst({ where: eq(users.id, userId), columns: { image: true } }),
   ]);
 
   // Everything still open, plus the last 30 days of history, on either side of the market.
@@ -171,7 +169,6 @@ export default async function DashboardPage() {
             }
           : null
       }
-      hasGooglePhoto={isGooglePhoto(account?.image)}
       bidderConfig={
         bidderCfg
           ? {

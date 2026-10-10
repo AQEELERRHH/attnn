@@ -40,7 +40,6 @@ export function CreatorView({
   wallet,
   bids,
   summary,
-  hasGooglePhoto,
   now,
 }: {
   profile: ProfileData | null;
@@ -48,7 +47,6 @@ export function CreatorView({
   /** Only bids sent to this creator. */
   bids: BidData[];
   summary: PortfolioSummary;
-  hasGooglePhoto: boolean;
   now: number;
 }) {
   const router = useRouter();
@@ -90,21 +88,19 @@ export function CreatorView({
     );
   }
 
-  return <CreatorMarketDesk profile={profile} bids={bids} summary={summary} hasGooglePhoto={hasGooglePhoto} now={now} onEdit={() => setEditing(true)} />;
+  return <CreatorMarketDesk profile={profile} bids={bids} summary={summary} now={now} onEdit={() => setEditing(true)} />;
 }
 
 function CreatorMarketDesk({
   profile,
   bids,
   summary,
-  hasGooglePhoto,
   now,
   onEdit,
 }: {
   profile: ProfileData;
   bids: BidData[];
   summary: PortfolioSummary;
-  hasGooglePhoto: boolean;
   now: number;
   onEdit: () => void;
 }) {
@@ -319,7 +315,7 @@ function CreatorMarketDesk({
 
       <div className="grid gap-5 md:grid-cols-2">
         <Panel>
-          <AvatarEditor handle={profile.handle} initialUrl={profile.avatarUrl} hasGooglePhoto={hasGooglePhoto} />
+          <AvatarEditor handle={profile.handle} initialUrl={profile.avatarUrl} />
         </Panel>
         <Panel
           title="Your agent's standards"

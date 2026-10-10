@@ -36,7 +36,6 @@ export function DashboardClient({
   logs,
   userId,
   userRole,
-  hasGooglePhoto,
   now,
   networkLabel,
   policy,
@@ -49,7 +48,6 @@ export function DashboardClient({
   logs: LogData[];
   userId: string;
   userRole: string;
-  hasGooglePhoto: boolean;
   /** Server render time; every relative time uses it so server and browser agree. */
   now: number;
   networkLabel: string;
@@ -219,7 +217,7 @@ export function DashboardClient({
             <BidderView bids={placed} summary={summary} bidderConfig={bidderConfig} now={now} onOpenAgent={() => setView("agent")} />
           )}
           {view === "creator" && (
-            <CreatorView profile={profile} wallet={wallet} bids={received} summary={summary} hasGooglePhoto={hasGooglePhoto} now={now} />
+            <CreatorView profile={profile} wallet={wallet} bids={received} summary={summary} now={now} />
           )}
           {view === "agent" && <AgentConsole config={bidderConfig} bids={placed} logs={logs} summary={summary} now={now} policy={policy} />}
         </div>

@@ -29,18 +29,16 @@ async function resizeToSquare(file: File): Promise<Blob> {
 export function AvatarEditor({
   handle,
   initialUrl,
-  hasGooglePhoto,
 }: {
   handle: string;
   initialUrl: string | null;
-  hasGooglePhoto: boolean;
 }) {
   const [url, setUrl] = React.useState(initialUrl);
-  const [busy, setBusy] = React.useState<null | "upload" | "google" | "remove">(null);
+  const [busy, setBusy] = React.useState<null | "upload" | "remove">(null);
   const [message, setMessage] = React.useState<{ ok: boolean; text: string } | null>(null);
   const inputRef = React.useRef<HTMLInputElement>(null);
 
-  async function call(kind: "upload" | "google" | "remove", init: RequestInit) {
+  async function call(kind: "upload" | "remove", init: RequestInit) {
     setBusy(kind);
     setMessage(null);
     try {
@@ -92,18 +90,6 @@ export function AvatarEditor({
           <button type="button" className={btn} disabled={!!busy} onClick={() => inputRef.current?.click()}>
             {busy === "upload" ? "Uploading…" : "Upload photo"}
           </button>
-          {hasGooglePhoto && (
-            <button
-              type="button"
-              className={btn}
-              disabled={!!busy}
-              onClick={() =>
-                call("google", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source: "google" }) })
-              }
-            >
-              {busy === "google" ? "Saving…" : "Use my Google photo"}
-            </button>
-          )}
           {url && (
             <button type="button" className={btn} disabled={!!busy} onClick={() => call("remove", { method: "DELETE" })}>
               {busy === "remove" ? "Removing…" : "Remove"}

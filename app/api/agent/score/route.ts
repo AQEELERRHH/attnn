@@ -14,6 +14,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ result, success: true });
     } else if (type === "creator") {
       const result = await evaluateCreatorForBidder(body.creator, body.goal);
+      if (!result) return NextResponse.json({ error: "AI scoring is unavailable right now" }, { status: 503 });
       return NextResponse.json({ result, success: true });
     }
     return NextResponse.json({ error: "Invalid type" }, { status: 400 });

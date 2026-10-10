@@ -7,6 +7,7 @@ import { and, desc, eq, gte, inArray, isNotNull, or, sql } from "drizzle-orm";
 import { arc, txUrl } from "@/lib/chain";
 import { getUsdcBalance } from "@/lib/activation";
 import { spentToday } from "@/lib/agent";
+import { registrationState } from "@/lib/registration";
 import { computeCreatorStats, loadMarketBids } from "@/lib/market";
 import { bookRanks, computeBidderTotals, computeCreatorTotals } from "@/lib/portfolio";
 import { DashboardClient } from "./dashboard-client";
@@ -151,6 +152,8 @@ export default async function DashboardPage() {
               autoAcceptThreshold: profile.autoAcceptThreshold,
               autoReplyTemplate: profile.autoReplyTemplate ?? null,
               isActive: profile.isActive,
+              registration: registrationState(profile),
+              registrationError: profile.registrationError ?? null,
               availabilityStatus: profile.availabilityStatus ?? "available",
               openTo: profile.openTo ?? [],
               avatarUrl: profile.avatarUrl ?? null,

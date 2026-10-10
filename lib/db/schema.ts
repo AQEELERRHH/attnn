@@ -122,7 +122,11 @@ export const profiles = pgTable("profiles", {
   profileURI: text("profile_uri"),
   autoAcceptThreshold: integer("auto_accept_threshold").default(0),
   autoReplyTemplate: text("auto_reply_template").default("Thanks for reaching out! I've reviewed your bid and I'm happy to connect. Looking forward to hearing more — reach out on WhatsApp: +2319023XXXXXXX"),
+  // Circle id of the registerCreator transaction (or a "reserved:<ms>" sentinel while
+  // it's being sent). isActive flips only once the registry confirms it: lib/registration.ts.
   onChainTx: text("on_chain_tx"),
+  // Why the last registration attempt failed; null otherwise. Cleared on retry.
+  registrationError: text("registration_error"),
   availabilityStatus: text("availability_status").default("available").notNull(),
   openTo: text("open_to").array().default([]).notNull(),
   isActive: boolean("is_active").default(false).notNull(),

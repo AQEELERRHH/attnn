@@ -236,7 +236,7 @@ function getCreatorCount() external view returns (uint256)
 function isActiveCreator(address creator) external view returns (bool)
 ```
 
-Key design: tag-based discovery allows the bidder agent to query `getCreatorsByTag("web3")` and get all matching creator wallet addresses directly from the contract no database query needed for discovery.
+Key design: any agent can query `getCreatorsByTag("web3")` and get matching creator wallet addresses directly from the contract. Attnn.'s own bidder agent matches on creators' current (editable) tags and confirms each one with `isActiveCreator()` on Arc before bidding.
 
 ### AttnnEscrow `0x7B43B155aCC2B191C121FB2fC724669a6F7Fbb86`
 

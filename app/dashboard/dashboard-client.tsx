@@ -6,6 +6,7 @@ import { signOut } from "next-auth/react";
 import { Bot, Coins, Inbox, LogOut } from "lucide-react";
 import { SiteHeader } from "@/components/market/site-header";
 import { Num } from "@/components/market";
+import { Button } from "@/components/ui/button";
 import { toast } from "@/hooks/use-toast";
 import { cn } from "@/lib/cn";
 import { shortAddress } from "@/lib/format";
@@ -17,8 +18,14 @@ import type { BidData, BidderConfigData, LogData, PortfolioSummary, ProfileData,
 
 type View = "bidder" | "creator" | "agent";
 
-/** Refresh interval while a bid is still confirming on Arc. */
+/** Refresh interval while a bid or registration is still confirming on Arc. */
 const POLL_MS = 15_000;
+/**
+ * Stop auto-refreshing after this long. Confirmations take seconds; a row stuck for
+ * longer is finished by the 10-minute sweep, and an open tab polling forever would
+ * keep reading the database for nothing.
+ */
+const POLL_MAX_MS = 10 * 60_000;
 
 export function DashboardClient({
   wallet,
@@ -91,14 +98,26 @@ export function DashboardClient({
 
   // While anything is confirming on Arc (placing, or a settlement in flight), refresh
   // so the row flips to its final status without a manual reload.
-  const inFlight = bids.some((b) => b.status === "placing" || (!!b.settlementTxHash && (b.status === "pending" || b.status === "counter_offered")));
+  const inFlight =
+    profile?.registration === "registering" ||
+    bids.some((b) => b.status === "placing" || (!!b.settlementTxHash && (b.status === "pending" || b.status === "counter_offered")));
+  // Bumped by the "Refresh" button to restart polling after it timed out.
+  const [pollRound, setPollRound] = React.useState(0);
+  const [pollTimedOut, setPollTimedOut] = React.useState(false);
   React.useEffect(() => {
+    setPollTimedOut(false);
     if (!inFlight) return;
+    const startedAt = Date.now();
     const t = setInterval(() => {
+      if (Date.now() - startedAt > POLL_MAX_MS) {
+        clearInterval(t);
+        setPollTimedOut(true);
+        return;
+      }
       if (document.visibilityState === "visible") router.refresh();
     }, POLL_MS);
     return () => clearInterval(t);
-  }, [inFlight, router]);
+  }, [inFlight, pollRound, router]);
 
   if (provisioning) {
     return (
@@ -176,6 +195,22 @@ export function DashboardClient({
             ))}
           </div>
         </div>
+
+        {inFlight && pollTimedOut && (
+          <div role="status" className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-arc-bg-1 px-4 py-3 text-sm">
+            <span className="text-text-secondary">Something is still confirming on Arc. Auto-refresh has paused.</span>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                router.refresh();
+                setPollRound((n) => n + 1);
+              }}
+            >
+              Refresh
+            </Button>
+          </div>
+        )}
 
         <div role="tabpanel" id={`panel-${view}`} aria-labelledby={`tab-${view}`}>
           {view === "bidder" && (

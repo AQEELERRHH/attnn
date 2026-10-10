@@ -38,7 +38,7 @@ contract AttnnRegistry is IAttnnRegistry {
         require(msg.sender != address(0), "AttnnRegistry: zero address");
         require(_creators[msg.sender].creator == address(0), "AttnnRegistry: already registered");
         require(!creatorExists(handle), "AttnnRegistry: handle already taken");
-        require(minBid >= 5 * 10**6, "AttnnRegistry: minBid too low (min 5 USDC)");
+        require(minBid >= 1 * 10**6, "AttnnRegistry: minBid too low (min 1 USDC)");
         require(minBid <= 1000 * 10**6, "AttnnRegistry: minBid too high (max 1000 USDC)");
         require(tags.length <= 10, "AttnnRegistry: too many tags");
 

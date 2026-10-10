@@ -4,7 +4,7 @@ import * as React from "react";
 import { Button } from "@/components/ui/button";
 import { Panel } from "@/components/market";
 import { toast } from "@/hooks/use-toast";
-import { ESCROW_MAX_BID, ESCROW_MIN_BID } from "@/lib/bid-rules";
+import { ESCROW_MAX_BID, ESCROW_MIN_BID, formatUsd } from "@/lib/bid-rules";
 import { atomicToDollarInput, dollarsToAtomic } from "@/lib/format";
 import type { ProfileData } from "./types";
 
@@ -45,7 +45,7 @@ export function CreatorSetupForm({
     floor === null
       ? "Enter an amount like 5 or 12.50."
       : floor < ESCROW_MIN_BID
-        ? "The lowest floor is $5.00."
+        ? `The lowest floor is ${formatUsd(ESCROW_MIN_BID)}.`
         : floor > ESCROW_MAX_BID
           ? "The highest floor is $1,000.00."
           : null;
@@ -150,7 +150,7 @@ export function CreatorSetupForm({
           {floorError ? (
             <p className="mt-1 text-xs text-arc-coral">{floorError}</p>
           ) : (
-            <p className="mt-1 text-xs text-text-secondary">The lowest bid you&apos;ll accept. $5.00 to $1,000.00.</p>
+            <p className="mt-1 text-xs text-text-secondary">The lowest bid you&apos;ll accept. {formatUsd(ESCROW_MIN_BID)} to $1,000.00.</p>
           )}
         </div>
         <div>

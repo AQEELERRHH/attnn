@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { db } from "@/lib/db/client";
 import { bids } from "@/lib/db/schema";
 import { and, eq, isNull } from "drizzle-orm";
-import { ESCROW_MAX_BID, ESCROW_MIN_BID, parseAtomicUsdc } from "@/lib/bid-rules";
+import { ESCROW_MAX_BID, ESCROW_MIN_BID, formatUsd, parseAtomicUsdc } from "@/lib/bid-rules";
 import { inngest } from "@/lib/inngest";
 
 export async function POST(req: NextRequest) {
@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
 
     const amount = parseAtomicUsdc(counterOfferAmount);
     if (amount === null || amount < ESCROW_MIN_BID || amount > ESCROW_MAX_BID) {
-      return NextResponse.json({ error: "Counter offer must be between $5 and $1,000 USDC" }, { status: 400 });
+      return NextResponse.json({ error: `Counter offer must be between ${formatUsd(ESCROW_MIN_BID)} and $1,000 USDC` }, { status: 400 });
     }
     if (amount <= BigInt(bid.amountUsdc)) {
       return NextResponse.json({ error: "Counter offer must be higher than the original bid" }, { status: 400 });

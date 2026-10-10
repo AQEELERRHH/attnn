@@ -113,7 +113,7 @@ export const profiles = pgTable("profiles", {
     .references(() => users.id, { onDelete: "cascade" })
     .unique(),
   handle: text("handle").notNull().unique(),
-  // Atomic USDC (6 decimals). Never below the escrow's MIN_BID ($5).
+  // Atomic USDC (6 decimals). Never below the escrow's MIN_BID (ESCROW_MIN_BID).
   minBid: text("min_bid").default("5000000").notNull(),
   // Public market photo. Null → show the handle's initial.
   avatarUrl: text("avatar_url"),

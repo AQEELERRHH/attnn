@@ -6,6 +6,8 @@ import { profiles } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { validateCreatorFloor } from "@/lib/bid-rules";
 import { validateReplyTemplate } from "@/lib/reply-rules";
+import { normalizeTags } from "@/lib/profile-rules";
+import { registrationState, syncRegistryProfile } from "@/lib/registration";
 
 export async function POST(req: NextRequest) {
   try {
@@ -21,6 +23,8 @@ export async function POST(req: NextRequest) {
     const floor = validateCreatorFloor(minBid);
     if (!floor.ok) return NextResponse.json({ error: floor.error }, { status: 400 });
     const minBidAtomic = floor.amount.toString();
+    const tagCheck = normalizeTags(tags);
+    if (!tagCheck.ok) return NextResponse.json({ error: tagCheck.error }, { status: 400 });
 
     // The reply template the creator typed (it used to be dropped here). Omitted →
     // keep the default template.
@@ -42,13 +46,18 @@ export async function POST(req: NextRequest) {
     const existing = await db.query.profiles.findFirst({ where: eq(profiles.userId, session.user.id) });
 
     if (existing) {
+      // The handle is written to the registry at registration and can't change there.
+      const state = registrationState(existing);
+      if ((state === "active" || state === "registering") && handle !== existing.handle) {
+        return NextResponse.json({ error: "Your handle is registered on Arc and can't be changed" }, { status: 400 });
+      }
       // Update existing profile
       const [updated] = await db
         .update(profiles)
         .set({
           handle,
           minBid: minBidAtomic,
-          tags: tags ?? [],
+          tags: tagCheck.tags,
           bio: bio ?? null,
           profileURI: profileURI ?? null,
           availabilityStatus: availabilityStatus ?? "available",
@@ -58,7 +67,13 @@ export async function POST(req: NextRequest) {
         .where(eq(profiles.userId, session.user.id))
         .returning();
 
-      return NextResponse.json({ profile: updated, success: true, updated: true });
+      const onChainChanged =
+        existing.minBid !== minBidAtomic ||
+        existing.tags.join("\n") !== tagCheck.tags.join("\n") ||
+        (existing.profileURI ?? "") !== (profileURI ?? "");
+      const registrySync = existing.isActive && onChainChanged ? await syncRegistryProfile(session.user.id) : undefined;
+
+      return NextResponse.json({ profile: updated, success: true, updated: true, registrySync });
     }
 
     // Create new profile
@@ -66,7 +81,7 @@ export async function POST(req: NextRequest) {
       userId: session.user.id,
       handle,
       minBid: minBidAtomic,
-      tags: tags ?? [],
+      tags: tagCheck.tags,
       bio: bio ?? null,
       profileURI: profileURI ?? null,
       availabilityStatus: availabilityStatus ?? "available",

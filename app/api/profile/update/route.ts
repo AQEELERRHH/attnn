@@ -5,6 +5,8 @@ import { profiles, bidderConfigs } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { validateCreatorFloor } from "@/lib/bid-rules";
 import { validateReplyTemplate } from "@/lib/reply-rules";
+import { normalizeTags } from "@/lib/profile-rules";
+import { registrationState, syncRegistryProfile, type RegistrySync } from "@/lib/registration";
 
 export async function POST(req: NextRequest) {
   try {
@@ -21,7 +23,11 @@ export async function POST(req: NextRequest) {
       if (!floor.ok) return NextResponse.json({ error: floor.error }, { status: 400 });
       profileUpdates.minBid = floor.amount.toString();
     }
-    if (updates.tags !== undefined) profileUpdates.tags = updates.tags;
+    if (updates.tags !== undefined) {
+      const tagCheck = normalizeTags(updates.tags);
+      if (!tagCheck.ok) return NextResponse.json({ error: tagCheck.error }, { status: 400 });
+      profileUpdates.tags = tagCheck.tags;
+    }
     if (updates.bio !== undefined) profileUpdates.bio = updates.bio;
     if (updates.profileURI !== undefined) profileUpdates.profileURI = updates.profileURI;
     if (updates.autoAcceptThreshold !== undefined) profileUpdates.autoAcceptThreshold = updates.autoAcceptThreshold;
@@ -33,7 +39,14 @@ export async function POST(req: NextRequest) {
     if (updates.availabilityStatus !== undefined) profileUpdates.availabilityStatus = updates.availabilityStatus;
     if (updates.openTo !== undefined) profileUpdates.openTo = updates.openTo;
 
+    let registrySync: RegistrySync | undefined;
     if (Object.keys(profileUpdates).length > 0) {
+      const existing = await db.query.profiles.findFirst({ where: eq(profiles.userId, session.user.id) });
+      // The handle is written to the registry at registration and can't change there.
+      const state = existing ? registrationState(existing) : "none";
+      if (existing && (state === "active" || state === "registering") && updates.handle !== undefined && updates.handle !== existing.handle) {
+        return NextResponse.json({ error: "Your handle is registered on Arc and can't be changed" }, { status: 400 });
+      }
       // Check handle uniqueness if changing handle
       if (updates.handle) {
         const existingHandle = await db.query.profiles.findFirst({ where: eq(profiles.handle, updates.handle) });
@@ -42,6 +55,12 @@ export async function POST(req: NextRequest) {
         }
       }
       await db.update(profiles).set(profileUpdates).where(eq(profiles.userId, session.user.id));
+
+      const onChainChanged =
+        (profileUpdates.minBid !== undefined && profileUpdates.minBid !== existing?.minBid) ||
+        (profileUpdates.tags !== undefined && (profileUpdates.tags as string[]).join("\n") !== existing?.tags.join("\n")) ||
+        (profileUpdates.profileURI !== undefined && (profileUpdates.profileURI ?? "") !== (existing?.profileURI ?? ""));
+      if (existing?.isActive && onChainChanged) registrySync = await syncRegistryProfile(session.user.id);
     }
 
     // ── Bidder config fields ──
@@ -58,7 +77,7 @@ export async function POST(req: NextRequest) {
       await db.update(bidderConfigs).set(cfgUpdates).where(eq(bidderConfigs.userId, session.user.id));
     }
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, registrySync });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Failed" }, { status: 500 });
   }

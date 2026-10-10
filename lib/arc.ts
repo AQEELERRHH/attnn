@@ -106,6 +106,18 @@ export const registryAbi = [
     stateMutability: "view",
   },
   {
+    // Only in registries deployed after Oct 2026 (mainnet). See registrySupportsUpdates().
+    type: "function",
+    name: "updateProfile",
+    inputs: [
+      { name: "minBid", type: "uint256" },
+      { name: "tags", type: "string[]" },
+      { name: "profileURI", type: "string" },
+    ],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
     type: "function",
     name: "isActiveCreator",
     inputs: [{ name: "creator", type: "address" }],
@@ -118,6 +130,14 @@ export const registryAbi = [
     inputs: [
       { name: "creator", type: "address", indexed: true },
       { name: "handle", type: "string", indexed: false },
+      { name: "minBid", type: "uint256", indexed: false },
+    ],
+  },
+  {
+    type: "event",
+    name: "CreatorUpdated",
+    inputs: [
+      { name: "creator", type: "address", indexed: true },
       { name: "minBid", type: "uint256", indexed: false },
     ],
   },

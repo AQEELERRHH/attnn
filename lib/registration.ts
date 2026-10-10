@@ -12,6 +12,7 @@
  * creator, so attnn.xyz never shows a market that bidder agents can't find on Arc.
  */
 import { and, eq, isNotNull, isNull, or } from "drizzle-orm";
+import { toFunctionSelector } from "viem";
 import { mainWallet } from "./wallets";
 import { db } from "./db/client";
 import { profiles } from "./db/schema";
@@ -177,4 +178,55 @@ export async function loadRegisteringUserIds(): Promise<string[]> {
     .where(and(eq(profiles.isActive, false), isNotNull(profiles.onChainTx), isNull(profiles.registrationError)))
     .limit(100);
   return rows.map((r) => r.userId);
+}
+
+/**
+ * Whether the deployed registry has updateProfile(). The original testnet registry
+ * doesn't (tags and floor were fixed at registration); registries deployed from the
+ * current source do. Detected from the bytecode, so no extra setting is needed.
+ */
+let updatesSupported: Promise<boolean> | null = null;
+export function registrySupportsUpdates(): Promise<boolean> {
+  const registry = registryAddress();
+  if (!registry) return Promise.resolve(false);
+  updatesSupported ??= publicClient
+    .getCode({ address: registry })
+    .then((code) => {
+      const selector = toFunctionSelector("updateProfile(uint256,string[],string)").slice(2).toLowerCase();
+      return !!code && code.toLowerCase().includes(selector);
+    })
+    .catch((err) => {
+      updatesSupported = null; // try again next time
+      console.warn("registry: could not read bytecode", err instanceof Error ? err.message : err);
+      return false;
+    });
+  return updatesSupported;
+}
+
+export type RegistrySync = "sent" | "unsupported" | "not_registered" | "failed";
+
+/**
+ * Copies the creator's floor, tags and profile URI from the DB to the registry, so
+ * agents reading Arc (not our API) see the same market. Best-effort: the DB stays
+ * the source of truth for Attnn itself, and a failure never blocks a profile save.
+ */
+export async function syncRegistryProfile(userId: string): Promise<RegistrySync> {
+  try {
+    const profile = await db.query.profiles.findFirst({ where: eq(profiles.userId, userId) });
+    if (!profile?.isActive) return "not_registered";
+    if (!(await registrySupportsUpdates())) return "unsupported";
+    const wallet = await mainWallet(userId);
+    if (!wallet) return "failed";
+    await executeContractCall({
+      walletId: wallet.circleWalletId,
+      contractAddress: registryAddress()!,
+      abi: registryAbi,
+      functionName: "updateProfile",
+      args: [profile.minBid, profile.tags, profile.profileURI ?? ""],
+    });
+    return "sent";
+  } catch (err) {
+    console.error("registry: profile sync failed", { userId, error: err instanceof Error ? err.message : err });
+    return "failed";
+  }
 }

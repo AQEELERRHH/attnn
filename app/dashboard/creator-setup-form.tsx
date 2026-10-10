@@ -29,6 +29,8 @@ export function CreatorSetupForm({
   onCancel?: () => void;
 }) {
   const isEdit = !!existingProfile;
+  // The handle is stored in the AttnnRegistry on Arc and can't change once registered.
+  const handleLocked = existingProfile?.registration === "active" || existingProfile?.registration === "registering";
   const [handle, setHandle] = React.useState(existingProfile?.handle ?? "");
   const [minBid, setMinBid] = React.useState(
     existingProfile ? atomicToDollarInput(BigInt(existingProfile.minBid || "0")) : "5.00",
@@ -70,7 +72,8 @@ export function CreatorSetupForm({
     };
     try {
       if (isEdit) {
-        // Profile edits are DB-only; no on-chain re-registration needed.
+        // Saved to the DB; for a registered creator the server also copies the floor
+        // and tags to the registry on Arc (where the registry supports updates).
         const res = await fetch("/api/profile/update", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -78,7 +81,14 @@ export function CreatorSetupForm({
         });
         const data = await res.json().catch(() => ({}));
         if (data.success) {
-          toast({ title: "Market updated", variant: "success" });
+          toast(
+            data.registrySync === "failed"
+              ? {
+                  title: "Market updated",
+                  description: "Saved on Attnn. Your listing on Arc wasn't updated this time; bidding on Attnn. isn't affected.",
+                }
+              : { title: "Market updated", variant: "success" },
+          );
           onComplete();
         } else {
           setError(data.error ?? "Failed to update profile");
@@ -139,7 +149,21 @@ export function CreatorSetupForm({
           <label htmlFor="cs-handle" className={labelClass}>
             Handle
           </label>
-          <input id="cs-handle" className={fieldClass} placeholder="your-handle" value={handle} onChange={(e) => setHandle(e.target.value)} required />
+          <input
+            id="cs-handle"
+            className={fieldClass}
+            placeholder="your-handle"
+            value={handle}
+            onChange={(e) => setHandle(e.target.value)}
+            readOnly={handleLocked}
+            aria-describedby={handleLocked ? "cs-handle-hint" : undefined}
+            required
+          />
+          {handleLocked && (
+            <p id="cs-handle-hint" className="mt-1 text-xs text-text-secondary">
+              Registered on Arc, so it can&apos;t change.
+            </p>
+          )}
         </div>
         <div>
           <label htmlFor="cs-floor" className={labelClass}>
@@ -166,7 +190,7 @@ export function CreatorSetupForm({
             Tags (comma-separated)
           </label>
           <input id="cs-tags" className={fieldClass} placeholder="ai, crypto, design" value={tags} onChange={(e) => setTags(e.target.value)} />
-          <p className="mt-1 text-xs text-text-secondary">Bidder agents discover you by these.</p>
+          <p className="mt-1 text-xs text-text-secondary">Up to 10. Bidder agents discover you by these.</p>
         </div>
         <div>
           <label htmlFor="cs-avail" className={labelClass}>

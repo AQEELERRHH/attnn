@@ -95,7 +95,9 @@ export const wallets = pgTable("wallets", {
   // "main": the user's own wallet (manual bids, creator payouts, Send).
   // "agent": the bidder agent's separate wallet; the agent can only spend what the
   // user moves into it. At most one of each per user. See lib/wallets.ts.
-  purpose: text("purpose").$type<"main" | "agent">().default("main").notNull(),
+  // "legacy": an unused duplicate set aside by hand (never picked as main/agent,
+  // still found by walletByAddress for anything already tied to it).
+  purpose: text("purpose").$type<"main" | "agent" | "legacy">().default("main").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),

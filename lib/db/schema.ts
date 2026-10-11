@@ -172,6 +172,11 @@ export const bidderConfigs = pgTable("bidder_configs", {
   searchTags: text("search_tags").array().default([]).notNull(),
   defaultMessage: text("default_message"),
   isActive: boolean("is_active").default(false).notNull(),
+  /**
+   * Lock for the bidder agent: a run (or a counter re-bid) holds it until this time,
+   * so two at once can't both spend the daily budget. Migration 0008.
+   */
+  runLeaseUntil: timestamp("run_lease_until", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
@@ -374,4 +379,24 @@ export const verificationTokens = pgTable("verification_tokens", {
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
+});
+
+// ─── Rate limits ─────────────────────────────────────────────────────────────
+// Fixed-window counters (lib/rate-limit.ts). Serverless functions share no memory,
+// so the count lives here. Migration 0008.
+
+export const rateLimits = pgTable("rate_limits", {
+  key: text("key").primaryKey(),
+  windowStart: timestamp("window_start", { withTimezone: true }).notNull(),
+  count: integer("count").notNull(),
+});
+
+// ─── App settings ────────────────────────────────────────────────────────────
+// Switches the team can flip in Supabase without a redeploy, e.g. pausing new bids
+// (lib/app-settings.ts). Migration 0008.
+
+export const appSettings = pgTable("app_settings", {
+  key: text("key").primaryKey(),
+  value: jsonb("value").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });

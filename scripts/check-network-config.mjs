@@ -107,6 +107,31 @@ if (isAddr(escrow) && isAddr(registry)) {
   }
 }
 
+// ── Database (read-only) ──
+// Mainnet must start with a fresh database: a testnet wallet shown on mainnet would
+// receive real USDC its key can't move. Bids from other escrows would never settle.
+console.log("\nDatabase");
+if (env("DATABASE_URL")) {
+  const { default: postgres } = await import("postgres");
+  const sql = postgres(env("DATABASE_URL"), { prepare: false, max: 1, idle_timeout: 5, connect_timeout: 10 });
+  try {
+    const [w] = await sql`select count(*)::int as n from wallets where blockchain <> ${expected.circle}`;
+    w.n === 0 ? ok(`No wallets from another network`) : fail(`${w.n} wallet(s) are not on ${expected.circle}. Use a fresh database for this network`);
+    if (isAddr(escrow)) {
+      const [b] = await sql`select count(*)::int as n from bids where escrow_address is null or lower(escrow_address) <> ${escrow.toLowerCase()}`;
+      if (b.n === 0) ok("Every bid belongs to ATTN_ESCROW_CONTRACT");
+      else if (network === "mainnet") fail(`${b.n} bid(s) belong to another escrow. Use a fresh database for mainnet`);
+      else warn(`${b.n} bid(s) belong to other (legacy) escrows`);
+    }
+  } catch (err) {
+    fail(`Could not read the database: ${err.message}`);
+  } finally {
+    await sql.end({ timeout: 5 });
+  }
+} else {
+  warn("Database not checked (DATABASE_URL missing, reported above)");
+}
+
 console.log(`\nCircle blockchain for new wallets: ${expected.circle}`);
 console.log(failures ? `\n${failures} problem(s). Fix them before switching.\n` : "\nAll checks passed.\n");
 process.exit(failures ? 1 : 0);

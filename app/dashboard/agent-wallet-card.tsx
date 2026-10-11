@@ -9,6 +9,7 @@ import { toast } from "@/hooks/use-toast";
 import { atomicToDollarInput, dollarsToAtomic, formatMoney, shortAddress } from "@/lib/format";
 import { fieldClass } from "./creator-setup-form";
 import type { AgentPolicyInfo } from "./types";
+import { useRequestId } from "./use-request-id";
 
 /** Kept back for the transfer's own network fee (matches AGENT_WALLET_GAS_RESERVE). */
 const GAS_RESERVE = BigInt(50_000);
@@ -33,6 +34,7 @@ export function AgentWalletCard({ policy }: { policy: AgentPolicyInfo }) {
   const [busy, setBusy] = React.useState<null | "create" | "fund" | "withdraw">(null);
   const [amount, setAmount] = React.useState("");
   const agent = policy.agentWallet;
+  const requestId = useRequestId();
 
   async function create() {
     setBusy("create");
@@ -50,7 +52,8 @@ export function AgentWalletCard({ policy }: { policy: AgentPolicyInfo }) {
   async function move(action: "fund" | "withdraw") {
     setBusy(action);
     try {
-      await post({ action, amount });
+      await post({ action, amount, requestId: requestId.idFor(`${action}:${amount.trim()}`) });
+      requestId.done();
       toast({
         title: action === "fund" ? `Moving ${formatMoney(dollarsToAtomic(amount) ?? BigInt(0))} to your agent` : "Moving USDC back to your wallet",
         description: "Balances update in a few seconds.",

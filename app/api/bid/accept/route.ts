@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { sameOrigin } from "@/lib/http-guard";
+import { LIMITS, limitOrNull } from "@/lib/rate-limit";
 import { auth } from "@/lib/auth";
 import { BidError, submitSettlement } from "@/lib/bids";
 import { db } from "@/lib/db/client";
@@ -15,6 +17,8 @@ export async function POST(req: NextRequest) {
   try {
     const session = await auth();
     if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const blocked = sameOrigin(req) ?? (await limitOrNull(LIMITS.bidSettle, session.user.id));
+    if (blocked) return blocked;
 
     const body = await req.json().catch(() => null);
     const { bidId, reply } = (body ?? {}) as Record<string, unknown>;

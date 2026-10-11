@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import { sameOrigin, serverError } from "@/lib/http-guard";
+import { LIMITS, limitOrNull } from "@/lib/rate-limit";
 import { auth } from "@/lib/auth";
-import { transferUSDC } from "@/lib/circle";
+import { parseRequestId, transferUSDC } from "@/lib/circle";
 import { getUsdcBalance } from "@/lib/activation";
 import { formatUsd } from "@/lib/bid-rules";
 import { dollarsToAtomic } from "@/lib/format";
@@ -20,9 +22,11 @@ import { AGENT_WALLET_GAS_RESERVE, agentWallet, ensureAgentWallet, mainWallet } 
 export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const blocked = sameOrigin(req) ?? (await limitOrNull(LIMITS.walletAgent, session.user.id));
+  if (blocked) return blocked;
   const userId = session.user.id;
 
-  const body = (await req.json().catch(() => null)) as { action?: unknown; amount?: unknown } | null;
+  const body = (await req.json().catch(() => null)) as { action?: unknown; amount?: unknown; requestId?: unknown } | null;
   const action = body?.action;
 
   try {
@@ -36,6 +40,8 @@ export async function POST(req: NextRequest) {
     }
     const amount = dollarsToAtomic(String(body?.amount ?? ""));
     if (amount === null || amount <= BigInt(0)) return NextResponse.json({ error: "Enter an amount like 25" }, { status: 400 });
+    const requestId = parseRequestId(body?.requestId);
+    if (!requestId) return NextResponse.json({ error: "Missing request id. Please reload the page and try again." }, { status: 400 });
 
     const [main, agent] = await Promise.all([mainWallet(userId), agentWallet(userId)]);
     if (!main) return NextResponse.json({ error: "Wallet not found" }, { status: 404 });
@@ -57,10 +63,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const tx = await transferUSDC(from.circleWalletId, to.address, amount.toString());
+    // Same request id → same transfer: a double click or retry never moves the money twice.
+    const tx = await transferUSDC(from.circleWalletId, to.address, amount.toString(), `move:${userId}:${requestId}`);
     return NextResponse.json({ success: true, txId: tx.txId, amount: amount.toString() }, { status: 202 });
   } catch (err) {
-    console.error("wallet/agent:", err);
-    return NextResponse.json({ error: err instanceof Error ? err.message : "Something went wrong" }, { status: 500 });
+    return serverError("wallet/agent", err, "We couldn't confirm the transfer. Check your balances before trying again.");
   }
 }

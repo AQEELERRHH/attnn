@@ -1,3 +1,4 @@
+import { handleIs } from "@/lib/profiles";
 import { notFound } from "next/navigation";
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db/client";
@@ -15,7 +16,7 @@ export async function generateMetadata({ params }: { params: Promise<{ handle: s
 
 export default async function CreatorMarketPage({ params }: { params: Promise<{ handle: string }> }) {
   const { handle } = await params;
-  const profile = await db.query.profiles.findFirst({ where: eq(profiles.handle, handle) });
+  const profile = await db.query.profiles.findFirst({ where: handleIs(handle) });
   if (!profile) notFound();
 
   const now = Date.now();

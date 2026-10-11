@@ -11,7 +11,8 @@
 import { and, eq, inArray, isNotNull, isNull, lt } from "drizzle-orm";
 import { inngest } from "@/lib/inngest";
 import { db } from "@/lib/db/client";
-import { bids, wallets } from "@/lib/db/schema";
+import { walletByAddress } from "@/lib/wallets";
+import { bids } from "@/lib/db/schema";
 import { escrowAbi, publicClient, usdcAbi, USDC_ADDRESS } from "@/lib/arc";
 import {
   classifyTxState,
@@ -27,6 +28,8 @@ import { loadRegisteringUserIds, refreshRegistration } from "@/lib/registration"
 function waitFor(attempt: number): string {
   return attempt < 6 ? "2s" : "10s";
 }
+/** How many times a placement re-approves if other bids keep using its approval. */
+const APPROVAL_ROUNDS = 3;
 const MAX_CHECKS = 34; // ≈ 6×2s + 28×10s ≈ 5 minutes
 
 export const placeBid = inngest.createFunction(
@@ -45,6 +48,20 @@ export const placeBid = inngest.createFunction(
       // "failed" (auto-refund skips failed bids); leave it placing for the sweep,
       // which reads the real outcome from Circle and the chain.
       if (!row || row.bidTxHash) return;
+      // The id may simply not have been saved (e.g. the DB write after submitting
+      // failed). Ask Circle before claiming no USDC moved; if it can't answer, leave
+      // the bid placing for the sweep rather than risk failing an escrowed bid.
+      try {
+        const wallet = await walletByAddress(row.bidderUserId, row.bidderAddress);
+        const sent = wallet ? await findTransactionByRefId(wallet.circleWalletId, `place:${bidId}`, row.createdAt) : null;
+        if (sent) {
+          await db.update(bids).set({ bidTxHash: sent.txId }).where(and(eq(bids.id, bidId), eq(bids.status, "placing")));
+          return;
+        }
+      } catch (err) {
+        console.error(`placeBid onFailure: could not check Circle for ${bidId}; leaving it for the sweep`, err);
+        return;
+      }
       await failPlacement(bidId, `Placement stopped before submitting: ${error.message}. No USDC moved.`);
     },
   },
@@ -55,9 +72,7 @@ export const placeBid = inngest.createFunction(
     const bid = await step.run("load-bid", async () => {
       const row = await db.query.bids.findFirst({ where: eq(bids.id, bidId) });
       if (!row || row.status !== "placing" || !row.escrowAddress) return null;
-      const wallet = await db.query.wallets.findFirst({
-        where: and(eq(wallets.userId, row.bidderUserId), eq(wallets.address, row.bidderAddress)),
-      });
+      const wallet = await walletByAddress(row.bidderUserId, row.bidderAddress);
       if (!wallet) return { missingWallet: true as const };
       return {
         missingWallet: false as const,
@@ -78,81 +93,110 @@ export const placeBid = inngest.createFunction(
     }
 
     if (!bid.alreadySubmitted) {
-      // 1. Approve the escrow to pull exactly this amount, unless it already can.
-      const needsApproval = await step.run("check-allowance", async () => {
-        const allowance = await publicClient.readContract({
-          address: USDC_ADDRESS,
-          abi: usdcAbi,
-          functionName: "allowance",
-          args: [bid.bidder as `0x${string}`, bid.escrow as `0x${string}`],
-        });
-        return allowance < BigInt(bid.amount);
-      });
+      // Another bid from this wallet can use up our approval while this run sleeps
+      // (Inngest's per-bidder limit doesn't count sleeping runs). So the allowance is
+      // re-checked right before placing, and approved again if it was spent: up to
+      // APPROVAL_ROUNDS times, always for exactly this bid's amount.
+      let placed = false;
+      for (let round = 0; round < APPROVAL_ROUNDS && !placed; round++) {
+        // Round 0 keeps the original step ids and op key, so runs in flight during a deploy resume cleanly.
+        const sfx = round === 0 ? "" : `-r${round}`;
 
-      if (needsApproval) {
-        const approve = await step.run("submit-approve", () =>
-          executeContractCallOnce({
-            walletId: bid.walletId,
-            contractAddress: USDC_ADDRESS,
+        // 1. Approve the escrow to pull exactly this amount, unless it already can.
+        const needsApproval = await step.run(`check-allowance${sfx}`, async () => {
+          const allowance = await publicClient.readContract({
+            address: USDC_ADDRESS,
             abi: usdcAbi,
-            functionName: "approve",
-            args: [bid.escrow, bid.amount],
-            opKey: `approve:${bidId}`,
-          }),
-        );
-
-        let approved = false;
-        for (let i = 0; i < MAX_CHECKS; i++) {
-          const s = await step.run(`approve-status-${i}`, async () => {
-            const st = await getTransactionStatus(approve.txId);
-            return { outcome: classifyTxState(st.state), reason: describeTxFailure(st) };
+            functionName: "allowance",
+            args: [bid.bidder as `0x${string}`, bid.escrow as `0x${string}`],
           });
-          if (s.outcome === "complete") { approved = true; break; }
-          if (s.outcome === "failed") {
-            await step.run("fail-approve", () => failPlacement(bidId, `USDC approval ${s.reason}. No USDC moved.`));
-            return { failed: "approve" };
-          }
-          await step.sleep(`approve-wait-${i}`, waitFor(i));
-        }
-        if (!approved) {
-          await step.run("fail-approve-timeout", () =>
-            failPlacement(bidId, "USDC approval was still confirming after 5 minutes, so the bid was not placed. No USDC moved."),
-          );
-          return { failed: "approve timeout" };
-        }
-      }
-
-      // 2. Place the bid. The Circle id is stored in the same step so a retry
-      //    finds the same transaction (opKey) and records it again.
-      const submitted = await step.run("submit-place-bid", async () => {
-        // The sweep may have given up on this bid while it waited in the queue.
-        const current = await db.query.bids.findFirst({ where: eq(bids.id, bidId), columns: { status: true } });
-        if (current?.status !== "placing") return null;
-        const res = await executeContractCallOnce({
-          walletId: bid.walletId,
-          contractAddress: bid.escrow,
-          abi: escrowAbi,
-          functionName: "placeBid",
-          args: [bid.creator, bid.amount, bid.message, bid.isPrivate],
-          opKey: `place:${bidId}`,
+          return allowance < BigInt(bid.amount);
         });
-        const saved = await db
-          .update(bids)
-          .set({ bidTxHash: res.txId })
-          .where(and(eq(bids.id, bidId), eq(bids.status, "placing")))
-          .returning({ id: bids.id });
-        if (!saved.length) {
-          // The sweep failed the row between the check above and Circle accepting the
-          // call. placeBid WAS sent, so USDC may be escrowed: track it again instead of
-          // leaving a "failed" row that autoRefund would never claim.
-          await db
-            .update(bids)
-            .set({ status: "placing", bidTxHash: res.txId, failReason: null })
-            .where(and(eq(bids.id, bidId), eq(bids.status, "failed"), isNull(bids.bidTxHash)));
+
+        if (needsApproval) {
+          const approve = await step.run(`submit-approve${sfx}`, () =>
+            executeContractCallOnce({
+              walletId: bid.walletId,
+              contractAddress: USDC_ADDRESS,
+              abi: usdcAbi,
+              functionName: "approve",
+              args: [bid.escrow, bid.amount],
+              opKey: round === 0 ? `approve:${bidId}` : `approve:${bidId}:${round}`,
+            }),
+          );
+
+          let approved = false;
+          for (let i = 0; i < MAX_CHECKS; i++) {
+            const st = await step.run(`approve-status${sfx}-${i}`, async () => {
+              const t = await getTransactionStatus(approve.txId);
+              return { outcome: classifyTxState(t.state), reason: describeTxFailure(t) };
+            });
+            if (st.outcome === "complete") { approved = true; break; }
+            if (st.outcome === "failed") {
+              await step.run(`fail-approve${sfx}`, () => failPlacement(bidId, `USDC approval ${st.reason}. No USDC moved.`));
+              return { failed: "approve" };
+            }
+            await step.sleep(`approve-wait${sfx}-${i}`, waitFor(i));
+          }
+          if (!approved) {
+            await step.run(`fail-approve-timeout${sfx}`, () =>
+              failPlacement(bidId, "USDC approval was still confirming after 5 minutes, so the bid was not placed. No USDC moved."),
+            );
+            return { failed: "approve timeout" };
+          }
         }
-        return res.txId;
-      });
-      if (!submitted) return { skipped: "bid is no longer placing" };
+
+        // 2. Place the bid. The Circle id is stored in the same step so a retry
+        //    finds the same transaction (opKey) and records it again.
+        const submitted: unknown = await step.run(`submit-place-bid${sfx}`, async () => {
+          // The sweep may have given up on this bid while it waited in the queue.
+          const current = await db.query.bids.findFirst({ where: eq(bids.id, bidId), columns: { status: true } });
+          if (current?.status !== "placing") return { skipped: true as const };
+          // Re-check: another placement from this wallet may have used our approval.
+          const allowance = await publicClient.readContract({
+            address: USDC_ADDRESS,
+            abi: usdcAbi,
+            functionName: "allowance",
+            args: [bid.bidder as `0x${string}`, bid.escrow as `0x${string}`],
+          });
+          if (allowance < BigInt(bid.amount)) return { reapprove: true as const };
+          const res = await executeContractCallOnce({
+            walletId: bid.walletId,
+            contractAddress: bid.escrow,
+            abi: escrowAbi,
+            functionName: "placeBid",
+            args: [bid.creator, bid.amount, bid.message, bid.isPrivate],
+            opKey: `place:${bidId}`,
+          });
+          const saved = await db
+            .update(bids)
+            .set({ bidTxHash: res.txId })
+            .where(and(eq(bids.id, bidId), eq(bids.status, "placing")))
+            .returning({ id: bids.id });
+          if (!saved.length) {
+            // The sweep failed the row between the check above and Circle accepting the
+            // call. placeBid WAS sent, so USDC may be escrowed: track it again instead of
+            // leaving a "failed" row that autoRefund would never claim.
+            await db
+              .update(bids)
+              .set({ status: "placing", bidTxHash: res.txId, failReason: null })
+              .where(and(eq(bids.id, bidId), eq(bids.status, "failed"), isNull(bids.bidTxHash)));
+          }
+          return { txId: res.txId };
+        });
+        // A run memoized before this change returns the Circle id (string) or null.
+        if (submitted === null || (typeof submitted === "object" && submitted !== null && "skipped" in submitted)) {
+          return { skipped: "bid is no longer placing" };
+        }
+        if (typeof submitted === "object" && submitted !== null && "reapprove" in submitted) continue;
+        placed = true;
+      }
+      if (!placed) {
+        await step.run("fail-approval-spent", () =>
+          failPlacement(bidId, "Other bids from this wallet kept using the USDC approval, so this bid wasn't placed. No USDC moved. Try again."),
+        );
+        return { failed: "approval spent" };
+      }
     }
 
     // 3. Wait for COMPLETE, then read bidId from the receipt.
@@ -231,9 +275,9 @@ export const sweepInFlightBids = inngest.createFunction(
           // got saved (e.g. a crash right after submitting).
           const full = await db.query.bids.findFirst({ where: eq(bids.id, row.id) });
           const wallet = full
-            ? await db.query.wallets.findFirst({ where: and(eq(wallets.userId, full.bidderUserId), eq(wallets.address, full.bidderAddress)) })
+            ? await walletByAddress(full.bidderUserId, full.bidderAddress)
             : null;
-          const sent = wallet ? await findTransactionByRefId(wallet.circleWalletId, `place:${row.id}`) : null;
+          const sent = wallet && full ? await findTransactionByRefId(wallet.circleWalletId, `place:${row.id}`, full.createdAt) : null;
           if (!sent) {
             await failPlacement(row.id, "Placement never started. No USDC moved.");
             return "failed" as const;

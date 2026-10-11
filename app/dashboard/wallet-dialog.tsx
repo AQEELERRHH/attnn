@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Money } from "@/components/market";
 import { toast } from "@/hooks/use-toast";
 import { dollarsToAtomic, formatMoney, shortAddress } from "@/lib/format";
+import { useRequestId } from "./use-request-id";
 
 const field =
   "focus-ring w-full rounded-lg border border-border-bright bg-arc-bg-0 px-3 py-2.5 text-sm text-text-primary placeholder:text-text-dim";
@@ -19,6 +20,7 @@ export function WalletDialog({ address, balanceUsdc, isTestnet }: { address: str
   const [to, setTo] = React.useState("");
   const [amount, setAmount] = React.useState("");
   const [sending, setSending] = React.useState(false);
+  const requestId = useRequestId();
 
   const atomic = dollarsToAtomic(amount);
   const validTo = /^0x[0-9a-fA-F]{40}$/.test(to.trim());
@@ -38,10 +40,11 @@ export function WalletDialog({ address, balanceUsdc, isTestnet }: { address: str
       const res = await fetch("/api/wallet/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ to: to.trim(), amount: amount.trim() }),
+        body: JSON.stringify({ to: to.trim(), amount: amount.trim(), requestId: requestId.idFor(`send:${to.trim().toLowerCase()}:${amount.trim()}`) }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.success) {
+        requestId.done();
         toast({ title: "Transfer submitted", description: `${formatMoney(atomic)} to ${shortAddress(to.trim())}`, variant: "success" });
         setTo("");
         setAmount("");

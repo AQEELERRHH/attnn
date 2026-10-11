@@ -1,11 +1,14 @@
 import { db } from "./db/client";
 import { bids, agentLogs, profiles, bidderConfigs, wallets } from "./db/schema";
+import { arc } from "./chain";
 import { evaluateCreatorForBidder } from "./ai";
 import { isActiveOnRegistry } from "./registration";
 import { BidError, createBidIntent } from "./bids";
 import { ESCROW_MIN_BID, formatUsd, resolveAgentBidAmount } from "./bid-rules";
 import { getUsdcBalance } from "./activation";
 import { agentWallet } from "./wallets";
+import { acquireAgentLease, releaseAgentLease } from "./agent-lease";
+import { bidsPaused } from "./app-settings";
 import { eq, and, gte, inArray, ne, sql } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
 
@@ -41,6 +44,25 @@ export async function spentToday(userId: string): Promise<bigint> {
  * so it no longer sleeps between calls or holds a Vercel function open.
  */
 export async function runBidderAgent(userId: string): Promise<AgentRunResult> {
+  // One run per user at a time, or two could each spend the whole daily budget.
+  const lease = await acquireAgentLease(userId);
+  if (!lease) {
+    const hasConfig = await db.query.bidderConfigs.findFirst({ where: eq(bidderConfigs.userId, userId), columns: { id: true } });
+    return {
+      bidsPlaced: 0,
+      creatorsFound: 0,
+      errors: [hasConfig ? "Another agent run is already in progress" : "Bidder config not active"],
+      logId: "",
+    };
+  }
+  try {
+    return await runBidderAgentHoldingLease(userId);
+  } finally {
+    await releaseAgentLease(userId, lease).catch((err) => console.error("agent: could not release lease", err));
+  }
+}
+
+async function runBidderAgentHoldingLease(userId: string): Promise<AgentRunResult> {
   const errors: string[] = [];
   let bidsPlaced = 0;
   let creatorsFound = 0;
@@ -50,6 +72,11 @@ export async function runBidderAgent(userId: string): Promise<AgentRunResult> {
     if (!config || !config.isActive) {
       await logAgentAction(userId, "agent_stopped", { reason: "Config not active" });
       return { bidsPlaced: 0, creatorsFound: 0, errors: ["Bidder config not active"], logId: "" };
+    }
+
+    if (await bidsPaused()) {
+      await logAgentAction(userId, "agent_stopped", { reason: "New bids are paused for maintenance" });
+      return { bidsPlaced: 0, creatorsFound: 0, errors: ["New bids are paused"], logId: "" };
     }
 
     const budget = BigInt(config.dailyBudget);
@@ -109,7 +136,13 @@ export async function runBidderAgent(userId: string): Promise<AgentRunResult> {
       ? await db
           .select({ userId: wallets.userId, address: wallets.address })
           .from(wallets)
-          .where(and(inArray(wallets.userId, matches.map((m) => m.profile.userId)), eq(wallets.purpose, "main")))
+          .where(
+            and(
+              inArray(wallets.userId, matches.map((m) => m.profile.userId)),
+              eq(wallets.purpose, "main"),
+              eq(wallets.blockchain, arc.circleBlockchain),
+            ),
+          )
       : [];
     const walletByUser = new Map(walletRows.map((w) => [w.userId, w.address]));
 

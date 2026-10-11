@@ -63,12 +63,6 @@ function safeJsonParse(json: string): Record<string, unknown> {
 
 // ─── Score Schemas ───────────────────────────────────────────────────────────
 
-const ScoreForCreatorSchema = z.object({
-  score: z.number().min(0).max(10),
-  recommendation: z.enum(["accept", "reject", "review"]),
-  reason: z.string().max(500),
-});
-
 const EvaluateCreatorForBidderSchema = z.object({
   score: z.number().min(0).max(10),
   bidAmount: z.string(),
@@ -97,35 +91,6 @@ export interface CreatorProfile {
 
 // ─── AI Functions ────────────────────────────────────────────────────────────
 
-export async function scoreBidForCreator(
-  bid: BidData,
-  creatorProfile: CreatorProfile,
-): Promise<z.infer<typeof ScoreForCreatorSchema>> {
-  const systemPrompt = `You are an AI scoring agent for a creator attention marketplace. 
-Score incoming bids on a scale of 0-10 based on:
-1. Bid amount relative to creator's minimum (minBid)
-2. Message quality and relevance
-3. Likelihood of meaningful engagement
-
-Respond with JSON: { "score": number, "recommendation": "accept"|"reject"|"review", "reason": string }`;
-
-  const prompt = JSON.stringify({ bid, creatorProfile });
-
-  try {
-    const raw = await callAI(prompt, systemPrompt);
-    const parsed = safeJsonParse(raw);
-    return ScoreForCreatorSchema.parse(parsed);
-  } catch {
-    const bidAmount = BigInt(bid.amountUsdc);
-    const minBid = BigInt(creatorProfile.minBid);
-    const score = bidAmount >= minBid * BigInt(2) ? 7 : bidAmount >= minBid ? 5 : 2;
-    return {
-      score,
-      recommendation: score >= 7 ? "accept" as const : score >= 5 ? "review" as const : "reject" as const,
-      reason: `Bid of ${bid.amountUsdc} USDC vs minimum ${creatorProfile.minBid} USDC. ${score >= 7 ? "Above threshold." : score >= 5 ? "Meets minimum." : "Below minimum."}`,
-    };
-  }
-}
 
 /**
  * Scores how well a creator fits the bidder's goal.

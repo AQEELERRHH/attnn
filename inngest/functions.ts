@@ -1,10 +1,12 @@
 import { inngest } from "@/lib/inngest";
 import { db } from "@/lib/db/client";
 import { bids } from "@/lib/db/schema";
-import { eq, and, lt, gt, isNull, isNotNull, inArray, ne, sql, gte } from "drizzle-orm";
+import { eq, and, lt, gt, isNull, isNotNull, inArray } from "drizzle-orm";
 import { BidError, createBidIntent, declineReplacedBid, submitSettlement } from "@/lib/bids";
 import { applyVerdict, classifyOpenRows, findOrphans, indexOnChainBids, loadClosedRows, loadOpenRows, reopenOrphan } from "@/lib/reconcile";
 import { REFUND_PERIOD_MS } from "@/lib/bid-rules";
+import { AgentBusyError, acquireAgentLease, releaseAgentLease } from "@/lib/agent-lease";
+import { spentToday } from "@/lib/agent";
 import { escrowAddress } from "@/lib/chain";
 import { confirmRegistration, confirmSettlement, listUnsyncedPendingBids, placeBid, sweepInFlightBids } from "./bid-lifecycle";
 
@@ -358,6 +360,16 @@ export const handleCounterOffer = inngest.createFunction(
       if (bid.status !== "counter_offered" || bid.settlementTxHash) {
         return { decision: "skip", reason: `Original bid is ${bid.settlementTxHash ? "settling" : bid.status}` };
       }
+      // A re-bid already met one counter: never climb again (the counter route refuses
+      // this too), or a creator could ratchet the price up to the bidder's cap.
+      if (bid.replacesBidId) return { decision: "skip", reason: "Counter on a re-bid; not answered" };
+      // Only the agent's own bids are answered from the agent wallet. A bid the user
+      // placed by hand is theirs to answer.
+      const { agentWallet } = await import("@/lib/wallets");
+      const agentW = await agentWallet(bidderUserId);
+      if (!agentW || agentW.address.toLowerCase() !== bid.bidderAddress.toLowerCase()) {
+        return { decision: "skip", reason: "Bid wasn't placed by the agent" };
+      }
 
       // Same policy as the agent's own bids: a paused agent doesn't bid, and a counter
       // above the bidder's per-creator cap is declined (the original still refunds).
@@ -366,16 +378,14 @@ export const handleCounterOffer = inngest.createFunction(
       if (counterAmount > BigInt(config.maxBidPerCreator)) {
         return { decision: "reject", reason: "Counter offer is above your max bid per creator" };
       }
-      const today = new Date();
-      today.setUTCHours(0, 0, 0, 0);
-      const [spentRow] = await db
-        .select({ total: sql<string>`COALESCE(SUM(CAST(${bids.amountUsdc} AS BIGINT)), 0)` })
-        .from(bids)
-        .where(and(eq(bids.bidderUserId, bidderUserId), gte(bids.createdAt, today), ne(bids.status, "failed")));
-      const remaining = BigInt(config.dailyBudget) - BigInt(spentRow?.total ?? "0");
-      if (counterAmount > remaining) return { decision: "reject", reason: "Counter offer exceeds remaining daily budget" };
-
+      // Same lock as an agent run: the budget read and the re-bid must not interleave
+      // with another spend. Busy → throw, and Inngest retries in a moment.
+      const lease = await acquireAgentLease(bidderUserId);
+      if (!lease) throw new AgentBusyError();
       try {
+        const spent = await spentToday(bidderUserId);
+        const remaining = BigInt(config.dailyBudget) - spent;
+        if (counterAmount > remaining) return { decision: "reject", reason: "Counter offer exceeds remaining daily budget" };
         const intent = await createBidIntent({
           bidderUserId,
           creatorUserId: bid.creatorUserId,
@@ -388,6 +398,8 @@ export const handleCounterOffer = inngest.createFunction(
       } catch (err) {
         if (err instanceof BidError) return { decision: "reject", reason: err.message };
         throw err;
+      } finally {
+        await releaseAgentLease(bidderUserId, lease).catch(() => {});
       }
     });
 

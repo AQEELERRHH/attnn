@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { sameOrigin } from "@/lib/http-guard";
+import { LIMITS, limitOrNull } from "@/lib/rate-limit";
 import { eq } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db/client";
@@ -16,6 +18,8 @@ const ROLES = new Set(["bidder", "creator", "both"]);
 export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const blocked = sameOrigin(req) ?? (await limitOrNull(LIMITS.profileWrite, session.user.id));
+  if (blocked) return blocked;
 
   const body = (await req.json().catch(() => null)) as { action?: unknown; role?: unknown } | null;
   const action = body?.action;

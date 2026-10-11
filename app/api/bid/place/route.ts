@@ -1,8 +1,9 @@
+import { handleIs } from "@/lib/profiles";
 import { NextRequest, NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
+import { sameOrigin } from "@/lib/http-guard";
+import { LIMITS, limitOrNull } from "@/lib/rate-limit";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db/client";
-import { profiles } from "@/lib/db/schema";
 import { BidError, createBidIntent } from "@/lib/bids";
 
 /**
@@ -14,6 +15,8 @@ export async function POST(req: NextRequest) {
   try {
     const session = await auth();
     if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const blocked = sameOrigin(req) ?? (await limitOrNull(LIMITS.bidPlace, session.user.id));
+    if (blocked) return blocked;
 
     const body = await req.json().catch(() => null);
     const { creatorHandle, amountUsdc, message, isPrivate } = (body ?? {}) as Record<string, unknown>;
@@ -24,7 +27,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Message must be text under 2000 characters" }, { status: 400 });
     }
 
-    const creatorProfile = await db.query.profiles.findFirst({ where: eq(profiles.handle, creatorHandle) });
+    const creatorProfile = await db.query.profiles.findFirst({ where: handleIs(creatorHandle) });
     if (!creatorProfile) return NextResponse.json({ error: "Creator not found" }, { status: 404 });
 
     const bid = await createBidIntent({

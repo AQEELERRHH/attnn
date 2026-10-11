@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { sameOrigin, serverError } from "@/lib/http-guard";
+import { LIMITS, limitOrNull } from "@/lib/rate-limit";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db/client";
 import { bids } from "@/lib/db/schema";
@@ -10,6 +12,8 @@ export async function POST(req: NextRequest) {
   try {
     const session = await auth();
     if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const blocked = sameOrigin(req) ?? (await limitOrNull(LIMITS.bidSettle, session.user.id));
+    if (blocked) return blocked;
 
     const { bidId, counterOfferAmount } = await req.json();
 
@@ -22,6 +26,10 @@ export async function POST(req: NextRequest) {
     if (bid.creatorUserId !== session.user.id) return NextResponse.json({ error: "Only the creator can counter this bid" }, { status: 403 });
     if (bid.status !== "pending") return NextResponse.json({ error: "Bid already processed" }, { status: 400 });
     if (bid.settlementTxHash) return NextResponse.json({ error: "This bid is already being settled" }, { status: 409 });
+    // A re-bid already pays your counter price; countering again could ratchet the bidder up.
+    if (bid.replacesBidId) {
+      return NextResponse.json({ error: "This bid already meets your counter price. Reply to it or decline it." }, { status: 400 });
+    }
 
     const amount = parseAtomicUsdc(counterOfferAmount);
     if (amount === null || amount < ESCROW_MIN_BID || amount > ESCROW_MAX_BID) {
@@ -55,6 +63,6 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ success: true, bidId, counterOfferAmount: amount.toString() });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : "Failed" }, { status: 500 });
+    return serverError("bid/counter", err, "Couldn't send the counter-offer. Please try again.");
   }
 }

@@ -149,7 +149,16 @@ async function handle(body: {
     decoded.eventName === "BidAccepted" ? "accepted" : decoded.eventName === "BidRejected" ? "rejected" : "refunded";
   const updated = await db
     .update(bids)
-    .set({ status: finalStatus, settlementOnChainTxHash: txHash ?? null, settledAt: new Date() })
+    .set({
+      status: finalStatus,
+      settlementOnChainTxHash: txHash ?? null,
+      settledAt: new Date(),
+      settlementTxHash: null,
+      settlementAction: null,
+      failReason: null,
+      // The reply in the log is the one the bidder paid for.
+      ...(decoded.eventName === "BidAccepted" ? { reply: decoded.args.reply || null } : {}),
+    })
     .where(and(eq(bids.id, bid.id), inArray(bids.status, [...SETTLEABLE])))
     .returning({ id: bids.id });
   return { event: decoded.eventName, updated: updated.length };

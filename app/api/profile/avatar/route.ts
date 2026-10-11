@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { sameOrigin } from "@/lib/http-guard";
+import { LIMITS, limitOrNull } from "@/lib/rate-limit";
 import { eq } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db/client";
@@ -17,16 +19,18 @@ import {
  *   POST   multipart "file"            → upload a photo (JPG/PNG/WebP, ≤512 KB after resizing)
  *   DELETE                             → remove; the market shows their initial
  */
-async function requireProfile() {
+async function requireProfile(req: NextRequest) {
   const session = await auth();
   if (!session?.user?.id) return { error: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
+  const blocked = sameOrigin(req) ?? (await limitOrNull(LIMITS.upload, session.user.id));
+  if (blocked) return { error: blocked };
   const profile = await db.query.profiles.findFirst({ where: eq(profiles.userId, session.user.id) });
   if (!profile) return { error: NextResponse.json({ error: "Create your creator profile first" }, { status: 404 }) };
   return { userId: session.user.id };
 }
 
 export async function POST(req: NextRequest) {
-  const ctx = await requireProfile();
+  const ctx = await requireProfile(req);
   if ("error" in ctx) return ctx.error;
   if (!avatarStorageConfigured()) {
     return NextResponse.json({ error: "Photo upload isn't set up yet: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY need to be set." }, { status: 503 });
@@ -54,8 +58,8 @@ export async function POST(req: NextRequest) {
   }
 }
 
-export async function DELETE() {
-  const ctx = await requireProfile();
+export async function DELETE(req: NextRequest) {
+  const ctx = await requireProfile(req);
   if ("error" in ctx) return ctx.error;
   await deleteAvatar(ctx.userId).catch((err) => console.warn("avatar delete failed:", err));
   await db.update(profiles).set({ avatarUrl: null }).where(eq(profiles.userId, ctx.userId));

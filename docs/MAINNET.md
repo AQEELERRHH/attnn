@@ -55,8 +55,10 @@ key is a LIVE key and that mock payments are off. It prints no secrets.
 - [ ] New `DATABASE_URL` (see Data) and fresh Inngest keys if using a separate Inngest app
 
 ## 4. Data
-- [ ] Mainnet starts with a fresh database (or a clean `bids` table): testnet bids,
-      wallets and x402 receipts don't carry over. Decide before switching.
+- [ ] Mainnet starts with a **fresh database** (a new Supabase project). Not just a clean `bids`
+      table: testnet wallets in it would be shown to users, and real USDC sent to them is stuck.
+      The preflight check fails if any wallet or bid belongs to another network. Testnet bids,
+      wallets and x402 receipts don't carry over.
 
 ## 5. Outside agents with Circle Agent Wallets (build during the switch)
 Circle Agent Wallets are user-controlled and run from Circle CLI with email OTP, so they

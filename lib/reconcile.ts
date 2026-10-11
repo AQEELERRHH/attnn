@@ -206,12 +206,18 @@ export function findOrphans(index: Record<string, OnChainEntry[]>, claimed: Set<
   return report;
 }
 
-/** Closed rows without a settlement transaction, for these bidders. */
+const RECOVERABLE_CLOSED: (typeof bids.$inferSelect)["status"][] = ["accepted", "rejected", "refunded", "failed"];
+
+/**
+ * Closed rows without a settlement transaction, for these bidders. "failed" is
+ * included: a placement wrongly marked failed may still have escrowed USDC, and
+ * autoRefund never claims failed rows, so recovery has to find them here.
+ */
 export async function loadClosedRows(bidders: string[]): Promise<ClosedRow[]> {
   if (!bidders.length) return [];
   const rows = await db.query.bids.findMany({
     where: and(
-      inArray(bids.status, ["accepted", "rejected", "refunded"]),
+      inArray(bids.status, RECOVERABLE_CLOSED),
       isNull(bids.settlementOnChainTxHash),
       inArray(sql`lower(${bids.bidderAddress})`, bidders.map(lower)),
     ),
@@ -238,7 +244,7 @@ export async function reopenOrphan(r: OrphanReport["reopen"][number]): Promise<"
         settlementAction: null,
         failReason: null,
       })
-      .where(and(eq(bids.id, r.rowId), inArray(bids.status, ["accepted", "rejected", "refunded"]), isNull(bids.settlementOnChainTxHash)))
+      .where(and(eq(bids.id, r.rowId), inArray(bids.status, RECOVERABLE_CLOSED), isNull(bids.settlementOnChainTxHash)))
       .returning({ id: bids.id });
     return res.length ? "updated" : "skipped";
   } catch {

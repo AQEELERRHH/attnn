@@ -24,7 +24,7 @@ export type RegistrationState = "active" | "registering" | "failed" | "none";
 
 const RESERVED = "reserved:";
 /** A reservation older than this never reached Circle (the request died mid-send). */
-const STALE_RESERVATION_MS = 2 * 60 * 1000;
+const STALE_RESERVATION_MS = 10 * 60 * 1000;
 
 type ProfileRow = typeof profiles.$inferSelect;
 

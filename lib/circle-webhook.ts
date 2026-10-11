@@ -14,6 +14,12 @@ function publicKeyEndpoint(keyId: string): string {
 
 // A public key is static for its key id, so keys are cached for the lifetime of the process.
 const publicKeyCache = new Map<string, KeyObject>();
+// Key ids Circle said it doesn't know (404) are remembered for a while, so forged ids
+// can't make every request call Circle and use up the API key's rate limit, which bid
+// transactions depend on. Other failures (network, 5xx) are not cached.
+const UNKNOWN_KEY_TTL_MS = 10 * 60 * 1000;
+const unknownKeyIds = new Map<string, number>();
+const KEY_ID_RE = /^[A-Za-z0-9-]{1,64}$/;
 
 interface PublicKeyResponse {
   data?: {
@@ -27,6 +33,12 @@ interface PublicKeyResponse {
 async function getPublicKey(keyId: string): Promise<KeyObject | null> {
   const cached = publicKeyCache.get(keyId);
   if (cached) return cached;
+  if (!KEY_ID_RE.test(keyId)) {
+    console.warn("Circle webhook: malformed key id");
+    return null;
+  }
+  const unknownAt = unknownKeyIds.get(keyId);
+  if (unknownAt !== undefined && Date.now() - unknownAt < UNKNOWN_KEY_TTL_MS) return null;
 
   const apiKey = process.env.CIRCLE_API_KEY;
   if (!apiKey) {
@@ -41,6 +53,10 @@ async function getPublicKey(keyId: string): Promise<KeyObject | null> {
     });
     if (!res.ok) {
       console.error(`Circle webhook: public key request for ${keyId} failed with status ${res.status}`);
+      if (res.status === 404 || res.status === 400) {
+        if (unknownKeyIds.size > 1000) unknownKeyIds.clear();
+        unknownKeyIds.set(keyId, Date.now());
+      }
       return null;
     }
     body = (await res.json()) as PublicKeyResponse;

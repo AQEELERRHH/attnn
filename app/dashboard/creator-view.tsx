@@ -609,7 +609,7 @@ function InboxRow({
                 Reply · collect {formatMoney(bid.amountUsdc)}
               </Button>
             )}
-            {!countered && !replaces && !windowPassed && (
+            {!countered && !bid.replacesBidId && !windowPassed && (
               <Button size="sm" variant="outline" onClick={() => setMode("counter")} disabled={!!busy}>
                 Counter
               </Button>

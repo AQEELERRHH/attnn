@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { sameOrigin, serverError } from "@/lib/http-guard";
+import { LIMITS, limitOrNull } from "@/lib/rate-limit";
 import { ensureAgentWallet } from "@/lib/wallets";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db/client";
@@ -20,6 +22,21 @@ function validate(body: Record<string, unknown>): string | null {
     const v = body.minFitScore;
     if (typeof v !== "number" || !Number.isInteger(v) || v < 0 || v > 10) return "Min fit score must be a whole number from 0 to 10";
   }
+  const text = (key: string, label: string, max: number) => {
+    const v = body[key];
+    if (v === undefined || v === null) return null;
+    if (typeof v !== "string") return `${label} must be text`;
+    return v.length > max ? `${label} can be at most ${max} characters` : null;
+  };
+  // The default message is written on-chain with every agent bid, so it stays short.
+  const textError =
+    text("defaultMessage", "Default bid message", 500) ?? text("goal", "Goal", 500) ?? text("agentName", "Agent name", 60);
+  if (textError) return textError;
+  if (body.searchTags !== undefined) {
+    const t = body.searchTags;
+    if (!Array.isArray(t) || t.some((x) => typeof x !== "string" || x.length > 32)) return "Search tags must be words of up to 32 characters";
+    if (t.length > 20) return "Use at most 20 search tags";
+  }
   return null;
 }
 
@@ -27,11 +44,21 @@ export async function POST(req: NextRequest) {
   try {
     const session = await auth();
     if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const blocked = sameOrigin(req) ?? (await limitOrNull(LIMITS.profileWrite, session.user.id));
+    if (blocked) return blocked;
 
-    const body = await req.json();
-    const invalid = validate(body ?? {});
+    const body = ((await req.json().catch(() => null)) ?? {}) as Record<string, unknown>;
+    const invalid = validate(body);
     if (invalid) return NextResponse.json({ error: invalid }, { status: 400 });
-    const { goal, dailyBudget, searchTags, minFitScore, defaultMessage, agentName, maxBidPerCreator } = body;
+    // Types are guaranteed by validate().
+    const goal = body.goal as string | null | undefined;
+    const searchTags = body.searchTags as string[] | undefined;
+    const minFitScore = body.minFitScore as number | undefined;
+    const defaultMessage = body.defaultMessage as string | null | undefined;
+    const agentName = body.agentName as string | null | undefined;
+    // Stored as canonical atomic strings (validate() already checked them).
+    const dailyBudget = body.dailyBudget === undefined ? undefined : parseAtomicUsdc(body.dailyBudget)!.toString();
+    const maxBidPerCreator = body.maxBidPerCreator === undefined ? undefined : parseAtomicUsdc(body.maxBidPerCreator)!.toString();
 
     // Check if already exists
     const existing = await db.query.bidderConfigs.findFirst({ where: eq(bidderConfigs.userId, session.user.id) });
@@ -68,6 +95,6 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ config, success: true });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : "Failed to create bidder config" }, { status: 500 });
+    return serverError("bidder-config/create", err, "Couldn't save your agent settings. Please try again.");
   }
 }

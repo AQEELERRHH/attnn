@@ -241,6 +241,7 @@ export async function reopenOrphan(r: OrphanReport["reopen"][number]): Promise<"
         onChainBidId: r.onChainBidId,
         settledAt: null,
         settlementTxHash: null,
+        settlementSubmittedAt: null,
         settlementAction: null,
         failReason: null,
       })

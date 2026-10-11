@@ -10,4 +10,5 @@ CREATE TABLE IF NOT EXISTS "rate_limits" (
 	"count" integer NOT NULL
 );
 --> statement-breakpoint
-ALTER TABLE "bidder_configs" ADD COLUMN "run_lease_until" timestamp with time zone;
+ALTER TABLE "bidder_configs" ADD COLUMN IF NOT EXISTS "run_lease_until" timestamp with time zone;--> statement-breakpoint
+ALTER TABLE "bids" ADD COLUMN IF NOT EXISTS "settlement_submitted_at" timestamp with time zone;

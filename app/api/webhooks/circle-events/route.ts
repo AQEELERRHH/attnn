@@ -154,6 +154,7 @@ async function handle(body: {
       settlementOnChainTxHash: txHash ?? null,
       settledAt: new Date(),
       settlementTxHash: null,
+      settlementSubmittedAt: null,
       settlementAction: null,
       failReason: null,
       // The reply in the log is the one the bidder paid for.

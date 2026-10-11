@@ -225,6 +225,8 @@ export const bids = pgTable("bids", {
     .defaultNow()
     .notNull(),
   settledAt: timestamp("settled_at", { withTimezone: true }),
+  /** When the current settlement was reserved/sent (null when none is in flight). Migration 0008. */
+  settlementSubmittedAt: timestamp("settlement_submitted_at", { withTimezone: true }),
   counterOfferAmount: text("counter_offer_amount"),
   onChainTxHash: text("on_chain_tx_hash"),
   settlementOnChainTxHash: text("settlement_on_chain_tx_hash"),

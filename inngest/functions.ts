@@ -407,7 +407,42 @@ export const handleCounterOffer = inngest.createFunction(
   },
 );
 
+// ─── Money health check ──────────────────────────────────────────────────────
+// Hourly quick checks; the full escrow check (reads every bid on Arc) once a day at
+// 06:40 UTC. Read-only. Emails ALERT_EMAIL when anything needs a person (lib/health.ts,
+// docs/RUNBOOK.md). Run it by hand: send "attnn/admin.health-check" with { "full": true }.
+export const moneyHealthCheck = inngest.createFunction(
+  { id: "money-health-check", name: "Money Health Check", concurrency: 1, retries: 2 },
+  [{ cron: "40 * * * *" }, { event: "attnn/admin.health-check" }],
+  async ({ event, step }) => {
+    const { quickHealthCheck, fullHealthCheck } = await import("@/lib/health");
+    const { sendAlert } = await import("@/lib/alerts");
+    const manualFull = (event?.data as { full?: boolean } | undefined)?.full === true;
+    const full = manualFull || new Date().getUTCHours() === 6;
+
+    const quick = await step.run("quick", () => quickHealthCheck());
+    const daily = full ? await step.run("full", () => fullHealthCheck()) : { problems: [], notes: [] };
+    const problems = [...quick.problems, ...daily.problems];
+    const notes = [...quick.notes, ...daily.notes];
+
+    if (problems.length) {
+      await step.run("alert", () =>
+        sendAlert(`${problems.length} money problem(s) need attention`, [
+          ...problems.map((p) => `PROBLEM: ${p}`),
+          ...notes.map((n) => `note: ${n}`),
+          "",
+          "What to do: docs/RUNBOOK.md in the attnn repo.",
+        ]),
+      );
+    } else if (manualFull) {
+      await step.run("all-clear", () => sendAlert("Health check passed", notes.length ? notes : ["No problems found."]));
+    }
+    return { full, problems, notes };
+  },
+);
+
 export const functions = [
+  moneyHealthCheck,
   autoRefund,
   activityFeed,
   bidExpiryNotification,

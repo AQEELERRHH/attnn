@@ -1,5 +1,5 @@
 {
-  "id": "270e47a5-11c4-4cbf-a8ff-c83d59864e44",
+  "id": "819bbda1-a281-4523-be89-084ae73d17a0",
   "prevId": "b3866caf-6f2d-4263-b169-aa19c7ac84bf",
   "version": "7",
   "dialect": "postgresql",
@@ -450,6 +450,12 @@
         },
         "settled_at": {
           "name": "settled_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "settlement_submitted_at": {
+          "name": "settlement_submitted_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false

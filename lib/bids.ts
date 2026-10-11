@@ -396,6 +396,7 @@ async function reconcileFromEscrow(bid: BidRow): Promise<boolean> {
       status: finalStatus,
       settledAt: new Date(),
       settlementTxHash: null,
+      settlementSubmittedAt: null,
       settlementAction: null,
       failReason: null,
       ...(chainTxHash ? { settlementOnChainTxHash: chainTxHash } : {}),
@@ -538,6 +539,7 @@ export async function submitSettlement(params: {
         .update(bids)
         .set({
           settlementTxHash: sentinel,
+          settlementSubmittedAt: new Date(),
           settlementAction: action,
           failReason: null,
           // The reply is saved with the reservation, so the text in the database is
@@ -570,7 +572,7 @@ export async function submitSettlement(params: {
     if (!sent) {
       await db
         .update(bids)
-        .set({ settlementTxHash: null, settlementAction: null, ...CLEAR_REPLY(action) })
+        .set({ settlementTxHash: null, settlementSubmittedAt: null, settlementAction: null, ...CLEAR_REPLY(action) })
         .where(and(eq(bids.id, bid.id), eq(bids.settlementTxHash, reservation)));
       throw err;
     }
@@ -625,7 +627,7 @@ export async function finalizeSettlement(bidId: string): Promise<SettlementOutco
     if (!sent) {
       const released = await db
         .update(bids)
-        .set({ settlementTxHash: null, settlementAction: null, ...CLEAR_REPLY(action) })
+        .set({ settlementTxHash: null, settlementSubmittedAt: null, settlementAction: null, ...CLEAR_REPLY(action) })
         .where(and(eq(bids.id, bid.id), eq(bids.settlementTxHash, circleTxId)))
         .returning({ id: bids.id });
       return released.length ? "failed" : "noop";
@@ -646,6 +648,7 @@ export async function finalizeSettlement(bidId: string): Promise<SettlementOutco
       .update(bids)
       .set({
         settlementTxHash: null,
+        settlementSubmittedAt: null,
         settlementAction: null,
         settlementAttempt: sql`${bids.settlementAttempt} + 1`,
         failReason: `${action} failed: ${describeTxFailure(status)}`.slice(0, 500),
@@ -667,6 +670,7 @@ export async function finalizeSettlement(bidId: string): Promise<SettlementOutco
         .update(bids)
         .set({
           settlementTxHash: null,
+          settlementSubmittedAt: null,
           settlementAction: null,
           settlementAttempt: sql`${bids.settlementAttempt} + 1`,
           failReason: `${action} reverted on-chain`,

@@ -22,7 +22,7 @@ Known issues are tracked privately in `KNOWN_ISSUES.local.md` (gitignored, never
 | DB | Supabase Postgres + Drizzle ORM (`postgres-js` driver, `prepare: false`) | Schema: `lib/db/schema.ts`. `drizzle.config.ts` loads `.env.local` |
 | Chain | Arc, selected by `ARC_NETWORK` (testnet 5042002 default, mainnet 5042), viem for reads | Network config in `lib/chain.ts`; ABIs and USDC helpers in `lib/arc.ts` |
 | Wallets | Circle Developer-Controlled Wallets SDK (EOA) | All bid money moves go through `lib/bids.ts`, which uses `executeContractCallOnce` in `lib/circle.ts` |
-| AI | AISA (OpenAI-compatible, `deepseek-chat`) via raw `fetch` | `lib/ai.ts`. Every scorer has a rule-based fallback |
+| AI | AISA (OpenAI-compatible, `deepseek-chat`) via raw `fetch` | `lib/ai.ts`. The creator agent has a rule-based fallback; the bidder agent places no bids when the AI is down |
 | Jobs | Inngest | Client in `lib/inngest.ts`, functions in `inngest/functions.ts`, served at `/api/inngest` |
 | Payments | x402 v2 with Circle Gateway batching (`@circle-fin/x402-batching`) | `lib/x402.ts` |
 | Hosting | Vercel (auto-deploys on push to `main`) | |
@@ -32,17 +32,22 @@ Known issues are tracked privately in `KNOWN_ISSUES.local.md` (gitignored, never
 ```bash
 npm run dev            # next dev
 npm run build          # next build (runs type-check + lint, fails on either)
-npm run lint           # next lint (flat config via FlatCompat, see eslint.config.mjs)
-npx tsc --noEmit       # type-check (required after every change)
+npm run lint           # next lint over app, components, lib, inngest, hooks (flat config via FlatCompat)
+npx tsc --noEmit       # type-check (required after every change); `npm run typecheck` also checks tests/
 npm run db:generate    # drizzle-kit generate (safe, writes ./drizzle)
 npm run db:studio      # drizzle-kit studio
-npm test               # playwright (no tests are checked in yet)
+npm test               # unit + integration tests (see tests/README.md); integration needs TEST_DATABASE_URL (local Postgres only)
+npm run test:unit      # pure rules, no DB
+npm run test:integration  # money paths against a real Postgres with Circle/Arc/Inngest faked
+npm run test:e2e       # playwright (no e2e tests yet)
 npm run test:contracts # forge test (Foundry; 31 tests incl. fuzz + re-entrancy). First time: npm run setup:contracts (installs forge-std into contracts/lib, gitignored)
 node --env-file=<file> scripts/check-network-config.mjs  # READ-ONLY preflight: env ⇄ deployed contracts (see docs/MAINNET.md)
 # ASK FIRST: db:push, db:migrate, deploy:contracts
 ```
 
-`eslint.config.mjs` loads `next/core-web-vitals` and `next/typescript` through `FlatCompat`, because `eslint-config-next@15.1.0` only ships legacy eslintrc configs. By default `next lint` only covers `app/`, `components/`, `lib/`, `pages/` and `src/`. **`inngest/` and `hooks/` are not linted.**
+`eslint.config.mjs` loads `next/core-web-vitals` and `next/typescript` through `FlatCompat`, because `eslint-config-next@15.1.0` only ships legacy eslintrc configs. `npm run lint` passes `--dir` for `app`, `components`, `lib`, `inngest` and `hooks`.
+
+**CI** (`.github/workflows/ci.yml`) runs on every PR: typecheck (app + tests), lint, unit tests, integration tests (Postgres service) and Foundry tests. Every change to a money path needs a test in `tests/integration/` that fails without it (see `tests/README.md`).
 
 ## Folder structure
 
@@ -64,11 +69,7 @@ app/
     bidder-config/create               upsert bidder agent config
     bid/{place,accept,reject,counter,rate}  escrow actions (manual/UI path); rate = bidder's 👍/👎 on a paid reply
     agent/run                          run the bidder agent once, on demand
-    agent/score                        ad-hoc AI scoring (not used by the UI)
-    agent/stream                       SSE of agent_logs (not used by the UI)
-    voice/parse                        AI voice-command parser (not used by the UI)
     c/[handle]                         x402-gated creator profile JSON API
-    x402/access                        stub, simulated only
     inngest/                           Inngest serve endpoint
     webhooks/circle-events             Circle contract event logs → syncs on-chain bid IDs/status (important)
     webhooks/circle, webhooks/arc      store events for idempotency; mostly no-ops beyond that
@@ -76,11 +77,16 @@ app/
 inngest/functions.ts                   all Inngest functions (see below)
 lib/
   agent.ts      runBidderAgent() (bidder agent) + legacy autoAcceptBid() (unused)
-  ai.ts         callAI, evaluateCreatorForBidder, triageBidForCreator, scoreBidForCreator, draftReply
+  ai.ts         callAI, evaluateCreatorForBidder, triageBidForCreator, draftReply
   arc.ts        arcTestnet chain, usdcAbi/registryAbi/escrowAbi, publicClient, parseUsdc/formatUsdc
   circle.ts     getSDK (fresh client per call), provisionUserWallet, executeContractCall, transferUSDC
   circle-webhook.ts  verifyCircleSignature(): ECDSA verification of Circle notifications
   x402.ts       gate(): 402 challenge + BatchFacilitatorClient verify/settle
+  http-guard.ts sameOrigin() (CSRF: refuse cross-site POSTs), serverError() (log details, show a plain message)
+  rate-limit.ts DB-backed fixed-window limits (rate_limits table); LIMITS per action; fails open on DB errors
+  agent-lease.ts one bidder-agent spend per user at a time (bidder_configs.run_lease_until)
+  app-settings.ts bids_paused switch (app_settings table); read errors count as paused
+  health.ts     quickHealthCheck / fullHealthCheck (read-only); alerts.ts emails ALERT_EMAIL
   auth.ts       NextAuth config + Session type augmentation
   db/           schema.ts (10 tables), client.ts (global-cached connection in dev)
   profiles.ts   getFullProfileByHandle
@@ -88,6 +94,8 @@ lib/
 components/ui/  Radix/shadcn primitives
 components/market/  market design system (see below); reference page app/design/
 contracts/      Foundry project: src/AttnnEscrow.sol, src/AttnnRegistry.sol, test/, script/Deploy.s.sol
+tests/          unit/ (pure rules) + integration/ (real Postgres, fakes in helpers/fakes.mts); see tests/README.md
+docs/           MAINNET.md (switch checklist), RUNBOOK.md (pause switch, alerts, incidents)
 ```
 
 ## Market design system (`components/market/`)
@@ -115,6 +123,14 @@ Part of the dashboard, not a separate tour. Copy is plain English for people new
 - **Help menu** (`help-menu.tsx`, dashboard header): welcome guide, checklist, `/about#agent-safety`, FAQ, faucet (testnet only).
 - **Network-aware money copy**: faucet links and "Arc Testnet" steps show only when `arc.network === "testnet"` (passed down as `isTestnet`); on mainnet the wallet dialog and funding card say to send **USDC on Arc** only.
 
+## Security and operations
+
+- **Every state-changing route** starts: session check → `sameOrigin(req) ?? limitOrNull(LIMITS.<action>, userId)`. Unexpected errors go through `serverError(context, err, message)`: users never see Circle, database or stack text. Known errors (`BidError`, `RegistrationError`) keep their message.
+- **Validation**: amounts with `parseAtomicUsdc`/`validate*` in `lib/bid-rules.ts`; handles with `validateHandle` (lower-cased, unique ignoring case; look up with `handleIs()` from `lib/profiles.ts`); profile text with `validateProfileFields`; tags with `normalizeTags`. `profile/update` only pauses/resumes the agent (`bidderActive`); agent budgets and caps are set only via `bidder-config/create`, which validates them.
+- **Pause switch**: `app_settings.bids_paused = true` stops new bids, agent runs and counter re-bids within 15 s (cached); settlements keep working. SQL in `docs/RUNBOOK.md`.
+- **Sign-in**: magic links last 1 hour; at most 5 emails per address per hour.
+- **Health check and alerts**: see Other Inngest functions and `docs/RUNBOOK.md`.
+
 ## Data model essentials
 
 - **USDC amounts are stored as `text` in atomic units (6 decimals)**: `"1000000"` = $1. Handle them with `BigInt`, never float math. Bid limits and helpers live in `lib/bid-rules.ts` (`ESCROW_MIN_BID` from `NEXT_PUBLIC_ESCROW_MIN_BID_USDC`, which **must equal the deployed escrow's `MIN_BID`**: unset = $5 for the current testnet contract; the contract source and mainnet deployment use **$1**, as does the registry's creator-floor check. `ESCROW_MAX_BID` $1,000, `validateBidAmount`, `resolveAgentBidAmount`, `formatUsd`). Arc's *native* gas balance has 18 decimals; the app only uses the 6-decimal ERC-20 view.
@@ -128,7 +144,8 @@ Part of the dashboard, not a separate tour. Copy is plain English for people new
 - `bidTxHash` / `settlementTxHash` hold **Circle transaction ids**; `onChainTxHash` / `settlementOnChainTxHash` hold chain hashes.
 - Earnings, volume and anything shown as money moved must count only `accepted` (settled on-chain) bids; spend/budget counts everything except `failed`.
 - `agent_logs.action` is a pg enum, so new actions need a schema change plus a migration (ask before pushing).
-- **Wallets** (`lib/wallets.ts`): each user has a `main` wallet and, once they use the bidder agent, an `agent` wallet (`wallets.purpose`, unique per user + purpose, migration 0006; a duplicate wallet set aside by hand is `legacy` and is never picked as main or agent). **Never look a wallet up by userId alone**: user actions, creator registration/payouts and Send use `mainWallet()`; the bidder agent and counter re-bids bid with `createBidIntent({ fromAgentWallet: true })`; settling a bid uses `walletByAddress(userId, bid.bidderAddress | bid.creatorAddress)`, so an agent bid's refund goes back to the agent wallet. The agent stops ("agent_stopped") if it has no agent wallet or less than the minimum bid in it. `POST /api/wallet/agent` `{action: "create" | "fund" | "withdraw", amount}` (user session only) creates it or moves USDC main ⇄ agent, keeping $0.05 behind for the transfer's gas. `bidder-config/create` creates the agent wallet best-effort. Shown on the Agent tab (`agent-wallet-card.tsx`) and as the first Spending policy line. This caps what a buggy agent can spend; it does not protect against a compromised Attnn server (Attnn holds both keys).
+- Migration 0008: `bids.settlement_submitted_at` (set when a settlement is reserved, cleared with it; the health check uses it), `bidder_configs.run_lease_until` (agent lease), `rate_limits`, `app_settings`. Migration 0009 turns on Row Level Security for every table with no policies: Supabase's REST API (anon key) can read nothing; the app connects as the table owner, which RLS doesn't restrict. **Every new table needs `ENABLE ROW LEVEL SECURITY` in its migration.**
+- **Wallets** (`lib/wallets.ts`): each user has a `main` wallet and, once they use the bidder agent, an `agent` wallet (`wallets.purpose`, unique per user + purpose, migration 0006; a duplicate wallet set aside by hand is `legacy` and is never picked as main or agent). Lookups return only wallets on the current network (`wallets.blockchain = arc.circleBlockchain`), so a testnet wallet can never be shown on mainnet; mainnet uses a fresh database and the preflight fails otherwise. **Never look a wallet up by userId alone**: user actions, creator registration/payouts and Send use `mainWallet()`; the bidder agent and counter re-bids bid with `createBidIntent({ fromAgentWallet: true })`; settling a bid uses `walletByAddress(userId, bid.bidderAddress | bid.creatorAddress)`, so an agent bid's refund goes back to the agent wallet. The agent stops ("agent_stopped") if it has no agent wallet or less than the minimum bid in it. `POST /api/wallet/agent` `{action: "create" | "fund" | "withdraw", amount}` (user session only) creates it or moves USDC main ⇄ agent, keeping $0.05 behind for the transfer's gas. Every USDC transfer (`wallet/send`, `wallet/agent`) needs a browser-generated `requestId` (UUID, `useRequestId()` in `app/dashboard/use-request-id.ts`); `transferUSDC(…, opKey)` makes it Circle's idempotency key, so a double click or retry can't pay twice. `bidder-config/create` creates the agent wallet best-effort. Shown on the Agent tab (`agent-wallet-card.tsx`) and as the first Spending policy line. This caps what a buggy agent can spend; it does not protect against a compromised Attnn server (Attnn holds both keys).
 - One `profile` and one `bidder_config` per user (both are `unique` on `userId`). `profiles.minBid` is never below `ESCROW_MIN_BID` (validated in the profile routes). Tags go through `normalizeTags` (`lib/profile-rules.ts`: trimmed, lower-cased, de-duplicated, at most 10 of ≤32 chars, the registry's limit). The handle can't change once registration is active or in flight (it's stored in the registry). `profiles.avatarUrl` is the market photo (see Market design system).
 
 ## How on-chain writes work (Circle)
@@ -143,11 +160,11 @@ Contracts (addresses from env): **AttnnRegistry** (`registerCreator`, `getCreato
 
 1. **Creator onboarding:** `wallet/provision` creates the Circle wallet. `profile/create` writes the DB row (inactive). `profile/activate` → `submitRegistration()` (`lib/registration.ts`) sends `registerCreator` from the creator's wallet (reserving first, so a double click can't send two) and returns `status: "registering"`. `isActive` is set **only once `isActiveCreator(wallet)` is true on the registry**, by the `confirmRegistration` job (`attnn/creator.registering`) or the 10-minute sweep. A failed transaction sets `profiles.registrationError` (migration 0004) and the creator can retry. State: `registrationState()` → active / registering / failed / none. Later edits to floor, tags or profile URI by a registered creator call `syncRegistryProfile()` (best-effort `updateProfile` from the main wallet; the route returns `registrySync`), but only if `registrySupportsUpdates()` finds `updateProfile` in the deployed registry's bytecode: the original testnet registry has no such function, registries deployed from current source (mainnet) do.
 2. **Place bid** (`/api/bid/place`, bidder agent, counter handler) → `createBidIntent()`: validates amount vs floor/limits and the bidder's USDC balance, inserts a `placing` row with `escrowAddress`, sends `attnn/bid.requested`, returns **202**.
-3. **`placeBid` job** (concurrency 1 per bidder, since `approve` overwrites the allowance): `approve` if the allowance is short → wait for `COMPLETE` → `placeBid` → wait → `finalizePlacement()` reads `BidPlaced` from the receipt (filtered to this escrow + bidder + creator) → `pending` with `onChainBidId`, then sends `attnn/bid.placed` for creator triage. Any Circle failure/revert → `failed`. Its `onFailure` never fails a bid whose `placeBid` was already submitted.
-4. **Accept / reject / refund** → `submitSettlement()`: checks the actor, resolves the bid's escrow (`resolveBidEscrow`, so legacy bids settle in the old contract), checks the on-chain bid (`getBid` must match bidder/creator/amount; still Pending; inside/after **that contract's** `REFUND_PERIOD`, 3 days now, 14 in the original) and the wallet, then **reserves** the bid (`settlementAction` + a `reserved:<ms>` sentinel in `settlementTxHash`) before sending, so two different settlements can't both reach Circle. It then sends the call, swaps the sentinel for the Circle id and sends `attnn/settlement.submitted`. A failed settlement re-reads the escrow (`reconcileFromEscrow`) in case another transaction already settled it; a reservation older than 5 min is resolved by `refId` lookup or released. **`confirmSettlement` job** → `finalizeSettlement()` sets the final status once `COMPLETE`.
-5. **Counter** (`/api/bid/counter`, creator only, $5–$1,000 and > original) sets `counter_offered` (DB-only, USDC still escrowed) and sends `attnn/counter.received`; the bidder agent may place a **new** bid at that amount with `replacesBidId` = the original (one re-bid per original, unique index). When the re-bid is escrowed, `notifyBidEscrowed` also sends `attnn/rebid.escrowed` and `declineReplacedBid()` rejects the original from the creator's wallet, so the bidder's USDC isn't locked twice; if it can't (already settled, window passed, no gas) the original still refunds via `autoRefund`. A creator can accept a countered bid at its original price **unless** a live re-bid (placing/pending/counter_offered/accepted) stands in for it.
+3. **`placeBid` job** (concurrency 1 per bidder, since `approve` overwrites the allowance; Inngest doesn't count sleeping runs, hence the allowance re-check in 7): `approve` if the allowance is short → wait for `COMPLETE` → `placeBid` → wait → `finalizePlacement()` reads `BidPlaced` from the receipt (filtered to this escrow + bidder + creator) → `pending` with `onChainBidId`, then sends `attnn/bid.placed` for creator triage. Any Circle failure/revert → `failed`. Its `onFailure` never fails a bid whose `placeBid` was already submitted.
+4. **Accept / reject / refund** → `submitSettlement()`: checks the actor, resolves the bid's escrow (`resolveBidEscrow`, so legacy bids settle in the old contract), checks the on-chain bid (`getBid` must match bidder/creator/amount; still Pending; inside/after **that contract's** `REFUND_PERIOD`, 3 days now, 14 in the original) and the wallet, then **reserves** the bid (`settlementAction` + a `reserved:<ms>` sentinel in `settlementTxHash`, plus the reply for an accept) before sending, so two different settlements can't both reach Circle. The reservation runs in a transaction holding `SELECT … FOR UPDATE` on the bid row; an accept of a countered bid is refused there if a live re-bid exists, and `createBidIntent` takes the same lock (and requires the original still `counter_offered` with no settlement) before inserting a re-bid, so a bidder can never pay for both. A retried reservation sends the reply saved with it; a released or failed accept clears the reply. It then sends the call, swaps the sentinel for the Circle id and sends `attnn/settlement.submitted`. A failed settlement re-reads the escrow (`reconcileFromEscrow`) in case another transaction already settled it; a reservation older than 5 min is resolved by `refId` lookup or released. **`confirmSettlement` job** → `finalizeSettlement()` sets the final status once `COMPLETE` **and** Circle reports the chain hash with a successful receipt (no hash → still in flight). `reconcileFromEscrow` and the `circle-events` fallback record the settling transaction's hash and, for accepts, the on-chain reply.
+5. **Counter** (`/api/bid/counter`, creator only, $5–$1,000 and > original; a re-bid can't be countered) sets `counter_offered` (DB-only, USDC still escrowed) and sends `attnn/counter.received`; the bidder agent may place a **new** bid at that amount with `replacesBidId` = the original (one re-bid per original, unique index). When the re-bid is escrowed, `notifyBidEscrowed` also sends `attnn/rebid.escrowed` and `declineReplacedBid()` rejects the original from the creator's wallet, so the bidder's USDC isn't locked twice; if it can't (already settled, window passed, no gas) the original still refunds via `autoRefund`. A creator can accept a countered bid at its original price **unless** a live re-bid (placing/pending/counter_offered/accepted) stands in for it.
 6. **3-day refund:** `autoRefund` (hourly at :17) calls `submitSettlement(refund)` from the bidder's wallet for `pending`/`counter_offered` bids older than 3 days + 30 min. Status becomes `refunded` only when the claim completes.
-7. **Backstops:** `sweepInFlightBids` (every 10 min) finishes `placing` bids and in-flight settlements whose job ran out of time; a `placing` bid with no Circle id after 30 min is checked by `refId` before being failed. Circle webhooks (below) finish them immediately when a transaction reaches a terminal state.
+7. **Backstops:** `sweepInFlightBids` (every 10 min) finishes `placing` bids and in-flight settlements whose job ran out of time; a `placing` bid with no Circle id after 30 min is checked by `refId` before being failed (and so is a placement whose job gave up: `placeBid`'s `onFailure`). `findTransactionByRefId(wallet, refId, since?)` pages back through the wallet's transactions by time window (Circle can't filter by refId; up to 2,500), so a busy agent wallet can't hide a submitted bid. `placeBid` re-checks the USDC allowance right before `placeBid` and re-approves (exact amount, up to 3 rounds) if another bid from the wallet used it while this run slept. Circle webhooks (below) finish them immediately when a transaction reaches a terminal state.
 8. **Repair / audit:** `node --env-file=.env.local scripts/reconcile-bids.mjs` — READ-ONLY report comparing the DB with the escrow (phantoms, unproven accepts, status mismatches).
 9. **Repair open bids (manual):** send `attnn/admin.reconcile-bids` from the Inngest dashboard. `{}` = dry run (report only); `{ "apply": true }` = links NULL-escrow / wrong-id rows to their real on-chain bid and marks rows with no on-chain bid in any known escrow as `failed` ("never escrowed"). It also finds bids still **Pending on-chain** that no open row owns ("orphans", e.g. rows marked accepted before the settlement fix with no settlement tx) and reopens the matching closed row as `pending` so autoRefund / the creator can settle it; on-chain bids with no row at all are reported as `unmatchedOnChain`. Indexes every bid of every known escrow (1..`getBidCount`). Logic in `lib/reconcile.ts` (`classifyOpenRows`, `findOrphans` are pure). Skips bids with a settlement in flight. `submitSettlement` also writes the escrow's final status (`reconcileFromEscrow`) when it finds a bid already settled on-chain.
 
@@ -155,9 +172,9 @@ Contracts (addresses from env): **AttnnRegistry** (`registerCreator`, `getCreato
 
 ### Bidder agent (proactive): `runBidderAgent(userId)` in `lib/agent.ts`
 
-Triggered by the `runActiveBidders` Inngest cron (`*/30 * * * *`, rechecks `isActive` per user) or on demand via `/api/agent/run`.
+Triggered by the `runActiveBidders` Inngest cron (`*/30 * * * *`, rechecks `isActive` per user) or on demand via `/api/agent/run`. Each run holds the user's **agent lease** (`acquireAgentLease` in `lib/agent-lease.ts`, 10 min, released in `finally`); a second run while one holds it does nothing ("already in progress"), so two can't both spend the daily budget. `handleCounterOffer` takes the same lease around its budget check and re-bid (busy → throws, Inngest retries).
 
-1. Loads `bidder_configs`. Stops if it's inactive.
+1. Loads `bidder_configs`. Stops if it's inactive, or if new bids are paused (`bidsPaused()`).
 2. Daily budget: sums today's (UTC) `bids.amount_usdc` for this bidder, **excluding `failed`**. Stops if the total is ≥ `dailyBudget`.
 3. Discovery: active DB profiles whose **current** tags overlap `searchTags` (case-insensitive, best overlap first; the DB is the source of truth: the original testnet registry can't update tags, and on registries that can, the sync is best-effort), excluding self, paused markets and any creator already bid on today (failed attempts count, so an unaffordable creator isn't retried every run). Each candidate must pass `registry.isActiveCreator(wallet)` on Arc (`isActiveOnRegistry` in `lib/registration.ts`); stops at 10 verified.
 4. Scores them with `evaluateCreatorForBidder`, keeps `proceed && score >= minFitScore`. It returns `null` when the AI fails, and **there is no fallback**: an unscored creator is skipped, never bid on blind. If no creator could be scored the run logs `agent_stopped` ("AI unavailable") and places nothing. The AI's `bidAmount` is only a hint: `resolveAgentBidAmount` clamps it to [creator floor, min(`maxBidPerCreator`, $1,000)] and skips creators whose floor is above the cap. Top 5 by score.
@@ -175,11 +192,11 @@ Triggered by `attnn/bid.placed`, which is sent only **after** the bid is escrowe
 
 ### Counter-offer handler: `handleCounterOffer`
 
-Triggered by `attnn/counter.received`. Skips if the original is no longer `counter_offered` or is settling, or if the bidder's agent is paused; declines counters above `maxBidPerCreator`. If the counter fits the bidder's remaining daily budget, it calls `createBidIntent({ …, replacesBidId })` for a **new** bid at the counter amount (placed by the `placeBid` job like any other; a retry returns the same re-bid). The original stays `counter_offered` until `declineReplacedBidJob` (`attnn/rebid.escrowed`) releases it, the creator settles it, or `autoRefund` claims it.
+Triggered by `attnn/counter.received`. Skips if the original is no longer `counter_offered` or is settling, if it is itself a re-bid (no ratcheting), if it wasn't placed from the agent wallet (a bid placed by hand is the user's to answer), or if the bidder's agent is paused; declines counters above `maxBidPerCreator`. If the counter fits the bidder's remaining daily budget, it calls `createBidIntent({ …, replacesBidId })` for a **new** bid at the counter amount (placed by the `placeBid` job like any other; a retry returns the same re-bid). The original stays `counter_offered` until `declineReplacedBidJob` (`attnn/rebid.escrowed`) releases it, the creator settles it, or `autoRefund` claims it.
 
 ### Other Inngest functions
 
-`activityFeed` (`arc/bid.placed`, placeholder no-op), `bidExpiryNotification` (daily 02:00 UTC, logs bids refunding within 24h). `placeBid`, `confirmSettlement`, `confirmRegistration` and `sweepInFlightBids` live in `inngest/bid-lifecycle.ts`. `declineReplacedBidJob` and `reconcileOpenBidsJob` live in `inngest/functions.ts`. All twelve are exported in the `functions` array.
+`activityFeed` (`arc/bid.placed`, placeholder no-op), `bidExpiryNotification` (daily 02:00 UTC, logs bids refunding within 24h), `moneyHealthCheck` (hourly at :40 quick checks, full escrow-vs-database check daily 06:40 UTC or on `attnn/admin.health-check` `{ "full": true }`; read-only; emails `ALERT_EMAIL` via `lib/alerts.ts`; what each alert means is in `docs/RUNBOOK.md`). `placeBid`, `confirmSettlement`, `confirmRegistration` and `sweepInFlightBids` live in `inngest/bid-lifecycle.ts`. `declineReplacedBidJob` and `reconcileOpenBidsJob` live in `inngest/functions.ts`. All thirteen are exported in the `functions` array.
 
 ## x402 flow (`GET /api/c/[handle]`)
 
@@ -193,7 +210,7 @@ Triggered by `attnn/counter.received`. Skips if the original is no longer `count
    - `X402_MOCK=1` (local only): any header accepted, receipt `transaction: "mock"`.
 4. Paid responses carry a **`PAYMENT-RESPONSE`** header (base64 `{ success, transaction, network, payer, amount }`, read by `GatewayClient.pay()`) and the same receipt as `payment` in the JSON body, plus the profile (`handle, bio, tags, openTo, availabilityStatus, minBid, isActive, market`).
 
-`GET /api/x402/receipts` is a public proof endpoint: totals and the latest 20 Gateway receipts. `scripts/x402-demo.mjs` is the buyer-side proof: `BUYER_PRIVATE_KEY=0x… node scripts/x402-demo.mjs <handle> [--deposit 0.10] [--base URL]` uses `GatewayClient` on `arcTestnet` (testnet key; fund it from the faucet, deposit into Gateway once), or on `arc` with `--mainnet` (real USDC: a fresh key with a few dollars). `@circle-fin/x402-batching` 3.5.0 supports Arc mainnet (Gateway wallet `0x7777…00eE`, as in `lib/chain.ts`). `/api/x402/access` is a separate stub that only simulates access.
+`GET /api/x402/receipts` is a public proof endpoint: totals and the latest 20 Gateway receipts. `scripts/x402-demo.mjs` is the buyer-side proof: `BUYER_PRIVATE_KEY=0x… node scripts/x402-demo.mjs <handle> [--deposit 0.10] [--base URL]` uses `GatewayClient` on `arcTestnet` (testnet key; fund it from the faucet, deposit into Gateway once), or on `arc` with `--mainnet` (real USDC: a fresh key with a few dollars). `@circle-fin/x402-batching` 3.5.0 supports Arc mainnet (Gateway wallet `0x7777…00eE`, as in `lib/chain.ts`).
 
 ## Webhooks
 

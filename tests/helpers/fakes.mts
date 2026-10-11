@@ -162,6 +162,8 @@ const fakePublicClient = {
           ? [b.bidder, b.creator, b.amount, b.message, b.reply, b.status, b.createdAt]
           : [zero, zero, BigInt(0), "", "", 0, BigInt(0)];
       }
+      case "getBidCount":
+        return BigInt(world.escrowBids.size);
       case "REFUND_PERIOD":
         return world.refundPeriodSeconds;
       case "isActiveCreator":

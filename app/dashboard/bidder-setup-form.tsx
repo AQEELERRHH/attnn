@@ -40,7 +40,7 @@ export function BidderSetupForm({
   React.useEffect(() => {
     setCodeSentTo(null);
     setCode("");
-  }, [dailyBudget, maxBid]);
+  }, [dailyBudget, maxBid, searchTags, minFitScore, goal]);
 
   const budget = dollarsToAtomic(dailyBudget);
   const cap = dollarsToAtomic(maxBid);
@@ -222,7 +222,7 @@ export function BidderSetupForm({
             sentTo={codeSentTo}
             value={code}
             onChange={setCode}
-            reason="Raising your agent's daily budget or per-creator maximum needs your approval."
+            reason="Raising your agent's budget or per-creator maximum, or changing which creators it bids on, needs your approval."
           />
         )}
         {error && (

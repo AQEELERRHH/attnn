@@ -46,7 +46,7 @@ import {
 } from "./bid-rules";
 import { inngest } from "./inngest";
 import { PAUSED_MESSAGE, bidsPaused } from "./app-settings";
-import { assertWithinAllowance, lockAllowance } from "./withdrawals";
+import { assertWithinAllowance, lockAllowance, type ApproveOverAllowance } from "./withdrawals";
 
 export type BidRow = typeof bids.$inferSelect;
 export type SettlementAction = "accept" | "reject" | "refund";
@@ -79,10 +79,12 @@ export interface BidIntentInput {
    */
   fromAgentWallet?: boolean;
   /**
-   * The user approved going over the shared 24-hour allowance with an emailed code
-   * (lib/withdrawals.ts). Only for bids placed by hand from the main wallet.
+   * Bids placed by hand: asked only if this bid is over the shared 24-hour allowance,
+   * with its exact amount (lib/withdrawals.ts approveWithCode consumes the emailed code).
    */
-  overAllowanceApproved?: boolean;
+  approveOverAllowance?: ApproveOverAllowance;
+  /** Bids placed by hand: makes a retried request return the same bid (bids.request_key). */
+  requestKey?: string;
 }
 
 /**
@@ -170,8 +172,16 @@ export async function createBidIntent(input: BidIntentInput): Promise<BidRow> {
       // allowance (D4), checked and recorded under the same per-user lock as sends.
       await db.transaction(async (tx) => {
         await lockAllowance(tx, input.bidderUserId);
-        await assertWithinAllowance(tx, input.bidderUserId, amount, { approved: input.overAllowanceApproved, canConfirm: true });
-        return tx.insert(bids).values(values).returning();
+        if (input.requestKey) {
+          const already = await tx.query.bids.findFirst({ where: eq(bids.requestKey, input.requestKey) });
+          if (already) {
+            if (already.bidderUserId !== input.bidderUserId) throw new BidError("Invalid request id. Reload the page and try again.");
+            existed = true;
+            return [already];
+          }
+        }
+        await assertWithinAllowance(tx, input.bidderUserId, amount, { approve: input.approveOverAllowance, canConfirm: true });
+        return tx.insert(bids).values({ ...values, requestKey: input.requestKey ?? null }).returning();
       })
     : replacesBidId
     ? // A re-bid locks the countered original and only goes ahead while it is still

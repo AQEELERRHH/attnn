@@ -1,5 +1,5 @@
 {
-  "id": "9d1e15a9-3b62-40b6-80c3-13c15100b75f",
+  "id": "ac2f0d4c-4695-4525-aefb-db5146f442c5",
   "prevId": "b6d47750-74a6-46cb-bc10-636519fe19c1",
   "version": "7",
   "dialect": "postgresql",
@@ -423,6 +423,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "request_key": {
+          "name": "request_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "suggested_reply": {
           "name": "suggested_reply",
           "type": "text",
@@ -652,7 +658,15 @@
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
+      "uniqueConstraints": {
+        "bids_request_key_unique": {
+          "name": "bids_request_key_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "request_key"
+          ]
+        }
+      },
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false

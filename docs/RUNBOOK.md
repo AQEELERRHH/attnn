@@ -49,9 +49,9 @@ The **Money Health Check** job (Inngest) runs every hour, plus a full escrow che
 ## Money leaving a wallet (the daily allowance)
 
 - At most **$500 can leave a main wallet in any 24 hours**, counting sends, bids placed by hand and moves into the agent wallet together (`DAILY_ALLOWANCE` in `lib/withdrawals.ts`; changing it is a code change). Moving USDC back from the agent wallet doesn't count, nor do the agent's own bids.
-- Sends never go over it. A bid or agent top-up over it, raising the agent's daily budget or per-creator cap, and the first send to a new address each need a 6-digit code emailed to the account.
+- Sends never go over it. A bid or agent top-up over it, raising the agent's daily budget or per-creator cap, changing which creators the agent bids on, and the first send to a new address each need a 6-digit code emailed to the account.
 - **No email service, no codes**: if Resend is down, only actions within the allowance to known addresses work. Nothing is lost.
-- Every send emails the account a notice. A user who gets one, or a code, they didn't ask for: treat it as a stolen session. Sign them out everywhere (`delete from sessions where user_id = '…';`) and pause bids if more accounts are affected.
+- Every send and agent top-up emails the account a notice. A user who gets one, or a code, they didn't ask for: treat it as a stolen session. Sign them out everywhere (`delete from sessions where user_id = '…';`) and pause bids if more accounts are affected.
 - A user who can't get a code: check Resend's logs for their address. Never read a code out to anyone, and never add rows to `withdrawal_addresses` by hand unless you've confirmed the user's identity outside the app.
 - What counted: `select created_at, kind, to_address, amount_usdc, status from withdrawals where user_id = '…' order by created_at desc;` plus their bids placed from the main wallet. `sending` = may have gone through, still counts; `failed` = Circle refused it, nothing moved.
 

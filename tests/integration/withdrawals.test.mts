@@ -52,7 +52,8 @@ const postTo = (url: string, body: unknown) =>
     headers: { "content-type": "application/json", host: "localhost:3000", origin: "http://localhost:3000" },
     body: JSON.stringify(body),
   });
-const bid = (amountUsdc: string, code?: string) => bidRoute.POST(postTo("/api/bid/place", { creatorHandle: "amina", amountUsdc, message: "hi", ...(code ? { code } : {}) }));
+const bid = (amountUsdc: string, code?: string, requestId = crypto.randomUUID()) =>
+  bidRoute.POST(postTo("/api/bid/place", { creatorHandle: "amina", amountUsdc, message: "hi", requestId, ...(code ? { code } : {}) }));
 const topUp = (amount: string, requestId = crypto.randomUUID(), code?: string) =>
   agentRoute.POST(postTo("/api/wallet/agent", { action: "fund", amount, requestId, ...(code ? { code } : {}) }));
 const post = (body: unknown) =>
@@ -284,7 +285,7 @@ describe("D4: withdrawals", () => {
     const ok = await save({ dailyBudget: "900000000", maxBidPerCreator: "20000000", code: lastCode() });
     assert.equal(ok.status, 200);
     assert.equal((await cfg()).dailyBudget, "900000000");
-    const lower = await save({ dailyBudget: "10000000", maxBidPerCreator: "5000000", goal: "find designers" });
+    const lower = await save({ dailyBudget: "10000000", maxBidPerCreator: "5000000" });
     assert.equal(lower.status, 200);
     assert.equal((await cfg()).maxBidPerCreator, "5000000");
   });
@@ -306,5 +307,54 @@ describe("D4: withdrawals", () => {
     mail.sent.length = 0;
     assert.equal((await send(OTHER, "5")).status, 429);
     assert.equal(mail.sent.length, 0);
+  });
+
+  // ── Re-review fixes ──
+  test("changing who the agent bids on needs the code; renaming it or editing its message doesn't", async () => {
+    const save = (body: Record<string, unknown>) => configRoute.POST(postTo("/api/bidder-config/create", body));
+    const retarget = await save({ searchTags: ["attacker"], minFitScore: 0 });
+    assert.equal(retarget.status, 202);
+    const cfg = async () => (await db.query.bidderConfigs.findFirst({ where: eq(bidderConfigs.userId, ids.bidder) }))!;
+    assert.deepEqual((await cfg()).searchTags, ["ai"], "unchanged without the code");
+    assert.equal((await save({ searchTags: ["attacker"], minFitScore: 0, code: lastCode() })).status, 200);
+    assert.deepEqual((await cfg()).searchTags, ["attacker"]);
+    assert.equal((await save({ agentName: "Scout", defaultMessage: "Hello!" })).status, 200, "cosmetic changes: no code");
+    assert.equal((await save({ searchTags: ["Attacker "] })).status, 200, "same tags, different spelling: no code");
+  });
+
+  test("a retried top-up that used a code finishes with the same code (it isn't consumed twice)", async () => {
+    world.usdc.set(addr.bidderMain, BigInt(2_000_000_000));
+    await topUp("450");
+    const requestId = crypto.randomUUID();
+    await topUp("100", requestId);
+    const code = lastCode()!;
+    world.timeoutNextSubmit = true;
+    assert.equal((await topUp("100", requestId, code)).status, 500, "timed out after the code was used");
+    const retry = await topUp("100", requestId, code);
+    assert.equal(retry.status, 202, "the retry finds its reservation; the code isn't needed again");
+    assert.equal(world.calls("transfer").filter((t) => t.args[1] === "100000000").length, 1, "moved once");
+  });
+
+  test("the same bid request retried records one bid, never two", async () => {
+    const requestId = crypto.randomUUID();
+    const [a, b] = await Promise.all([bid("10000000", undefined, requestId), bid("10000000", undefined, requestId)]);
+    assert.equal(a.status, 202);
+    assert.equal(b.status, 202);
+    assert.equal((await db.select().from(bids)).length, 1);
+    assert.equal((await bid("10000000")).status, 202, "a new request id is a new bid");
+    assert.equal((await db.select().from(bids)).length, 2);
+  });
+
+  test("a code isn't used up when the bid fails for another reason, and approves only its own amount", async () => {
+    assert.equal((await bid("450000000")).status, 202);
+    await bid("100000000"); // over: code emailed for $100
+    const code = lastCode()!;
+    world.usdc.set(addr.bidderMain, BigInt(1_000_000)); // now too little USDC for the bid
+    const poor = await bid("100000000", code);
+    assert.equal(poor.status, 400);
+    assert.match((await poor.json()).error, /Not enough USDC/);
+    world.usdc.set(addr.bidderMain, BigInt(2_000_000_000));
+    assert.equal((await bid("100000000", code)).status, 202, "the same code still works");
+    assert.equal((await bid("100000000", code)).status, 410, "but only once");
   });
 });

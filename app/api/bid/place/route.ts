@@ -1,7 +1,8 @@
 import { handleIs } from "@/lib/profiles";
 import { NextRequest, NextResponse } from "next/server";
-import { formatUsd, parseAtomicUsdc } from "@/lib/bid-rules";
-import { AllowanceExceeded, WithdrawalError, codeSubject, consumeSecurityCode, requestSecurityCode } from "@/lib/withdrawals";
+import { formatUsd, parseAtomicUsdc, stableUuid } from "@/lib/bid-rules";
+import { parseRequestId } from "@/lib/circle";
+import { AllowanceExceeded, WithdrawalError, approveWithCode, codeSubject, requestSecurityCode } from "@/lib/withdrawals";
 import { sameOrigin } from "@/lib/http-guard";
 import { LIMITS, limitOrNull } from "@/lib/rate-limit";
 import { auth } from "@/lib/auth";
@@ -21,7 +22,10 @@ export async function POST(req: NextRequest) {
     if (blocked) return blocked;
 
     const body = await req.json().catch(() => null);
-    const { creatorHandle, amountUsdc, message, isPrivate, code } = (body ?? {}) as Record<string, unknown>;
+    const { creatorHandle, amountUsdc, message, isPrivate, code, requestId: rawRequestId } = (body ?? {}) as Record<string, unknown>;
+    // The browser's request id: a retried request returns the same bid, never a second one.
+    const requestId = parseRequestId(rawRequestId);
+    if (!requestId) return NextResponse.json({ error: "Missing request id. Please reload the page and try again." }, { status: 400 });
     if (typeof creatorHandle !== "string" || !creatorHandle) {
       return NextResponse.json({ error: "creatorHandle is required" }, { status: 400 });
     }
@@ -37,7 +41,6 @@ export async function POST(req: NextRequest) {
     const amount = parseAtomicUsdc(typeof amountUsdc === "number" ? String(amountUsdc) : amountUsdc);
     const subject = codeSubject.bid(creatorProfile.userId, amount ?? BigInt(0));
     const givenCode = typeof code === "string" ? code.trim() : "";
-    if (givenCode) await consumeSecurityCode(session.user.id, subject, givenCode);
 
     let bid;
     try {
@@ -47,7 +50,9 @@ export async function POST(req: NextRequest) {
         amountUsdc: typeof amountUsdc === "number" ? String(amountUsdc) : (amountUsdc as string),
         message: (message as string | undefined) ?? null,
         isPrivate: isPrivate === true,
-        overAllowanceApproved: !!givenCode,
+        requestKey: `bid:${stableUuid(`${session.user.id}:${requestId}`)}`,
+        // The code is only used up if this exact bid is over the allowance and valid.
+        approveOverAllowance: givenCode && amount !== null ? approveWithCode(session.user.id, subject, givenCode, amount) : undefined,
       });
     } catch (err) {
       if (!(err instanceof AllowanceExceeded) || amount === null) throw err;

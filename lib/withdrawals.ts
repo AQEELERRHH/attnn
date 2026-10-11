@@ -7,8 +7,9 @@
  *   agent_fund  USDC moved from main to the agent wallet (wallet/agent)    above it with an emailed code
  *
  * Bids by the agent aren't counted again: they spend the agent wallet, which was
- * funded under the allowance. Raising the agent's daily budget or per-creator cap
- * also needs a code (bidder-config/create).
+ * funded under the allowance. Raising the agent's daily budget or per-creator cap, or
+ * changing which creators it bids on (tags, fit score, goal), also needs a code
+ * (bidder-config/create), so a stolen session can't point a funded agent elsewhere.
  *
  * Emailed 6-digit codes (security codes) confirm a specific action: a new send
  * address, or one over-allowance bid / top-up / limit raise. A code is bound to its
@@ -17,8 +18,8 @@
  * Every check and reservation runs under one per-user advisory lock, so actions racing
  * each other are counted one after the other.
  *
- * This stops someone holding a stolen session from moving more than the allowance
- * without the account's email. It does not protect against a compromised Attnn
+ * So without the account's email, a stolen session can move at most the allowance,
+ * plus what the agent already holds being bid the way the user set it up. It does not protect against a compromised Attnn
  * server (Attnn holds the wallet keys).
  */
 import { createHash, createHmac, randomInt, timingSafeEqual } from "node:crypto";
@@ -66,7 +67,9 @@ export const codeSubject = {
   address: (address: string) => `address:${lower(address)}`,
   bid: (creatorUserId: string, amount: bigint) => `bid:${creatorUserId}:${amount}`,
   agentFund: (amount: bigint) => `agent-fund:${amount}`,
-  agentLimits: (dailyBudget: string, maxBidPerCreator: string) => `agent-limits:${dailyBudget}:${maxBidPerCreator}`,
+  /** The agent's spending limits and targeting exactly as they'd be saved. */
+  agentSettings: (s: { dailyBudget: string; maxBidPerCreator: string; searchTags: string[]; minFitScore: number; goal: string | null }) =>
+    `agent-settings:${JSON.stringify([s.dailyBudget, s.maxBidPerCreator, s.searchTags, s.minFitScore, s.goal ?? ""])}`,
 };
 
 // ─── Security codes ─────────────────────────────────────────────────────────
@@ -219,20 +222,35 @@ export async function allowanceRemaining(userId: string): Promise<bigint> {
 }
 
 /**
+ * Called only when an action is over the allowance, with the action's exact amount.
+ * Resolves if the user approved this action (it consumes their emailed code, which is
+ * bound to that amount); throws otherwise.
+ */
+export type ApproveOverAllowance = (amount: bigint) => Promise<void>;
+
+/**
  * Inside a transaction holding lockAllowance: throws AllowanceExceeded unless `amount`
- * fits what's left, or the user approved going over with a code (`approved`).
+ * fits what's left. Over it, `approve` (if given) is asked: the code is only used up
+ * when it's actually needed, after every other check passed.
  */
 export async function assertWithinAllowance(
   tx: Tx,
   userId: string,
   amount: bigint,
-  opts: { approved?: boolean; canConfirm: boolean },
+  opts: { approve?: ApproveOverAllowance; canConfirm: boolean },
 ): Promise<void> {
-  if (opts.approved) return;
   const used = await allowanceUsed(userId, tx);
-  if (used + amount > DAILY_ALLOWANCE) {
-    throw new AllowanceExceeded(used >= DAILY_ALLOWANCE ? BigInt(0) : DAILY_ALLOWANCE - used, opts.canConfirm);
-  }
+  if (used + amount <= DAILY_ALLOWANCE) return;
+  if (opts.approve) return opts.approve(amount);
+  throw new AllowanceExceeded(used >= DAILY_ALLOWANCE ? BigInt(0) : DAILY_ALLOWANCE - used, opts.canConfirm);
+}
+
+/** An approver that consumes the emailed code for `subject`, only for exactly `expected`. */
+export function approveWithCode(userId: string, subject: string, code: string, expected: bigint): ApproveOverAllowance {
+  return async (amount) => {
+    if (amount !== expected) throw new WithdrawalError("This code was for a different amount. Ask for a new one.", 410);
+    await consumeSecurityCode(userId, subject, code);
+  };
 }
 
 export type WithdrawalRow = typeof withdrawals.$inferSelect;
@@ -247,7 +265,8 @@ export async function reserveWithdrawal(params: {
   requestKey: string;
   to: string;
   amount: bigint;
-  approved?: boolean;
+  /** Agent top-ups only: approval to go over the allowance (sends never can). */
+  approve?: ApproveOverAllowance;
 }): Promise<{ row: WithdrawalRow; retry: boolean }> {
   return db.transaction(async (tx) => {
     await lockAllowance(tx, params.userId);
@@ -257,7 +276,7 @@ export async function reserveWithdrawal(params: {
       return { row: existing, retry: true };
     }
     await assertWithinAllowance(tx, params.userId, params.amount, {
-      approved: params.kind === "agent_fund" && params.approved,
+      approve: params.kind === "agent_fund" ? params.approve : undefined,
       canConfirm: params.kind === "agent_fund",
     });
     const [row] = await tx

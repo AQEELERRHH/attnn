@@ -7,9 +7,10 @@ import { parseRequestId, rejectedByCircle, transferUSDC } from "@/lib/circle";
 import {
   AllowanceExceeded,
   WithdrawalError,
+  approveWithCode,
   codeSubject,
-  consumeSecurityCode,
   markWithdrawal,
+  notifyAccount,
   requestSecurityCode,
   reserveWithdrawal,
 } from "@/lib/withdrawals";
@@ -87,10 +88,18 @@ export async function POST(req: NextRequest) {
     // Main → agent: the agent can bid it away, so it counts against the shared allowance.
     const code = typeof body?.code === "string" ? body.code.trim() : "";
     const subject = codeSubject.agentFund(amount);
-    if (code) await consumeSecurityCode(userId, subject, code);
     let reserved;
     try {
-      reserved = await reserveWithdrawal({ userId, kind: "agent_fund", requestKey: opKey, to: to.address, amount, approved: !!code });
+      // A retry of the same request finds its row before the code is looked at; a new
+      // one uses the code only if it's over the allowance.
+      reserved = await reserveWithdrawal({
+        userId,
+        kind: "agent_fund",
+        requestKey: opKey,
+        to: to.address,
+        amount,
+        approve: code ? approveWithCode(userId, subject, code, amount) : undefined,
+      });
     } catch (err) {
       if (!(err instanceof AllowanceExceeded)) throw err;
       const blockedCode = await limitOrNull(LIMITS.withdrawalCode, userId);
@@ -104,7 +113,11 @@ export async function POST(req: NextRequest) {
     }
     try {
       const tx = await transferUSDC(from.circleWalletId, to.address, amount.toString(), opKey);
-      await markWithdrawal(row.id, { circleTxId: tx.txId });
+      if (await markWithdrawal(row.id, { circleTxId: tx.txId })) {
+        await notifyAccount(userId, `You moved ${formatUsd(amount)} USDC to your Attnn. agent`, [
+          `${formatUsd(amount)} USDC is moving from your main wallet to your bidder agent's wallet, where the agent can bid with it.`,
+        ]);
+      }
       return NextResponse.json({ success: true, txId: tx.txId, amount: amount.toString() }, { status: 202 });
     } catch (err) {
       if (!retry && rejectedByCircle(err)) await markWithdrawal(row.id, { failed: true });

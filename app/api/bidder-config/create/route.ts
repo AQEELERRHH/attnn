@@ -9,6 +9,9 @@ import { eq } from "drizzle-orm";
 import { ESCROW_MAX_BID, ESCROW_MIN_BID, formatUsd, parseAtomicUsdc } from "@/lib/bid-rules";
 import { WithdrawalError, codeSubject, consumeSecurityCode, requestSecurityCode } from "@/lib/withdrawals";
 
+/** Tags as the agent matches them (case-insensitive), in a stable order for comparing. */
+const sameTags = (tags: string[]) => [...new Set(tags.map((t) => t.trim().toLowerCase()).filter(Boolean))].sort();
+
 /** Checks the money and score fields that were sent. Returns an error message or null. */
 function validate(body: Record<string, unknown>): string | null {
   if (body.dailyBudget !== undefined) {
@@ -64,22 +67,36 @@ export async function POST(req: NextRequest) {
     // Check if already exists
     const existing = await db.query.bidderConfigs.findFirst({ where: eq(bidderConfigs.userId, session.user.id) });
     if (existing) {
-      // Raising what the agent may spend needs the emailed code (D4): a stolen session
-      // can't widen the agent's limits. Lowering them, or any other change, doesn't.
-      const nextDaily = dailyBudget ?? existing.dailyBudget;
-      const nextMax = maxBidPerCreator ?? existing.maxBidPerCreator;
-      const raising = BigInt(nextDaily) > BigInt(existing.dailyBudget) || BigInt(nextMax) > BigInt(existing.maxBidPerCreator);
-      if (raising) {
-        const subject = codeSubject.agentLimits(nextDaily, nextMax);
+      // Changing how much the agent may spend (upwards) or WHO it bids on needs the
+      // emailed code (D4): a stolen session can neither widen its limits nor point an
+      // already funded agent at the attacker's own markets. Lowering limits, renaming
+      // it or editing its message doesn't.
+      const next = {
+        dailyBudget: dailyBudget ?? existing.dailyBudget,
+        maxBidPerCreator: maxBidPerCreator ?? existing.maxBidPerCreator,
+        searchTags: sameTags(searchTags ?? existing.searchTags),
+        minFitScore: minFitScore ?? existing.minFitScore,
+        goal: (goal === undefined ? existing.goal : goal) ?? null,
+      };
+      const raising =
+        BigInt(next.dailyBudget) > BigInt(existing.dailyBudget) || BigInt(next.maxBidPerCreator) > BigInt(existing.maxBidPerCreator);
+      const retargeting =
+        JSON.stringify(next.searchTags) !== JSON.stringify(sameTags(existing.searchTags)) ||
+        next.minFitScore !== existing.minFitScore ||
+        (next.goal ?? "") !== (existing.goal ?? "");
+      if (raising || retargeting) {
+        const subject = codeSubject.agentSettings(next);
         const code = typeof body.code === "string" ? body.code.trim() : "";
         if (!code) {
           const blockedCode = await limitOrNull(LIMITS.withdrawalCode, session.user.id);
           if (blockedCode) return blockedCode;
-          const { sentTo } = await requestSecurityCode(
-            session.user.id,
-            subject,
-            `approve raising your agent's limits to a ${formatUsd(BigInt(nextDaily))} daily budget and ${formatUsd(BigInt(nextMax))} per creator`,
-          );
+          const what = [
+            raising ? `a ${formatUsd(BigInt(next.dailyBudget))} daily budget and ${formatUsd(BigInt(next.maxBidPerCreator))} per creator` : null,
+            retargeting ? `the creators it bids on (topics: ${next.searchTags.join(", ") || "none"}; fit score ${next.minFitScore}+)` : null,
+          ]
+            .filter(Boolean)
+            .join(", and ");
+          const { sentTo } = await requestSecurityCode(session.user.id, subject, `approve changing your bidder agent: ${what}`);
           return NextResponse.json({ needsCode: true, sentTo }, { status: 202 });
         }
         await consumeSecurityCode(session.user.id, subject, code);

@@ -221,6 +221,9 @@ export const bids = pgTable("bids", {
   // Every reply + salt an accept was reserved with, kept until the bid settles, so the
   // reply the escrow shows was accepted with can always be matched back to its text,
   // even if that attempt was released or failed in the database (lib/bids.ts pickReply).
+  // Bids placed by hand: the browser's request id (as an op key), so a retried request
+  // returns the same bid instead of placing a second one. Null for agent bids.
+  requestKey: text("request_key").unique(),
   // A reply the creator agent's AI drafted (decision D2): never sent on its own. It
   // waits in the creator's inbox; sending it unchanged records replySource "ai".
   suggestedReply: text("suggested_reply"),

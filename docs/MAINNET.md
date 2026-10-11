@@ -42,8 +42,12 @@ here runs automatically; contract deploys and database changes need the owner's 
       call `pause()`; record the addresses in README and Vercel.
 - [ ] From the admin wallet, rehearse once: `scripts/escrow-admin.mjs pause`, check a bid is
       refused, then `unpause`.
-- [ ] The contracts are not audited. Until they are, consider a soft cap in the app (e.g. a lower
-      `ESCROW_MAX_BID` for launch) so no single bid risks much real money.
+- [ ] **Audit (decision D6): open launch, audited soon after.** Mainnet opens to everyone; the
+      contracts are not human-audited at launch. Before the deploy: run the CertiK AI scan on the
+      final `contracts/src/` and fix what's real. Straight after: ask Circle and Encode about audit
+      credits and book a human audit. The protections that limit what's at risk meanwhile: the
+      escrow pause (D5), the hourly/daily money checks, the $1,000 per-bid maximum, agents bidding
+      only each creator's floor (D3) and the $500 / 24 h withdrawal limit (D4).
 
 ## 2. Dependencies
 - [x] `@circle-fin/developer-controlled-wallets` 10.3.0 → 10.8.1 (its `Blockchain` type has `ARC`;
@@ -81,10 +85,12 @@ Level Security is on everywhere. It prints no secrets and changes nothing.
       `BidRejected(uint256,address)`, `BidRefunded(uint256,address)`. Optional:
       `Paused(address)`, `Unpaused(address)` (ignored by the app; the health check reports them).
 - [ ] New `DATABASE_URL` (see Data) and fresh Inngest keys if using a separate Inngest app
-- [ ] `ALERT_EMAIL` = who gets the money health-check alerts (and `RESEND_API_KEY`, already set)
+- [ ] `ALERT_EMAIL` = who gets the money health-check alerts
+- [ ] `RESEND_API_KEY` (already set) and `AUTH_SECRET`: also required for withdrawal codes (D4).
+      Without email, nobody can send USDC to a new address.
 
 ## 4. Data
-- [ ] Apply every migration in `drizzle/` (0000–0009) to the new database, as the same user the
+- [ ] Apply every migration in `drizzle/` (0000–0011) to the new database, as the same user the
       app connects with (so it owns every table; RLS in 0009 depends on that).
 - [ ] Mainnet starts with a **fresh database** (a new Supabase project). Not just a clean `bids`
       table: testnet wallets in it would be shown to users, and real USDC sent to them is stuck.

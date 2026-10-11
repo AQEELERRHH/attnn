@@ -26,6 +26,7 @@ process.env.CIRCLE_ENTITY_SECRET = "test";
 process.env.AISA_API_URL = "http://127.0.0.1:9"; // AI unavailable → rule-based fallbacks
 process.env.AISA_API_KEY = "test";
 process.env.INNGEST_EVENT_KEY = "test";
+process.env.AUTH_SECRET = "test-only-secret"; // signs withdrawal codes (lib/withdrawals.ts)
 // NODE_ENV is left alone: lib/db/client.ts then caches one connection pool per process.
 
 export const ESCROW = process.env.ATTN_ESCROW_CONTRACT.toLowerCase();

@@ -46,6 +46,14 @@ The **Money Health Check** job (Inngest) runs every hour, plus a full escrow che
 | Accepted bid(s) show no reply, or one that doesn't match the fingerprint | The creator was paid (on Arc) for a reply fingerprint that matches none of the replies saved for that bid, so the bidder sees no reply. Rare: the creator accepted outside Attnn., or saved replies were lost. | Look at the bid's `reply_candidates` and Circle transactions. If the text can't be recovered, tell the bidder and the creator plainly and ask the creator to resend the reply. The alert repeats daily for that bid; note the bid id as known. |
 | Failed settlement waiting for a retry | Circle or the chain refused an accept, decline or refund. The bid is still open and its USDC is still in escrow. | Read `fail_reason`. Usually the wallet is out of gas USDC; add $1 to that wallet. The creator can retry; auto-refund retries refunds hourly. |
 
+## Withdrawals (sending USDC out)
+
+- Each account can send at most **$500 in any 24 hours** (`WITHDRAWAL_LIMIT_24H` in `lib/withdrawals.ts`; changing it is a code change). Sends between a user's own main and agent wallets don't count.
+- The first send to a new address needs a 6-digit code emailed to the account. **No email service, no code**: if Resend is down, sends to new addresses wait; confirmed addresses keep working.
+- Every send emails the account a notice. A user who gets one they didn't make: treat it as a stolen session. Sign them out everywhere (`delete from sessions where user_id = '…'`), and pause bids if more accounts are affected.
+- A user who can't get the code: check Resend's logs for their address. Never read a code out to anyone, and never add an address to `withdrawal_addresses` by hand unless you've confirmed the user's identity outside the app.
+- Their sends: `select created_at, to_address, amount_usdc, status from withdrawals where user_id = '…' order by created_at desc;` (`sending` = may have gone through and still counts; `failed` = Circle refused it, nothing moved).
+
 ## A user says their money is missing
 
 1. Get their bid (dashboard or `select * from bids where id = '…'`).

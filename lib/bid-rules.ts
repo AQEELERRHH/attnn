@@ -62,24 +62,19 @@ export function validateBidAmount(rawAmount: unknown, creatorMinBid: string | nu
 }
 
 /**
- * Picks the amount a bidder agent should bid. The AI suggestion is only a hint:
- * it is clamped into [creator floor, min(bidder's per-creator cap, escrow max)].
- * Returns null when the creator's floor is above what the bidder allows.
+ * The amount a bidder agent bids: always the creator's floor (decision D3). The AI
+ * only ranks creators; it never picks an amount, so text in a creator's profile
+ * can't talk agents into bidding more. Returns null (skip this creator) when the
+ * floor is above the bidder's per-creator cap or the escrow maximum.
  */
 export function resolveAgentBidAmount(params: {
-  suggested: unknown;
   creatorMinBid: string | null | undefined;
   maxBidPerCreator: string | null | undefined;
 }): bigint | null {
   const floor = creatorFloor(params.creatorMinBid);
   const cap = parseAtomicUsdc(params.maxBidPerCreator ?? "") ?? ESCROW_MAX_BID;
   const ceiling = cap < ESCROW_MAX_BID ? cap : ESCROW_MAX_BID;
-  if (floor > ceiling) return null;
-  const suggested = parseAtomicUsdc(params.suggested);
-  if (suggested === null) return floor;
-  if (suggested < floor) return floor;
-  if (suggested > ceiling) return ceiling;
-  return suggested;
+  return floor > ceiling ? null : floor;
 }
 
 /**

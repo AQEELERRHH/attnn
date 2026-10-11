@@ -221,6 +221,17 @@ export async function transferUSDC(
   });
 }
 
+/**
+ * True only when Circle answered and refused the request (a 4xx other than a timeout),
+ * so it can't have been accepted. Timeouts, network errors and 5xx are unknown: the
+ * request may have gone through.
+ */
+export function rejectedByCircle(err: unknown): boolean {
+  const e = err as { status?: unknown; response?: { status?: unknown } } | null;
+  const status = typeof e?.status === "number" ? e.status : typeof e?.response?.status === "number" ? e.response.status : null;
+  return status !== null && status >= 400 && status < 500 && status !== 408;
+}
+
 /** A browser-generated request id (UUID), or null if missing or malformed. */
 export function parseRequestId(v: unknown): string | null {
   return typeof v === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v) ? v.toLowerCase() : null;

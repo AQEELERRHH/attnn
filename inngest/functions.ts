@@ -212,7 +212,8 @@ export const creatorAgentTriage = inngest.createFunction(
           data: { bidId, bidderUserId: bid.bidderUserId, counterOfferAmount: counterAmount },
         });
       }
-    } else if (triageResult.decision === "accept" && triageResult.draftedReply) {
+    } else if (triageResult.decision === "accept" && triageResult.draftedReply && triageResult.replySource === "template") {
+      // Only the creator's own saved template is ever sent automatically (D2).
       action = await step.run("auto-accept-bid", async () => {
         try {
           const { txId } = await submitSettlement({
@@ -220,7 +221,7 @@ export const creatorAgentTriage = inngest.createFunction(
             action: "accept",
             actorUserId: creatorUserId,
             reply: triageResult.draftedReply,
-            replySource: triageResult.replySource ?? "template",
+            replySource: "template",
           });
           return { submitted: true, txId };
         } catch (err) {
@@ -238,6 +239,15 @@ export const creatorAgentTriage = inngest.createFunction(
           throw err;
         }
       });
+    } else if (triageResult.decision === "surface" && triageResult.suggestedReply) {
+      // An AI draft for the creator to approve in their inbox (D2). Never sent from here.
+      const suggestedReply = triageResult.suggestedReply;
+      await step.run("save-suggested-reply", () =>
+        db
+          .update(bids)
+          .set({ suggestedReply })
+          .where(and(eq(bids.id, bidId), eq(bids.status, "pending"), isNull(bids.settlementTxHash))),
+      );
     }
     // "surface": score recorded above, left pending for the creator.
 

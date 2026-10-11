@@ -14,7 +14,7 @@ export const revalidate = 3600;
 const AGENT_LIMITS = [
   "Its own wallet. The agent spends only what you move into its agent wallet, never your main wallet, and you can move the rest back any time.",
   "A daily budget the agent can't go past, reset every day at 00:00 UTC.",
-  "A maximum per creator. The AI suggests an amount, but the agent is held to the creator's floor and your cap, counter-offers included.",
+  "It bids each creator's minimum, never more, and skips creators priced above your per-creator cap. Only a re-bid at a creator's counter-offer can be higher, and that's capped too. The AI only ranks creators; it never picks an amount.",
   "One bid per creator per day, plus one re-bid if the creator counters.",
   "Only creators registered on Arc, never paused markets.",
   "If the AI can't score a creator (for example during an outage), the agent doesn't bid on them. It never guesses with your money.",

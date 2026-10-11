@@ -115,6 +115,8 @@ export default async function DashboardPage() {
     status: b.status,
     score: b.score,
     reply: b.reply,
+    // The AI draft is for the creator's eyes only, and only while they can still send it.
+    suggestedReply: b.creatorUserId === userId && b.status === "pending" ? (b.suggestedReply ?? null) : null,
     replySource: b.replySource ?? null,
     replyRating: b.replyRating ?? null,
     settlementTxHash: b.settlementTxHash,

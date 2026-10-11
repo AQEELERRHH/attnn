@@ -221,6 +221,9 @@ export const bids = pgTable("bids", {
   // Every reply + salt an accept was reserved with, kept until the bid settles, so the
   // reply the escrow shows was accepted with can always be matched back to its text,
   // even if that attempt was released or failed in the database (lib/bids.ts pickReply).
+  // A reply the creator agent's AI drafted (decision D2): never sent on its own. It
+  // waits in the creator's inbox; sending it unchanged records replySource "ai".
+  suggestedReply: text("suggested_reply"),
   replyCandidates: jsonb("reply_candidates").$type<{ reply: string; salt: string; source: string | null }[]>(),
   // Who wrote the reply: "creator" (typed it), "template" (their saved template,
   // sent by them or their agent) or "ai" (drafted by the creator agent). Null on
@@ -412,3 +415,58 @@ export const appSettings = pgTable("app_settings", {
   value: jsonb("value").notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
+
+// ─── Withdrawals (decision D4, migration 0011) ──────────────────────────────
+// Every USDC send out of a main wallet, so the 24-hour limit can be enforced and a
+// retried request finds its own row (lib/withdrawals.ts). Sends between a user's own
+// main and agent wallets are not withdrawals.
+
+export const withdrawals = pgTable(
+  "withdrawals",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** The transfer's op key (send:<stable uuid of user + browser request id>). */
+    requestKey: text("request_key").notNull().unique(),
+    toAddress: text("to_address").notNull(),
+    amountUsdc: text("amount_usdc").notNull(),
+    /** sending = reserved against the limit, not yet accepted by Circle; submitted; failed (refused, doesn't count). */
+    status: text("status").$type<"sending" | "submitted" | "failed">().notNull().default("sending"),
+    circleTxId: text("circle_tx_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index("withdrawals_user_created_idx").on(t.userId, t.createdAt)],
+);
+
+/** Addresses a user confirmed with an emailed code. Lower-case. */
+export const withdrawalAddresses = pgTable(
+  "withdrawal_addresses",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    address: text("address").notNull(),
+    verifiedAt: timestamp("verified_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("withdrawal_addresses_user_address_uq").on(t.userId, t.address)],
+);
+
+/** The one live email code per user + new address (HMAC of the code, never the code). */
+export const withdrawalCodes = pgTable(
+  "withdrawal_codes",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    address: text("address").notNull(),
+    codeHash: text("code_hash").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    attempts: integer("attempts").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("withdrawal_codes_user_address_uq").on(t.userId, t.address)],
+);

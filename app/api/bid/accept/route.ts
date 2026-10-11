@@ -4,8 +4,8 @@ import { LIMITS, limitOrNull } from "@/lib/rate-limit";
 import { auth } from "@/lib/auth";
 import { BidError, submitSettlement } from "@/lib/bids";
 import { db } from "@/lib/db/client";
-import { profiles } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { bids, profiles } from "@/lib/db/schema";
+import { and, eq } from "drizzle-orm";
 import { manualReplySource, replyError } from "@/lib/reply-rules";
 
 /**
@@ -27,9 +27,13 @@ export async function POST(req: NextRequest) {
     const problem = replyError(reply);
     if (problem) return NextResponse.json({ error: problem }, { status: 400 });
 
-    // A reply that is the creator's saved template word for word is labelled as one.
-    const profile = await db.query.profiles.findFirst({ where: eq(profiles.userId, session.user.id), columns: { autoReplyTemplate: true } });
-    const replySource = manualReplySource(reply, profile?.autoReplyTemplate);
+    // The creator's saved template word for word is labelled as one; their agent's AI
+    // draft sent unchanged is labelled "ai" (bidders see both as auto-replies).
+    const [profile, bid] = await Promise.all([
+      db.query.profiles.findFirst({ where: eq(profiles.userId, session.user.id), columns: { autoReplyTemplate: true } }),
+      db.query.bids.findFirst({ where: and(eq(bids.id, bidId), eq(bids.creatorUserId, session.user.id)), columns: { suggestedReply: true } }),
+    ]);
+    const replySource = manualReplySource(reply, profile?.autoReplyTemplate, bid?.suggestedReply);
 
     const { txId } = await submitSettlement({ bidId, action: "accept", actorUserId: session.user.id, reply, replySource });
     return NextResponse.json({ success: true, status: "confirming", txId }, { status: 202 });

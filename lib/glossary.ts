@@ -27,9 +27,9 @@ export const glossary = {
     "If you let your agent accept bids for you, this is the reply it sends. It needs at least 100 characters so every paid reply says something real. Bidders see it labelled as an auto-reply.",
   availability: "Pausing your market stops new bids. Bids already waiting stay in your inbox until you reply or they refund.",
   dailyBudget:
-    "The most your agent can bid in one day (resets at 00:00 UTC). Once it reaches this it stops until tomorrow, whatever the AI suggests.",
+    "The most your agent can bid in one day (resets at 00:00 UTC). Once it reaches this it stops until tomorrow.",
   maxBidPerCreator:
-    "Your agent never offers one creator more than this, even if they counter. Creators whose lowest bid is higher are skipped.",
+    "Your agent bids each creator's lowest price, and never offers one creator more than this, even if they counter. Creators whose lowest bid is higher are skipped.",
   fitScore:
     "Your agent's AI rates each creator from 0 to 10 against your goal. It only bids on creators scoring at least this. If the AI can't score a creator, it doesn't bid.",
   searchTags: "Topics to look for. Your agent only considers creators whose tags match at least one of these.",

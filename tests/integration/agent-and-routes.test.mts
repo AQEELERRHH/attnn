@@ -18,7 +18,7 @@ mock.module(pathToFileURL(path.resolve("lib/auth.ts")).href, {
 });
 
 const { db } = await import("../../lib/db/client.ts");
-const { bids, bidderConfigs, wallets, appSettings } = await import("../../lib/db/schema.ts");
+const { bids, bidderConfigs, wallets, appSettings, withdrawalAddresses } = await import("../../lib/db/schema.ts");
 const { eq } = await import("drizzle-orm");
 const { NextRequest } = await import("next/server");
 const { acquireAgentLease, releaseAgentLease } = await import("../../lib/agent-lease.ts");
@@ -55,6 +55,8 @@ describe("agent limits, counter-offers and wallet routes", () => {
     await truncateAll();
     await seedMarket();
     session.userId = ids.bidder;
+    // The send tests below use an address the bidder already confirmed (D4 is tested in withdrawals.test.mts).
+    await db.insert(withdrawalAddresses).values({ userId: ids.bidder, address: "0x1111111111111111111111111111111111111111" });
   });
   after(closeDb);
 

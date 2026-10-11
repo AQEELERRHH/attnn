@@ -39,13 +39,12 @@ describe("amounts", () => {
     assert.ok(!validateCreatorFloor((ESCROW_MIN_BID - BigInt(1)).toString()).ok);
   });
 
-  test("the agent's bid is clamped to [floor, min(cap, $1,000)] whatever the AI says", () => {
-    const r = (suggested: unknown, floor = "5000000", cap = "20000000") =>
-      resolveAgentBidAmount({ suggested, creatorMinBid: floor, maxBidPerCreator: cap });
-    assert.equal(r("1000000000"), BigInt(20_000_000));
-    assert.equal(r("1"), BigInt(5_000_000));
-    assert.equal(r("not a number"), BigInt(5_000_000));
-    assert.equal(r("10000000", "30000000"), null, "floor above the bidder's cap → skip");
+  test("D3: the agent always bids the creator's floor, never more; above the cap it skips", () => {
+    const r = (floor: string, cap = "20000000") => resolveAgentBidAmount({ creatorMinBid: floor, maxBidPerCreator: cap });
+    assert.equal(r("5000000"), BigInt(5_000_000));
+    assert.equal(r("20000000"), BigInt(20_000_000), "floor equal to the cap is allowed");
+    assert.equal(r("30000000"), null, "floor above the bidder's cap → skip");
+    assert.equal(r("5000000", "5000000000"), BigInt(5_000_000), "a cap above $1,000 doesn't raise anything");
   });
 
   test("operation keys map to stable, distinct UUIDs (Circle idempotency)", () => {

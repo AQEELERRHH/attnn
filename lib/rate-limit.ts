@@ -19,6 +19,8 @@ export interface RateLimit {
 
 export const LIMITS = {
   walletSend: { name: "wallet-send", max: 10, windowMs: 60 * 60 * 1000 },
+  // Emailed codes for new withdrawal addresses (on top of the 1-a-minute cooldown per address).
+  withdrawalCode: { name: "withdrawal-code", max: 5, windowMs: 60 * 60 * 1000 },
   walletAgent: { name: "wallet-agent", max: 20, windowMs: 60 * 60 * 1000 },
   bidPlace: { name: "bid-place", max: 60, windowMs: 60 * 60 * 1000 },
   bidSettle: { name: "bid-settle", max: 120, windowMs: 60 * 60 * 1000 },

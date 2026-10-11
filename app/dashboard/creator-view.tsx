@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Bot, Camera, ExternalLink, ThumbsDown, ThumbsUp } from "lucide-react";
+import { Bot, Camera, ExternalLink, Sparkles, ThumbsDown, ThumbsUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { CreatorAvatar, FieldHint, Money, Num, Panel, StatStrip, StatusChip, Tag } from "@/components/market";
@@ -444,9 +444,10 @@ function AutoAcceptSetting({ stored, hasTemplate }: { stored: number | null; has
             more={
               <>
                 Your agent scores every new bid from 0 to 10 on the amount and the message. Bids at or above your setting are accepted for
-                you: it sends {hasTemplate ? "your reply template" : "a reply its AI writes for that bid"} and the USDC is yours. Bids it
-                scores 5 to 7 may get a counter-offer, and below 5 are declined (the bidder is refunded), whatever this is set to.
-                Everything else waits in your inbox. Bidders see these replies labelled as auto-replies.
+                you, and it sends your reply template: only your own words are ever sent without you.{" "}
+                {hasTemplate ? null : "You have no template, so it drafts a reply with AI instead and leaves it in your inbox for you to check and send. "}
+                Bids it scores 5 to 7 may get a counter-offer, and below 5 are declined (the bidder is refunded), whatever this is set to.
+                Everything else waits in your inbox. Bidders see template and unedited AI replies labelled as auto-replies.
               </>
             }
           >
@@ -489,6 +490,12 @@ function InboxRow({
   const windowPassed = refund.due;
   const trimmed = reply.trim();
   const replyValid = trimmed.length >= REPLY_MIN_CHARS && trimmed.length <= REPLY_MAX_CHARS;
+  const isUneditedDraft = !!bid.suggestedReply && trimmed === bid.suggestedReply.trim();
+  // Opening the composer starts from the agent's draft, if there is one and nothing typed yet.
+  const openReply = () => {
+    if (!reply && bid.suggestedReply) setReply(bid.suggestedReply);
+    setMode("reply");
+  };
 
   const counterAtomic = dollarsToAtomic(counter);
   const counterError =
@@ -601,11 +608,20 @@ function InboxRow({
             </p>
           )}
           {d.note && !countered && <p className="mt-1 text-xs text-text-secondary">{d.note}</p>}
+          {bid.suggestedReply && !settling && mode === "idle" && !windowPassed && (
+            <p className="mt-2 flex flex-wrap items-center gap-x-2 text-xs text-arc-lavender">
+              <Sparkles aria-hidden className="h-3.5 w-3.5" />
+              Your agent drafted a reply. Nothing is sent until you check it.
+              <button type="button" onClick={openReply} className="focus-ring rounded font-medium underline-offset-2 hover:underline">
+                Review draft
+              </button>
+            </p>
+          )}
         </div>
         {!settling && mode === "idle" && (
           <div className="flex w-full flex-wrap gap-2 sm:w-auto">
             {!rebid && (
-              <Button size="sm" onClick={() => setMode("reply")} disabled={windowPassed || !!busy} title={windowPassed ? "The 3-day reply window has passed" : undefined}>
+              <Button size="sm" onClick={openReply} disabled={windowPassed || !!busy} title={windowPassed ? "The 3-day reply window has passed" : undefined}>
                 Reply · collect {formatMoney(bid.amountUsdc)}
               </Button>
             )}
@@ -636,6 +652,12 @@ function InboxRow({
             placeholder="Answer their question, share a contact, or say what happens next."
             className={cn(fieldClass, "resize-y bg-arc-bg-1")}
           />
+          {isUneditedDraft && (
+            <p className="mt-2 text-xs text-arc-lavender">
+              Drafted by your agent&apos;s AI from the bidder&apos;s message. Check it says what you want: edit anything, or send it as it is
+              (then the bidder sees it labelled as an auto-reply).
+            </p>
+          )}
           <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-text-secondary">
             <span>
               <Num className={trimmed.length > 0 && trimmed.length < REPLY_MIN_CHARS ? "text-arc-coral" : undefined}>{trimmed.length}</Num> / {REPLY_MAX_CHARS} · at least{" "}

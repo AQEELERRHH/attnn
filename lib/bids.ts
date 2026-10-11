@@ -36,6 +36,7 @@ import {
   executeContractCallOnce,
   findTransactionByRefId,
   getTransactionStatus,
+  rejectedByCircle,
 } from "./circle";
 import {
   ONCHAIN_STATUS,
@@ -661,16 +662,6 @@ export async function submitSettlement(params: {
     console.warn("submitSettlement: could not queue confirmation; the sweep will pick it up", err);
   }
   return { txId };
-}
-
-/**
- * True only when Circle answered and refused the request (a 4xx other than a timeout),
- * so it can't have been accepted. Timeouts, network errors and 5xx are unknown.
- */
-function rejectedByCircle(err: unknown): boolean {
-  const e = err as { status?: unknown; response?: { status?: unknown } } | null;
-  const status = typeof e?.status === "number" ? e.status : typeof e?.response?.status === "number" ? e.response.status : null;
-  return status !== null && status >= 400 && status < 500 && status !== 408;
 }
 
 export type SettlementOutcome = "settled" | "failed" | "in_flight" | "noop";

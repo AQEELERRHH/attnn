@@ -183,10 +183,9 @@ async function runBidderAgentHoldingLease(userId: string, held: { token: Date })
         }
         if (!result.proceed || result.score < config.minFitScore) continue;
 
-        // The AI's amount is a hint. Clamp it to the creator's floor and the
-        // bidder's per-creator cap; skip creators priced above the cap.
+        // The agent bids the creator's floor; the AI only decided whether and how
+        // well they fit. Skip creators priced above the bidder's per-creator cap.
         const amount = resolveAgentBidAmount({
-          suggested: result.bidAmount,
           creatorMinBid: ct.profile.minBid,
           maxBidPerCreator: config.maxBidPerCreator,
         });

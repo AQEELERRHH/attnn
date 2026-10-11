@@ -38,8 +38,16 @@ export function validateReplyTemplate(raw: unknown): { ok: true; value: string |
 }
 
 /** "template" if the reply is the creator's saved template word for word, else "creator". */
-export function manualReplySource(reply: string, template: string | null | undefined): ReplySource {
-  return template && reply.trim() === template.trim() ? "template" : "creator";
+export function manualReplySource(
+  reply: string,
+  template: string | null | undefined,
+  /** The creator agent's AI draft for this bid (D2), if any. */
+  suggested?: string | null,
+): ReplySource {
+  if (template && reply.trim() === template.trim()) return "template";
+  // Sent unchanged, the AI wrote it (the creator approved it); edited, it's theirs.
+  if (suggested && reply.trim() === suggested.trim()) return "ai";
+  return "creator";
 }
 
 /** Share of rated replies bidders found worth it, or null with no ratings. */

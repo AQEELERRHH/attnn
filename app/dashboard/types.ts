@@ -51,6 +51,8 @@ export interface BidData {
   /** Creator agent's triage score, 0–10. */
   score: number | null;
   reply: string | null;
+  /** Creator's own pending bids only: their agent's AI draft awaiting approval (D2). */
+  suggestedReply: string | null;
   /** Who wrote the reply (null on old rows). */
   replySource: "creator" | "template" | "ai" | null;
   /** The bidder's rating of the reply: 1 = worth it, -1 = not, null = unrated. */

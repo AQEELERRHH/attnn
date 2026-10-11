@@ -30,3 +30,8 @@ export async function bidsPaused(): Promise<boolean> {
 }
 
 export const PAUSED_MESSAGE = "New bids are paused for maintenance. Replies and refunds still work. Please try again soon.";
+
+/** Forget the cached value (tests, and right after an operator flips the switch in-process). */
+export function clearSettingsCache(): void {
+  cache = null;
+}

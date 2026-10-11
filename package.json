@@ -6,12 +6,16 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "next lint --dir app --dir components --dir lib --dir inngest --dir hooks",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tests/tsconfig.json",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
-    "test": "playwright test",
+    "test": "npm run test:unit && npm run test:integration",
+    "test:unit": "node --import tsx --test tests/unit/*.test.mts",
+    "test:integration": "node --import tsx --experimental-test-module-mocks --test --test-concurrency=1 tests/integration/*.test.mts",
+    "test:e2e": "playwright test",
     "setup:contracts": "cd contracts && forge install foundry-rs/forge-std --no-git",
     "test:contracts": "cd contracts && forge test -vvv",
     "deploy:contracts": "cd contracts && forge script script/Deploy.s.sol:Deploy --rpc-url $ARC_RPC_DEPLOY --private-key $DEPLOYER_PRIVATE_KEY --broadcast"
@@ -72,6 +76,7 @@
     "eslint-config-next": "15.1.0",
     "postcss": "^8.4.0",
     "tailwindcss": "^3.4.0",
+    "tsx": "4.19.2",
     "typescript": "^5.7.0"
   }
 }

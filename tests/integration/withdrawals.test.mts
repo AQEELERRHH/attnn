@@ -357,4 +357,24 @@ describe("D4: withdrawals", () => {
     assert.equal((await bid("100000000", code)).status, 202, "the same code still works");
     assert.equal((await bid("100000000", code)).status, 410, "but only once");
   });
+
+  test("a retried bid whose first try failed to queue says so, instead of reporting success", async () => {
+    const requestId = crypto.randomUUID();
+    world.failInngest = true;
+    assert.equal((await bid("10000000", undefined, requestId)).status, 503);
+    world.failInngest = false;
+    const retry = await bid("10000000", undefined, requestId);
+    assert.equal(retry.status, 409);
+    assert.equal((await retry.json()).restart, true);
+  });
+
+  test("switching the agent on emails the account; switching it off or on again doesn't repeat it", async () => {
+    const profileRoute = await import("../../app/api/profile/update/route.ts");
+    const toggle = (bidderActive: boolean) => profileRoute.POST(postTo("/api/profile/update", { bidderActive }));
+    await db.update(bidderConfigs).set({ isActive: false }).where(eq(bidderConfigs.userId, ids.bidder));
+    assert.equal((await toggle(true)).status, 200);
+    assert.equal((await toggle(true)).status, 200);
+    assert.equal((await toggle(false)).status, 200);
+    assert.equal(mail.sent.filter((m) => m.subject.includes("switched on")).length, 1);
+  });
 });

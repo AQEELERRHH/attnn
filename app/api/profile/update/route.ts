@@ -6,6 +6,7 @@ import { db } from "@/lib/db/client";
 import { profiles, bidderConfigs } from "@/lib/db/schema";
 import { and, eq, ne, sql } from "drizzle-orm";
 import { validateCreatorFloor } from "@/lib/bid-rules";
+import { notifyAccount } from "@/lib/withdrawals";
 import { validateReplyTemplate } from "@/lib/reply-rules";
 import { normalizeTags, validateHandle, validateProfileFields } from "@/lib/profile-rules";
 import { validateAutoAcceptSetting } from "@/lib/creator-agent-rules";
@@ -86,7 +87,17 @@ export async function POST(req: NextRequest) {
     // validates them; this route just pauses and resumes the agent.
     if (updates.bidderActive !== undefined) {
       if (typeof updates.bidderActive !== "boolean") return NextResponse.json({ error: "bidderActive must be true or false" }, { status: 400 });
-      await db.update(bidderConfigs).set({ isActive: updates.bidderActive }).where(eq(bidderConfigs.userId, session.user.id));
+      const [switched] = await db
+        .update(bidderConfigs)
+        .set({ isActive: updates.bidderActive })
+        .where(and(eq(bidderConfigs.userId, session.user.id), eq(bidderConfigs.isActive, !updates.bidderActive)))
+        .returning({ id: bidderConfigs.id });
+      // Switching the agent on lets it bid from its wallet: tell the account (spots a stolen session).
+      if (switched && updates.bidderActive) {
+        await notifyAccount(session.user.id, "Your Attnn. bidder agent was switched on", [
+          "Your bidder agent was switched on and can now bid from its agent wallet, within the budget and limits you set.",
+        ]);
+      }
     }
 
     return NextResponse.json({ success: true, registrySync });

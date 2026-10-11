@@ -108,6 +108,7 @@ export function CreatorMarket(props: CreatorMarketProps) {
     });
     const data = await res.json().catch(() => ({}));
     if (data.needsCode) return { ok: false, needsCode: String(data.sentTo ?? "your email"), error: data.error as string | undefined };
+    if (data.restart) bidRequest.done();
     if (res.ok && data.success) {
       bidRequest.done();
       router.refresh();

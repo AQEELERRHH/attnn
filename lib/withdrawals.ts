@@ -139,10 +139,17 @@ export async function requestSecurityCode(userId: string, subject: string, what:
  * Checks and uses up a code for `subject`. Wrong codes count (atomically, so parallel
  * guesses can't skip the limit); after CODE_MAX_ATTEMPTS the code is dead.
  */
-export async function consumeSecurityCode(userId: string, subject: string, code: string, now = Date.now()): Promise<void> {
+export async function consumeSecurityCode(
+  userId: string,
+  subject: string,
+  code: string,
+  /** Inside an allowance transaction, pass it so the lookup and the single-use delete reuse its connection. */
+  conn: Tx | typeof db = db,
+  now = Date.now(),
+): Promise<void> {
   if (!/^\d{6}$/.test(code)) throw new WithdrawalError("Enter the 6-digit code from your email.");
   const key = subjectKey(subject);
-  const row = await db.query.withdrawalCodes.findFirst({
+  const row = await conn.query.withdrawalCodes.findFirst({
     where: and(eq(withdrawalCodes.userId, userId), eq(withdrawalCodes.subject, key)),
   });
   if (!row || row.expiresAt.getTime() <= now || row.attempts >= CODE_MAX_ATTEMPTS) {
@@ -162,7 +169,7 @@ export async function consumeSecurityCode(userId: string, subject: string, code:
     throw new WithdrawalError(left > 0 ? `That code isn't right. ${left} ${left === 1 ? "try" : "tries"} left.` : "That code isn't right. Ask for a new one.");
   }
   // Single use: only the caller whose delete removed it may go on.
-  const used = await db.delete(withdrawalCodes).where(eq(withdrawalCodes.id, row.id)).returning({ id: withdrawalCodes.id });
+  const used = await conn.delete(withdrawalCodes).where(eq(withdrawalCodes.id, row.id)).returning({ id: withdrawalCodes.id });
   if (!used.length) throw new WithdrawalError("This code was already used. Ask for a new one.", 410);
 }
 
@@ -226,7 +233,7 @@ export async function allowanceRemaining(userId: string): Promise<bigint> {
  * Resolves if the user approved this action (it consumes their emailed code, which is
  * bound to that amount); throws otherwise.
  */
-export type ApproveOverAllowance = (amount: bigint) => Promise<void>;
+export type ApproveOverAllowance = (amount: bigint, tx: Tx) => Promise<void>;
 
 /**
  * Inside a transaction holding lockAllowance: throws AllowanceExceeded unless `amount`
@@ -241,15 +248,17 @@ export async function assertWithinAllowance(
 ): Promise<void> {
   const used = await allowanceUsed(userId, tx);
   if (used + amount <= DAILY_ALLOWANCE) return;
-  if (opts.approve) return opts.approve(amount);
+  if (opts.approve) return opts.approve(amount, tx);
   throw new AllowanceExceeded(used >= DAILY_ALLOWANCE ? BigInt(0) : DAILY_ALLOWANCE - used, opts.canConfirm);
 }
 
 /** An approver that consumes the emailed code for `subject`, only for exactly `expected`. */
 export function approveWithCode(userId: string, subject: string, code: string, expected: bigint): ApproveOverAllowance {
-  return async (amount) => {
+  return async (amount, tx) => {
     if (amount !== expected) throw new WithdrawalError("This code was for a different amount. Ask for a new one.", 410);
-    await consumeSecurityCode(userId, subject, code);
+    // The attempt counter is updated on its own connection (so a wrong guess still counts
+    // after the rollback); the lookup and the single-use delete use the transaction's.
+    await consumeSecurityCode(userId, subject, code, tx);
   };
 }
 

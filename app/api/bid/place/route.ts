@@ -66,8 +66,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ needsCode: true, sentTo, error: err.message }, { status: 202 });
     }
 
+    // A retry of a request whose bid already failed (e.g. it couldn't be queued): say
+    // so, and let the browser start a new request instead of reporting success.
+    if (bid.status === "failed") {
+      return NextResponse.json({ error: bid.failReason ?? "That bid didn't go through. No USDC moved. Please try again.", restart: true }, { status: 409 });
+    }
     return NextResponse.json(
-      { success: true, status: "placing", bid: { id: bid.id, status: bid.status, amountUsdc: bid.amountUsdc } },
+      { success: true, status: bid.status, bid: { id: bid.id, status: bid.status, amountUsdc: bid.amountUsdc } },
       { status: 202 },
     );
   } catch (err) {

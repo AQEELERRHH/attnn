@@ -84,14 +84,27 @@ describe("placeBid job", () => {
     clearEscrowCache();
   });
 
-  test("D5: a placeBid refused because the escrow was paused meanwhile fails the bid with no USDC moved", async () => {
-    const bid = await createBidIntent({ bidderUserId: ids.bidder, creatorUserId: ids.creator, amountUsdc: "10000000" });
-    const step = makeStep({ "submit-place-bid": () => { world.escrowPaused = true; } });
-    await job.__fn[2]({ event: { data: { bidId: bid.id } }, step });
-    const r = await row(bid.id);
+  test("D5: a queued bid isn't sent once the escrow is paused; one the chain refuses fails with no USDC moved", async () => {
+    const { clearEscrowCache } = await import("../../lib/escrow.ts");
+    // Paused while queued: the job sees it and never sends placeBid.
+    const queued = await createBidIntent({ bidderUserId: ids.bidder, creatorUserId: ids.creator, amountUsdc: "10000000" });
+    const step = makeStep({ "submit-place-bid": () => { world.escrowPaused = true; clearEscrowCache(); } });
+    await job.__fn[2]({ event: { data: { bidId: queued.id } }, step });
+    let r = await row(queued.id);
+    assert.equal(r.status, "failed");
+    assert.match(r.failReason ?? "", /paused.*No USDC moved/);
+    assert.equal(world.calls("placeBid").length, 0);
+
+    // Paused after the app's check (cached as open): the contract refuses it on-chain.
+    world.escrowPaused = false;
+    clearEscrowCache();
+    const late = await createBidIntent({ bidderUserId: ids.bidder, creatorUserId: ids.creator, amountUsdc: "10000000" });
+    await job.__fn[2]({ event: { data: { bidId: late.id } }, step: makeStep({ "submit-place-bid": () => { world.escrowPaused = true; } }) });
+    r = await row(late.id);
     assert.equal(r.status, "failed");
     assert.match(r.failReason ?? "", /No USDC moved/);
     assert.equal(world.usdc.get(ESCROW) ?? BigInt(0), BigInt(0));
+    clearEscrowCache();
   });
 
   test("M5: if another bid uses the approval first, it re-approves and still places once", async () => {

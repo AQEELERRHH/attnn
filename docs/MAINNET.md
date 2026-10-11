@@ -75,7 +75,11 @@ Level Security is on everywhere. It prints no secrets and changes nothing.
 - [ ] Circle LIVE API key + entity secret for mainnet; `CIRCLE_WALLET_SET_ID` empty or a
       mainnet wallet set
 - [ ] Circle webhooks (wallet notifications + contract event monitoring for the new escrow)
-      pointed at the production URL
+      pointed at the production URL. Monitor these v2 event signatures on the new escrow
+      (`BidAccepted` changed, so testnet monitor settings won't match):
+      `BidPlaced(uint256,address,address,uint256)`, `BidAccepted(uint256,address,bytes32)`,
+      `BidRejected(uint256,address)`, `BidRefunded(uint256,address)`. Optional:
+      `Paused(address)`, `Unpaused(address)` (ignored by the app; the health check reports them).
 - [ ] New `DATABASE_URL` (see Data) and fresh Inngest keys if using a separate Inngest app
 - [ ] `ALERT_EMAIL` = who gets the money health-check alerts (and `RESEND_API_KEY`, already set)
 

@@ -62,6 +62,15 @@ export const world = {
   walletAddress: new Map<string, string>(),
   /** Which escrow generation the fake chain runs (lib/escrow.ts reads it from getCode). */
   escrowVersion: 2 as 1 | 2,
+  /** Per-address override, e.g. a legacy v1 escrow next to the current v2 one. */
+  escrowVersions: new Map<string, 1 | 2>(),
+  /**
+   * The next Circle submission reaches Circle (it is recorded and will run) but the call
+   * times out, and Circle's transaction list doesn't show it yet.
+   */
+  timeoutNextSubmit: false,
+  /** Transactions Circle's list doesn't show yet (findTransactionByRefId misses them). */
+  unlisted: new Set<string>(),
   /** v2 admin state. */
   escrowPaused: false,
   escrowOwner: "0x00000000000000000000000000000000000000ad",
@@ -82,6 +91,9 @@ export const world = {
     this.autoMine = false;
     this.refundPeriodSeconds = BigInt(3 * 24 * 3600);
     this.escrowVersion = 2;
+    this.escrowVersions.clear();
+    this.timeoutNextSubmit = false;
+    this.unlisted.clear();
     this.escrowPaused = false;
     this.escrowOwner = "0x00000000000000000000000000000000000000ad";
     this.escrowPendingOwner = "0x0000000000000000000000000000000000000000";
@@ -129,7 +141,17 @@ function submit(params: { walletId: string; contractAddress: string; functionNam
   };
   world.txs.push(tx);
   if (world.autoMine) mine(tx);
+  if (world.timeoutNextSubmit) {
+    world.timeoutNextSubmit = false;
+    world.unlisted.add(tx.id);
+    throw new Error("circle timeout");
+  }
   return { txId: tx.id, state: tx.state };
+}
+
+/** The escrow generation at this address. */
+export function versionOf(address: string): 1 | 2 {
+  return world.escrowVersions.get(lower(address)) ?? world.escrowVersion;
 }
 
 /** Applies a submitted transaction's effect to the fake chain and completes it. */
@@ -145,7 +167,7 @@ function mine(tx: FakeTx) {
     const key = `${owner}:${tx.contractAddress}`;
     const allowance = world.allowance.get(key) ?? BigInt(0);
     const balance = world.usdc.get(owner) ?? BigInt(0);
-    if ((world.escrowVersion === 2 && world.escrowPaused) || allowance < BigInt(amount) || balance < BigInt(amount)) {
+    if ((versionOf(tx.contractAddress) === 2 && world.escrowPaused) || allowance < BigInt(amount) || balance < BigInt(amount)) {
       ok = false;
     } else {
       world.allowance.set(key, allowance - BigInt(amount));
@@ -155,7 +177,7 @@ function mine(tx: FakeTx) {
         bidder: owner,
         creator,
         amount: BigInt(amount),
-        ...(world.escrowVersion === 2 ? { messageHash: tx.args[2] as Hex } : { message: String(tx.args[2] ?? "") }),
+        ...(versionOf(tx.contractAddress) === 2 ? { messageHash: tx.args[2] as Hex } : { message: String(tx.args[2] ?? "") }),
       });
       logs.push(bidPlacedLog(tx.contractAddress, BigInt(id), owner, creator, BigInt(amount)));
     }
@@ -241,7 +263,7 @@ const fakePublicClient = {
       case "getBid": {
         const b = world.escrowBids.get(String(args![0]));
         const zero = "0x0000000000000000000000000000000000000000";
-        const v2 = world.escrowVersion === 2;
+        const v2 = versionOf(address) === 2;
         return b
           ? [b.bidder, b.creator, b.amount, v2 ? b.messageHash : b.message, v2 ? b.replyHash : b.reply, b.status, b.createdAt]
           : [zero, zero, BigInt(0), v2 ? zeroHash : "", v2 ? zeroHash : "", 0, BigInt(0)];
@@ -255,7 +277,7 @@ const fakePublicClient = {
       case "paused":
       case "owner":
       case "pendingOwner":
-        if (world.escrowVersion !== 2) throw new Error(`fake chain: v1 escrow has no ${functionName}()`);
+        if (versionOf(address) !== 2) throw new Error(`fake chain: v1 escrow has no ${functionName}()`);
         return functionName === "paused" ? world.escrowPaused : functionName === "owner" ? world.escrowOwner : world.escrowPendingOwner;
       default:
         throw new Error(`fake chain: unhandled readContract ${functionName} on ${address}`);
@@ -275,9 +297,9 @@ const fakePublicClient = {
   async getBlock() {
     return { timestamp: BigInt(Math.floor(world.blockTimeMs / 1000)) };
   },
-  async getCode() {
+  async getCode({ address }: { address: string }) {
     // Enough bytecode for lib/escrow.ts to tell the escrow generation apart.
-    const marker = toFunctionSelector(world.escrowVersion === 2 ? "acceptBid(uint256,bytes32)" : "acceptBid(uint256,string)").slice(2);
+    const marker = toFunctionSelector(versionOf(address) === 2 ? "acceptBid(uint256,bytes32)" : "acceptBid(uint256,string)").slice(2);
     return `0x6080604052${marker}`;
   },
 };
@@ -306,7 +328,7 @@ export async function installFakes(): Promise<void> {
         return submit({ walletId, contractAddress: actualArc.USDC_ADDRESS, functionName: "transfer", args: [to, amount], refId: opKey });
       },
       findTransactionByRefId: async (walletId: string, refId: string) => {
-        const tx = world.txs.find((t) => t.refId === refId && t.walletId === walletId);
+        const tx = world.txs.find((t) => t.refId === refId && t.walletId === walletId && !world.unlisted.has(t.id));
         return tx ? { txId: tx.id, state: tx.state } : null;
       },
       getTransactionStatus: async (txId: string) => {

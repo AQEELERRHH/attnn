@@ -45,6 +45,8 @@ export async function seedEscrowedBid(opts: {
   status?: "pending" | "counter_offered";
   ageSeconds?: number;
   replacesBidId?: string;
+  /** Escrow contract the bid lives in (default: the current one). */
+  escrow?: string;
 } = {}) {
   const { db } = await import("../../lib/db/client.ts");
   const { bids } = await import("../../lib/db/schema.ts");
@@ -68,7 +70,7 @@ export async function seedEscrowedBid(opts: {
       amountUsdc: amount.toString(),
       message: "hello",
       status: opts.status ?? "pending",
-      escrowAddress: ESCROW,
+      escrowAddress: (opts.escrow ?? ESCROW).toLowerCase(),
       onChainBidId,
       onChainTxHash: `0x${"a".repeat(64)}`,
       replacesBidId: opts.replacesBidId ?? null,

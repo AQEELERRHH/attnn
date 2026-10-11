@@ -1,5 +1,5 @@
 {
-  "id": "fecbc529-6701-4440-82fe-b1f4cafd05bd",
+  "id": "b6d47750-74a6-46cb-bc10-636519fe19c1",
   "prevId": "009d73b3-bd88-4f27-a73e-373bb0cc92f3",
   "version": "7",
   "dialect": "postgresql",
@@ -420,6 +420,12 @@
         "reply_salt": {
           "name": "reply_salt",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reply_candidates": {
+          "name": "reply_candidates",
+          "type": "jsonb",
           "primaryKey": false,
           "notNull": false
         },

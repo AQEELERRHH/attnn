@@ -20,7 +20,7 @@ import type { Hex } from "viem";
 import { db } from "./db/client";
 import { bids, profiles, rateLimits } from "./db/schema";
 import { escrowAbi, publicClient, usdcAbi, USDC_ADDRESS } from "./arc";
-import { escrowAdmin, readEscrowBid } from "./escrow";
+import { escrowAdmin, matchesFingerprint, readEscrowBid } from "./escrow";
 import { escrowAddress, knownEscrowAddresses } from "./chain";
 import { formatUsd } from "./bid-rules";
 import { appSwitchPaused } from "./app-settings";
@@ -121,6 +121,8 @@ export interface HealthSnapshot {
 
 export interface ChainBid extends OnChainEntry {
   bidder: string;
+  /** v2: the accepted reply's fingerprint, else null. */
+  replyHash?: string | null;
 }
 
 export async function snapshotBlock(): Promise<HealthSnapshot> {
@@ -159,6 +161,7 @@ export async function readEscrowBids(escrow: string, from: number, to: number, s
           creator: b.creator.toLowerCase(),
           amount: b.amount.toString(),
           status: b.status,
+          replyHash: b.replyHash,
         };
       }),
     );
@@ -261,6 +264,31 @@ export async function evaluateFullHealth(chainBids: ChainBid[], snap: HealthSnap
         .map((u) => `#${u.id}`)
         .join(", ")} (run the reconcile job as a dry run, then apply)`,
     );
+  }
+
+  // D1: an accepted bid on a v2 escrow must show the reply its fingerprint was made from.
+  const acceptedV2 = chainBids.filter((b) => b.status === 1 && b.replyHash);
+  if (acceptedV2.length) {
+    const acceptedRows = await db
+      .select({ id: bids.id, escrow: bids.escrowAddress, onChainBidId: bids.onChainBidId, reply: bids.reply, replySalt: bids.replySalt, settledAt: bids.settledAt })
+      .from(bids)
+      .where(and(eq(bids.status, "accepted"), isNotNull(bids.onChainBidId)));
+    const byKey = new Map(acceptedRows.filter((r) => r.escrow && r.onChainBidId).map((r) => [key(r.escrow!, r.onChainBidId!), r]));
+    const mismatched = acceptedV2
+      .map((c) => byKey.get(key(c.escrow, c.id)))
+      .filter((r): r is NonNullable<typeof r> => !!r && (!r.settledAt || r.settledAt <= asOf))
+      .filter((r) => {
+        const chain = acceptedV2.find((c) => key(c.escrow, c.id) === key(r.escrow!, r.onChainBidId!));
+        return !matchesFingerprint(chain?.replyHash, r.replySalt, r.reply);
+      });
+    if (mismatched.length) {
+      problems.push(
+        `${mismatched.length} accepted bid(s) show no reply, or one that doesn't match the fingerprint the creator was paid for on Arc: ${mismatched
+          .map((r) => r.id)
+          .slice(0, 10)
+          .join(", ")}`,
+      );
+    }
   }
   return { problems, notes };
 }

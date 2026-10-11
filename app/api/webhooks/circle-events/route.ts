@@ -3,10 +3,10 @@ import { and, eq, inArray } from "drizzle-orm";
 import { decodeEventLog, type Hex } from "viem";
 import { db } from "@/lib/db/client";
 import { bids, webhookEvents } from "@/lib/db/schema";
-import { escrowAbiFor, escrowVersion, matchesFingerprint } from "@/lib/escrow";
+import { escrowAbiFor, escrowVersion } from "@/lib/escrow";
 import { arc, escrowAddress } from "@/lib/chain";
 import { verifyCircleSignature } from "@/lib/circle-webhook";
-import { finalizePlacement, finalizeSettlement, notifyBidEscrowed } from "@/lib/bids";
+import { finalizePlacement, finalizeSettlement, notifyBidEscrowed, pickReply } from "@/lib/bids";
 
 /**
  * Circle Smart Contract Platform event monitor → AttnnEscrow logs.
@@ -161,6 +161,7 @@ async function handle(body: {
       settlementSubmittedAt: null,
       settlementAction: null,
       failReason: null,
+      replyCandidates: null,
       ...(decoded.eventName === "BidAccepted" ? acceptedReply(version, decoded.args, bid) : {}),
     })
     .where(and(eq(bids.id, bid.id), inArray(bids.status, [...SETTLEABLE])))
@@ -171,15 +172,9 @@ async function handle(body: {
 /**
  * Reply fields for a bid accepted outside our own settlement flow. v1 logs carry the
  * text the bidder paid for. v2 logs carry only its fingerprint: keep the saved reply
- * when it matches, otherwise record none.
+ * (or an earlier attempt's) that matches, otherwise none.
  */
-function acceptedReply(
-  version: 1 | 2,
-  args: Record<string, unknown>,
-  bid: { reply: string | null; replySalt: string | null },
-) {
+function acceptedReply(version: 1 | 2, args: Record<string, unknown>, bid: Parameters<typeof pickReply>[1]) {
   if (version === 1) return { reply: (args.reply as string) || null };
-  return matchesFingerprint(args.replyHash as string, bid.replySalt, bid.reply)
-    ? {}
-    : { reply: null, replySalt: null, replySource: null };
+  return pickReply(args.replyHash as string, bid);
 }

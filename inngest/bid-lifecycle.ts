@@ -15,6 +15,7 @@ import { walletByAddress } from "@/lib/wallets";
 import { bids } from "@/lib/db/schema";
 import { publicClient, usdcAbi, USDC_ADDRESS } from "@/lib/arc";
 import { escrowAbiFor, escrowVersion, placeBidArgs } from "@/lib/escrow";
+import { bidsPaused } from "@/lib/app-settings";
 import {
   classifyTxState,
   describeTxFailure,
@@ -186,6 +187,11 @@ export const placeBid = inngest.createFunction(
           // The sweep may have given up on this bid while it waited in the queue.
           const current = await db.query.bids.findFirst({ where: eq(bids.id, bidId), columns: { status: true } });
           if (current?.status !== "placing") return { skipped: true as const };
+          // Paused (app switch or the escrow contract) while this bid waited: don't send it.
+          if (await bidsPaused()) {
+            await failPlacement(bidId, "New bids were paused before this bid was placed. No USDC moved.");
+            return { skipped: true as const };
+          }
           // Re-check: another placement from this wallet may have used our approval.
           const allowance = await publicClient.readContract({
             address: USDC_ADDRESS,

@@ -16,6 +16,7 @@ import { escrowAbi, escrowAbiV1, publicClient } from "./arc";
 export type EscrowVersion = 1 | 2;
 
 const V2_MARKER = toFunctionSelector("acceptBid(uint256,bytes32)").slice(2).toLowerCase();
+const V1_MARKER = toFunctionSelector("acceptBid(uint256,string)").slice(2).toLowerCase();
 const versions = new Map<string, EscrowVersion>();
 
 /** Which escrow generation is deployed at this address. Cached; throws if there is no contract. */
@@ -25,7 +26,12 @@ export async function escrowVersion(escrow: string): Promise<EscrowVersion> {
   if (known) return known;
   const code = await publicClient.getCode({ address: key as Hex });
   if (!code || code === "0x") throw new Error(`No contract at escrow ${escrow}`);
-  const version: EscrowVersion = code.toLowerCase().includes(V2_MARKER) ? 2 : 1;
+  const lowered = code.toLowerCase();
+  const v2 = lowered.includes(V2_MARKER);
+  const v1 = lowered.includes(V1_MARKER);
+  // Exactly one acceptBid: anything else isn't an escrow we know how to call.
+  if (v1 === v2) throw new Error(`Escrow ${escrow}: unrecognised contract (acceptBid v1 ${v1}, v2 ${v2})`);
+  const version: EscrowVersion = v2 ? 2 : 1;
   versions.set(key, version);
   return version;
 }

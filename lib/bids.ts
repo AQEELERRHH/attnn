@@ -348,20 +348,32 @@ function sameBid(onChain: EscrowBidView, bid: Pick<BidRow, "bidderAddress" | "cr
   );
 }
 
+type ReplyFields = { reply: string | null; replySalt?: string | null; replySource?: ReplySource | null; replyCandidates?: null };
+
 /**
- * The reply fields to record for a bid the escrow shows as accepted.
- *   v1: the text is on-chain; that is what the bidder paid for.
- *   v2: only the fingerprint is on-chain. Keep the reply we sent (still in `bid`, even
- *       if the row was cleared after a failed attempt) when it matches; otherwise
- *       record none, since the creator accepted with a reply we don't have.
+ * The reply to record for a bid accepted on a v2 escrow with this fingerprint: the
+ * current reply or any earlier attempt's (bids.replyCandidates) whose fingerprint
+ * matches. None matches → no reply is shown, never one the bidder didn't pay for.
+ * Settled, so the candidates list is dropped either way.
  */
-function acceptedReply(onChain: EscrowBidView, bid: BidRow) {
-  if (onChain.replyText !== null) return { reply: onChain.replyText || null };
-  if (matchesFingerprint(onChain.replyHash, bid.replySalt, bid.reply)) {
-    return { reply: bid.reply, replySalt: bid.replySalt, replySource: bid.replySource };
-  }
-  if (bid.reply) console.error(`acceptedReply: bid ${bid.id}: the on-chain reply fingerprint doesn't match the saved reply`);
-  return { reply: null, replySalt: null, replySource: null };
+export function pickReply(
+  replyHash: string | null | undefined,
+  bid: Pick<BidRow, "id" | "reply" | "replySalt" | "replySource" | "replyCandidates">,
+): ReplyFields {
+  const candidates = [
+    { reply: bid.reply, salt: bid.replySalt, source: bid.replySource as string | null },
+    ...(bid.replyCandidates ?? []),
+  ];
+  const hit = candidates.find((c) => matchesFingerprint(replyHash, c.salt, c.reply));
+  if (hit) return { reply: hit.reply, replySalt: hit.salt, replySource: (hit.source as ReplySource | null) ?? null, replyCandidates: null };
+  if (replyHash) console.error(`pickReply: bid ${bid.id}: no saved reply matches the on-chain fingerprint ${replyHash}`);
+  return { reply: null, replySalt: null, replySource: null, replyCandidates: null };
+}
+
+/** Reply fields for a bid the escrow shows as accepted (v1: the text on-chain is what was paid for). */
+function acceptedReply(onChain: EscrowBidView, bid: BidRow): ReplyFields {
+  if (onChain.replyText !== null) return { reply: onChain.replyText || null, replyCandidates: null };
+  return pickReply(onChain.replyHash, bid);
 }
 
 /**
@@ -422,6 +434,7 @@ async function reconcileFromEscrow(bid: BidRow): Promise<boolean> {
       settlementSubmittedAt: null,
       settlementAction: null,
       failReason: null,
+      replyCandidates: null,
       ...(chainTxHash ? { settlementOnChainTxHash: chainTxHash } : {}),
       // What the escrow holds is what the bidder paid for.
       ...(finalStatus === "accepted" ? acceptedReply(onChain, bid) : {}),
@@ -574,7 +587,16 @@ export async function submitSettlement(params: {
           failReason: null,
           // The reply is saved with the reservation, so the text in the database is
           // always the text sent on-chain, even if two accepts race.
-          ...(action === "accept" ? { reply: replyText!, replySalt, replySource: params.replySource ?? "creator" } : {}),
+          ...(action === "accept"
+            ? {
+                reply: replyText!,
+                replySalt,
+                replySource: params.replySource ?? "creator",
+                replyCandidates: sql`coalesce(${bids.replyCandidates}, '[]'::jsonb) || ${JSON.stringify([
+                  { reply: replyText!, salt: replySalt!, source: params.replySource ?? "creator" },
+                ])}::jsonb`,
+              }
+            : {}),
         })
         .where(and(eq(bids.id, bid.id), isNull(bids.settlementTxHash), inArray(bids.status, SETTLEABLE)))
         .returning({ id: bids.id });
@@ -603,9 +625,18 @@ export async function submitSettlement(params: {
     const sent = await findTransactionByRefId(actorWallet.circleWalletId, opKey, bid.createdAt).catch(() => "unknown" as const);
     if (sent === "unknown") throw err;
     if (!sent) {
+      // A new attempt number gives the next try a new op key: if this request did reach
+      // Circle after all, a retry can never silently get this transaction back with a
+      // different reply. (The contract refuses a second settlement of the same bid.)
       await db
         .update(bids)
-        .set({ settlementTxHash: null, settlementSubmittedAt: null, settlementAction: null, ...CLEAR_REPLY(action) })
+        .set({
+          settlementTxHash: null,
+          settlementSubmittedAt: null,
+          settlementAction: null,
+          settlementAttempt: sql`${bids.settlementAttempt} + 1`,
+          ...CLEAR_REPLY(action),
+        })
         .where(and(eq(bids.id, bid.id), eq(bids.settlementTxHash, reservation)));
       throw err;
     }
@@ -660,7 +691,13 @@ export async function finalizeSettlement(bidId: string): Promise<SettlementOutco
     if (!sent) {
       const released = await db
         .update(bids)
-        .set({ settlementTxHash: null, settlementSubmittedAt: null, settlementAction: null, ...CLEAR_REPLY(action) })
+        .set({
+          settlementTxHash: null,
+          settlementSubmittedAt: null,
+          settlementAction: null,
+          settlementAttempt: sql`${bids.settlementAttempt} + 1`,
+          ...CLEAR_REPLY(action),
+        })
         .where(and(eq(bids.id, bid.id), eq(bids.settlementTxHash, circleTxId)))
         .returning({ id: bids.id });
       return released.length ? "failed" : "noop";
@@ -696,7 +733,7 @@ export async function finalizeSettlement(bidId: string): Promise<SettlementOutco
   // COMPLETE always carries a chain hash; without one, check again later rather than
   // record a settlement nobody can verify on Arc.
   if (!status.txHash) return "in_flight";
-  let chainReply: string | null = null;
+  let replyFields: ReplyFields | null = null;
   {
     const receipt = await publicClient.getTransactionReceipt({ hash: status.txHash as Hex });
     if (action === "accept" && receipt.status === "success" && bid.escrowAddress) {
@@ -707,10 +744,12 @@ export async function finalizeSettlement(bidId: string): Promise<SettlementOutco
       const args = accepted?.args as { reply?: string; replyHash?: Hex } | undefined;
       if (version === 1) {
         // The reply the bidder paid for is the one in the BidAccepted log.
-        chainReply = args?.reply ?? null;
-      } else if (!matchesFingerprint(args?.replyHash, bid.replySalt, bid.reply)) {
-        // We sent the fingerprint of the saved reply, so this should never happen.
-        console.error(`finalizeSettlement: bid ${bid.id}: BidAccepted fingerprint doesn't match the saved reply`);
+        if (args?.reply !== undefined) replyFields = { reply: args.reply || null, replyCandidates: null };
+      } else {
+        // Keep only a reply whose fingerprint is the one the creator was paid for. No log
+        // (shouldn't happen for our own accept): read the fingerprint from the escrow.
+        const hash = args?.replyHash ?? (bid.onChainBidId ? (await readEscrowBid(bid.escrowAddress, bid.onChainBidId)).replyHash : null);
+        replyFields = pickReply(hash, bid);
       }
     }
     if (receipt.status !== "success") {
@@ -736,7 +775,8 @@ export async function finalizeSettlement(bidId: string): Promise<SettlementOutco
       settledAt: new Date(),
       settlementOnChainTxHash: status.txHash ?? null,
       failReason: null,
-      ...(chainReply !== null ? { reply: chainReply } : {}),
+      replyCandidates: null,
+      ...(replyFields ?? {}),
     })
     .where(
       and(eq(bids.id, bid.id), eq(bids.settlementTxHash, circleTxId), inArray(bids.status, SETTLEABLE)),

@@ -8,6 +8,9 @@ import { Card } from "@/components/ui/card";
 import { escrowVersion } from "@/lib/escrow";
 import { glossary } from "@/lib/glossary";
 
+// Re-checked hourly: the v2 escrow lines depend on reading the contract, which may fail at build time.
+export const revalidate = 3600;
+
 const AGENT_LIMITS = [
   "Its own wallet. The agent spends only what you move into its agent wallet, never your main wallet, and you can move the rest back any time.",
   "A daily budget the agent can't go past, reset every day at 00:00 UTC.",
@@ -156,7 +159,7 @@ export default async function AboutPage() {
                 <div className="w-8 h-8 rounded-full bg-arc-gold/20 flex items-center justify-center shrink-0 text-arc-gold font-bold text-sm">5</div>
                 <div>
                   <h4 className="font-medium mb-1">Smart Contracts: Trustless Escrow</h4>
-                  <p className="text-sm text-text-secondary">The bid money is held by a smart contract a piece of code that runs on Arc. Nobody can change its rules or move the money in it, including Attnn. The rules are: reply and earn, or ignore and the sender gets a refund. No exceptions, no loopholes.</p>
+                  <p className="text-sm text-text-secondary">The bid money is held by a smart contract a piece of code that runs on Arc. Its rules can&apos;t be changed: the money can only go to the creator when they reply, or back to the sender. No exceptions, no loopholes.</p>
                 </div>
               </div>
             </div>

@@ -322,4 +322,65 @@ describe("bids: placement, settlement and the races around them", () => {
     await submitSettlement({ bidId: bid.id, action: "accept", actorUserId: ids.creator, reply: REPLY });
     assert.equal(world.calls("acceptBid")[0]!.args[1], REPLY);
   });
+
+  // ── Review fixes: the fingerprint always leads back to the right text ──
+  test("H1: a timed-out accept that landed anyway, then a retry with new text: the reply paid for is shown", async () => {
+    const bid = await seedEscrowedBid();
+    // 1st accept reaches Circle, but the call times out and Circle's list doesn't show it yet.
+    world.timeoutNextSubmit = true;
+    await assert.rejects(submitSettlement({ bidId: bid.id, action: "accept", actorUserId: ids.creator, reply: REPLY }), /timeout/);
+    let r = await row(bid.id);
+    assert.equal(r.settlementTxHash, null, "released: Circle had no record of it");
+    assert.equal(r.reply, null, "a pending bid shows no reply");
+    assert.equal(r.settlementAttempt, 1, "the next try gets a new op key");
+    assert.equal(r.replyCandidates?.length, 1, "the attempt's reply + salt are kept until the bid settles");
+    // The creator, seeing nothing happen, retries with different text: a NEW op key, so
+    // Circle sends a second transaction instead of handing back the first.
+    const [first] = world.calls("acceptBid");
+    const other = REPLY.replace("considered", "rewritten");
+    const { txId } = await submitSettlement({ bidId: bid.id, action: "accept", actorUserId: ids.creator, reply: other });
+    const second = world.calls("acceptBid")[1]!;
+    assert.notEqual(second.refId, first!.refId, "never the old transaction back with a different reply");
+    // Then the 1st lands on-chain (its fingerprint) and the contract refuses the 2nd.
+    const onChain = world.escrowBids.get(bid.onChainBidId!)!;
+    onChain.status = 1;
+    onChain.replyHash = first!.args[1] as `0x${string}`;
+    world.fail(txId);
+    assert.equal(await finalizeSettlement(bid.id), "settled");
+    r = await row(bid.id);
+    assert.equal(r.status, "accepted");
+    assert.equal(r.reply, REPLY, "the text whose fingerprint is on-chain, not the retry's");
+    assert.equal(r.replyCandidates, null, "cleared once settled");
+  });
+
+  test("a confirmed accept whose log fingerprint matches nothing we saved shows no reply", async () => {
+    const bid = await seedEscrowedBid();
+    const { txId } = await submitSettlement({ bidId: bid.id, action: "accept", actorUserId: ids.creator, reply: REPLY });
+    world.complete(txId, [bidAcceptedLog(ESCROW, BigInt(bid.onChainBidId!), addr.creatorMain, `0x${"ef".repeat(32)}`)]);
+    assert.equal(await finalizeSettlement(bid.id), "settled");
+    const r = await row(bid.id);
+    assert.equal(r.status, "accepted");
+    assert.equal(r.reply, null);
+  });
+
+  test("a legacy v1 escrow and the current v2 escrow side by side each get their own arguments", async () => {
+    const LEGACY = "0x1e9a000000000000000000000000000000000003";
+    process.env.ATTN_LEGACY_ESCROW_CONTRACTS = LEGACY;
+    try {
+      world.escrowVersions.set(LEGACY, 1);
+      clearSettingsCache();
+      const legacy = await seedEscrowedBid({ escrow: LEGACY });
+      const current = await seedEscrowedBid({ amount: BigInt(7_000_000) });
+      await submitSettlement({ bidId: legacy.id, action: "accept", actorUserId: ids.creator, reply: REPLY });
+      await submitSettlement({ bidId: current.id, action: "accept", actorUserId: ids.creator, reply: REPLY });
+      const [toLegacy, toCurrent] = world.calls("acceptBid");
+      assert.equal(toLegacy!.contractAddress, LEGACY);
+      assert.equal(toLegacy!.args[1], REPLY, "v1 gets the text");
+      assert.equal(toCurrent!.contractAddress, ESCROW);
+      assert.match(String(toCurrent!.args[1]), /^0x[0-9a-f]{64}$/, "v2 gets only a fingerprint");
+    } finally {
+      process.env.ATTN_LEGACY_ESCROW_CONTRACTS = "none";
+      clearSettingsCache();
+    }
+  });
 });

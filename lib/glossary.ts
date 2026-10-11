@@ -34,7 +34,7 @@ export const glossary = {
     "Your agent's AI rates each creator from 0 to 10 against your goal. It only bids on creators scoring at least this. If the AI can't score a creator, it doesn't bid.",
   searchTags: "Topics to look for. Your agent only considers creators whose tags match at least one of these.",
   escrowPrivacy:
-    "Bid messages and replies are never written on Arc. Only a fingerprint of each is, so anyone can check a reply wasn't changed, but nobody can read it.",
+    "Bid messages and replies are never written on Arc as text. Only a fingerprint of each is stored, which proves a reply wasn't changed afterwards without revealing what it says.",
   escrowPause:
-    "In an emergency Attnn. can pause new bids. It can never move or freeze USDC already in the escrow: replies, declines and refunds keep working.",
+    "In an emergency, new bids can be paused. The pause can't move or freeze USDC already in the escrow: replies, declines and refunds keep working.",
 } as const;

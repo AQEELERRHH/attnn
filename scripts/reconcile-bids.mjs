@@ -23,14 +23,14 @@ import { createPublicClient, http, toFunctionSelector } from "viem";
 import { writeFileSync } from "node:fs";
 
 const ESCROW = process.env.ATTN_ESCROW_CONTRACT?.toLowerCase();
-const RPC = process.env.ARC_RPC_URL || "https://rpc.testnet.arc.network";
+const RPC = process.env.ARC_RPC_URL || (process.env.ARC_NETWORK?.trim().toLowerCase() === "mainnet" ? "https://rpc.mainnet.arc.io" : "https://rpc.testnet.arc.network");
 if (!process.env.DATABASE_URL || !ESCROW) {
   console.error("Set DATABASE_URL and ATTN_ESCROW_CONTRACT (e.g. node --env-file=.env.local …)");
   process.exit(1);
 }
 
 // v2 escrows store message/reply fingerprints (bytes32); v1 stored text. Read from the bytecode.
-const client0 = createPublicClient({ transport: http(process.env.ARC_RPC_URL || "https://rpc.testnet.arc.network") });
+const client0 = createPublicClient({ transport: http(RPC) });
 const code = await client0.getCode({ address: ESCROW });
 if (!code || code === "0x") {
   console.error(`No contract at ${ESCROW}`);

@@ -37,6 +37,21 @@ const abi = [
 const client = createPublicClient({ transport: http(rpc) });
 const read = (functionName) => client.readContract({ address: escrow, abi, functionName });
 
+// The same deployer can produce the same contract address on testnet and mainnet: make
+// sure the RPC is the network ARC_NETWORK says, before showing anything to sign.
+const expectedChainId = mainnet ? 5042 : 5042002;
+let chainId;
+try {
+  chainId = await client.getChainId();
+} catch (err) {
+  console.error(`RPC ${rpc} unreachable: ${err.shortMessage ?? err.message}`);
+  process.exit(1);
+}
+if (chainId !== expectedChainId) {
+  console.error(`RPC ${rpc} is chain ${chainId}, but ARC_NETWORK says ${mainnet ? "mainnet (5042)" : "testnet (5042002)"}. Fix ARC_RPC_URL / ARC_NETWORK.`);
+  process.exit(1);
+}
+
 let state;
 try {
   const [owner, pendingOwner, paused] = await Promise.all([read("owner"), read("pendingOwner"), read("paused")]);
@@ -46,7 +61,7 @@ try {
   process.exit(1);
 }
 
-console.log(`\nEscrow   ${escrow} (${mainnet ? "Arc MAINNET" : "Arc Testnet"})`);
+console.log(`\nEscrow   ${escrow} (${mainnet ? "Arc MAINNET" : "Arc Testnet"}, chain id ${chainId})`);
 console.log(`Admin    ${state.owner}`);
 console.log(`Handover ${state.pendingOwner === zeroAddress ? "none open" : `open, to ${state.pendingOwner}`}`);
 console.log(`New bids ${state.paused ? "PAUSED" : "open"}\n`);
@@ -54,6 +69,7 @@ console.log(`New bids ${state.paused ? "PAUSED" : "open"}\n`);
 const [cmd, arg] = process.argv.slice(2);
 const tx = (functionName, args, from, note) => {
   console.log(`To ${functionName}: send this transaction FROM ${from}`);
+  console.log(`  chain: ${chainId} (${mainnet ? "Arc mainnet" : "Arc Testnet"}): check your wallet is on this network`);
   console.log(`  to:    ${escrow}`);
   console.log(`  value: 0`);
   console.log(`  data:  ${encodeFunctionData({ abi, functionName, args })}`);

@@ -218,6 +218,10 @@ export const bids = pgTable("bids", {
   reply: text("reply"),
   // Salt for the reply's on-chain fingerprint (v2). Saved and cleared together with reply.
   replySalt: text("reply_salt"),
+  // Every reply + salt an accept was reserved with, kept until the bid settles, so the
+  // reply the escrow shows was accepted with can always be matched back to its text,
+  // even if that attempt was released or failed in the database (lib/bids.ts pickReply).
+  replyCandidates: jsonb("reply_candidates").$type<{ reply: string; salt: string; source: string | null }[]>(),
   // Who wrote the reply: "creator" (typed it), "template" (their saved template,
   // sent by them or their agent) or "ai" (drafted by the creator agent). Null on
   // rows from before this column. See lib/reply-rules.ts.

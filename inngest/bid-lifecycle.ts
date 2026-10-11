@@ -32,6 +32,22 @@ function waitFor(attempt: number): string {
 const APPROVAL_ROUNDS = 3;
 const MAX_CHECKS = 34; // ≈ 6×2s + 28×10s ≈ 5 minutes
 
+/**
+ * True (and the Circle id recorded) when this bid's placeBid already reached Circle,
+ * e.g. a step sent it but crashed before saving the id. Checked before every
+ * "failed" verdict in placeBid: a sent placeBid may have escrowed USDC, and a failed
+ * row is never auto-refunded.
+ */
+async function recordIfPlaceSent(bidId: string, walletId: string, createdAt: string): Promise<string | null> {
+  const sent = await findTransactionByRefId(walletId, `place:${bidId}`, new Date(createdAt));
+  if (!sent) return null;
+  await db
+    .update(bids)
+    .set({ status: "placing", bidTxHash: sent.txId, failReason: null })
+    .where(and(eq(bids.id, bidId), inArray(bids.status, ["placing", "failed"]), isNull(bids.bidTxHash)));
+  return sent.txId;
+}
+
 export const placeBid = inngest.createFunction(
   {
     id: "place-bid",
@@ -84,6 +100,7 @@ export const placeBid = inngest.createFunction(
         message: row.isPrivate ? "" : (row.message ?? ""),
         isPrivate: row.isPrivate,
         alreadySubmitted: Boolean(row.bidTxHash),
+        createdAt: row.createdAt.toISOString(),
       };
     });
     if (!bid) return { skipped: "bid is not placing" };
@@ -133,22 +150,38 @@ export const placeBid = inngest.createFunction(
             });
             if (st.outcome === "complete") { approved = true; break; }
             if (st.outcome === "failed") {
-              await step.run(`fail-approve${sfx}`, () => failPlacement(bidId, `USDC approval ${st.reason}. No USDC moved.`));
-              return { failed: "approve" };
+              const sent = await step.run(`fail-approve${sfx}`, async () => {
+                const id = await recordIfPlaceSent(bidId, bid.walletId, bid.createdAt);
+                if (!id) await failPlacement(bidId, `USDC approval ${st.reason}. No USDC moved.`);
+                return id;
+              });
+              if (!sent) return { failed: "approve" };
+              placed = true;
+              break;
             }
             await step.sleep(`approve-wait${sfx}-${i}`, waitFor(i));
           }
+          if (placed) break;
           if (!approved) {
-            await step.run(`fail-approve-timeout${sfx}`, () =>
-              failPlacement(bidId, "USDC approval was still confirming after 5 minutes, so the bid was not placed. No USDC moved."),
-            );
-            return { failed: "approve timeout" };
+            const sent = await step.run(`fail-approve-timeout${sfx}`, async () => {
+              const id = await recordIfPlaceSent(bidId, bid.walletId, bid.createdAt);
+              if (!id) await failPlacement(bidId, "USDC approval was still confirming after 5 minutes, so the bid was not placed. No USDC moved.");
+              return id;
+            });
+            if (!sent) return { failed: "approve timeout" };
+            placed = true;
+            break;
           }
         }
 
         // 2. Place the bid. The Circle id is stored in the same step so a retry
         //    finds the same transaction (opKey) and records it again.
         const submitted: unknown = await step.run(`submit-place-bid${sfx}`, async () => {
+          // A retry of this step after Circle accepted placeBid (but the id wasn't saved):
+          // the approval is spent by our own bid, so don't mistake that for theft. Checked
+          // first, so a row the sweep failed in the meantime is tracked again.
+          const alreadySent = await recordIfPlaceSent(bidId, bid.walletId, bid.createdAt);
+          if (alreadySent) return { txId: alreadySent };
           // The sweep may have given up on this bid while it waited in the queue.
           const current = await db.query.bids.findFirst({ where: eq(bids.id, bidId), columns: { status: true } });
           if (current?.status !== "placing") return { skipped: true as const };
@@ -192,10 +225,14 @@ export const placeBid = inngest.createFunction(
         placed = true;
       }
       if (!placed) {
-        await step.run("fail-approval-spent", () =>
-          failPlacement(bidId, "Other bids from this wallet kept using the USDC approval, so this bid wasn't placed. No USDC moved. Try again."),
-        );
-        return { failed: "approval spent" };
+        const sent = await step.run("fail-approval-spent", async () => {
+          const id = await recordIfPlaceSent(bidId, bid.walletId, bid.createdAt);
+          if (!id) {
+            await failPlacement(bidId, "Other bids from this wallet kept using the USDC approval, so this bid wasn't placed. No USDC moved. Try again.");
+          }
+          return id;
+        });
+        if (!sent) return { failed: "approval spent" };
       }
     }
 

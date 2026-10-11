@@ -33,17 +33,24 @@ export async function acquireAgentLease(userId: string, ms = AGENT_LEASE_MS): Pr
   return rows.length ? until : null;
 }
 
+/**
+ * Extends a lease this caller still holds and returns the new token, or null if it
+ * was lost (it expired and another run took it). Call before every spend.
+ */
+export async function renewAgentLease(userId: string, token: Date, ms = AGENT_LEASE_MS): Promise<Date | null> {
+  const until = new Date(Date.now() + ms);
+  const rows = await db
+    .update(bidderConfigs)
+    .set({ runLeaseUntil: until })
+    .where(and(eq(bidderConfigs.userId, userId), eq(bidderConfigs.runLeaseUntil, token)))
+    .returning({ id: bidderConfigs.id });
+  return rows.length ? until : null;
+}
+
 /** Releases a lease this caller holds (a later holder's lease is left alone). */
 export async function releaseAgentLease(userId: string, token: Date): Promise<void> {
   await db
     .update(bidderConfigs)
     .set({ runLeaseUntil: null })
     .where(and(eq(bidderConfigs.userId, userId), eq(bidderConfigs.runLeaseUntil, token)));
-}
-
-export class AgentBusyError extends Error {
-  constructor() {
-    super("Another agent run is in progress for this user");
-    this.name = "AgentBusyError";
-  }
 }

@@ -7,7 +7,7 @@ import { BidError, createBidIntent } from "./bids";
 import { ESCROW_MIN_BID, formatUsd, resolveAgentBidAmount } from "./bid-rules";
 import { getUsdcBalance } from "./activation";
 import { agentWallet } from "./wallets";
-import { acquireAgentLease, releaseAgentLease } from "./agent-lease";
+import { acquireAgentLease, releaseAgentLease, renewAgentLease } from "./agent-lease";
 import { bidsPaused } from "./app-settings";
 import { eq, and, gte, inArray, ne, sql } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
@@ -55,14 +55,15 @@ export async function runBidderAgent(userId: string): Promise<AgentRunResult> {
       logId: "",
     };
   }
+  const held = { token: lease };
   try {
-    return await runBidderAgentHoldingLease(userId);
+    return await runBidderAgentHoldingLease(userId, held);
   } finally {
-    await releaseAgentLease(userId, lease).catch((err) => console.error("agent: could not release lease", err));
+    await releaseAgentLease(userId, held.token).catch((err) => console.error("agent: could not release lease", err));
   }
 }
 
-async function runBidderAgentHoldingLease(userId: string): Promise<AgentRunResult> {
+async function runBidderAgentHoldingLease(userId: string, held: { token: Date }): Promise<AgentRunResult> {
   const errors: string[] = [];
   let bidsPlaced = 0;
   let creatorsFound = 0;
@@ -212,6 +213,13 @@ async function runBidderAgentHoldingLease(userId: string): Promise<AgentRunResul
     const topCreators = scored.slice(0, 5);
 
     for (const tc of topCreators) {
+      // Still ours? A run slower than the lease must stop, or it would race the next run.
+      const renewed = await renewAgentLease(userId, held.token);
+      if (!renewed) {
+        await logAgentAction(userId, "agent_stopped", { reason: "Run took too long; another run took over" });
+        break;
+      }
+      held.token = renewed;
       // Re-check budget before each bid — placing intents count immediately.
       const currentSpent = await spentToday(userId);
       if (currentSpent >= budget) {

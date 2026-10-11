@@ -145,6 +145,7 @@ export async function createBidIntent(input: BidIntentInput): Promise<BidRow> {
     replacesBidId: input.replacesBidId ?? null,
   };
   const replacesBidId = input.replacesBidId;
+  let existed = false;
   const [row] = replacesBidId
     ? // A re-bid locks the countered original and only goes ahead while it is still
       // countered with no settlement on its way. submitSettlement takes the same lock
@@ -154,7 +155,10 @@ export async function createBidIntent(input: BidIntentInput): Promise<BidRow> {
         await tx.execute(sql`select ${bids.id} from ${bids} where ${bids.id} = ${replacesBidId} for update`);
         // Two handler runs at once: the second gets the first's re-bid back.
         const already = await tx.query.bids.findFirst({ where: eq(bids.replacesBidId, replacesBidId) });
-        if (already) return [already];
+        if (already) {
+          existed = true;
+          return [already];
+        }
         const original = await tx.query.bids.findFirst({ where: eq(bids.id, replacesBidId) });
         if (!original || original.status !== "counter_offered" || original.settlementTxHash) {
           throw new BidError("The countered bid was already settled, so no re-bid was placed");
@@ -163,6 +167,8 @@ export async function createBidIntent(input: BidIntentInput): Promise<BidRow> {
       })
     : await db.insert(bids).values(values).returning();
   if (!row) throw new BidError("Could not record the bid", 500);
+  // Already created (and queued) by an earlier run: don't queue it twice.
+  if (existed) return row;
 
   try {
     await inngest.send({
@@ -173,7 +179,7 @@ export async function createBidIntent(input: BidIntentInput): Promise<BidRow> {
     await db
       .update(bids)
       .set({ status: "failed", failReason: "Could not queue the bid for placement. No USDC moved." })
-      .where(and(eq(bids.id, row.id), eq(bids.status, "placing")));
+      .where(and(eq(bids.id, row.id), eq(bids.status, "placing"), isNull(bids.bidTxHash)));
     console.error("createBidIntent: inngest.send failed", err);
     throw new BidError("Could not queue the bid. Please try again.", 503);
   }
@@ -568,7 +574,10 @@ export async function submitSettlement(params: {
   } catch (err) {
     // The request may still have reached Circle (e.g. a timeout). Only release the
     // reservation if Circle has no transaction for this op key.
-    const sent = await findTransactionByRefId(actorWallet.circleWalletId, opKey, bid.createdAt).catch(() => null);
+    // If Circle can't even be asked, keep the reservation: the request may be on its
+    // way, and the 5-minute stale path in finalizeSettlement resolves it by op key.
+    const sent = await findTransactionByRefId(actorWallet.circleWalletId, opKey, bid.createdAt).catch(() => "unknown" as const);
+    if (sent === "unknown") throw err;
     if (!sent) {
       await db
         .update(bids)
@@ -663,8 +672,16 @@ export async function finalizeSettlement(bidId: string): Promise<SettlementOutco
   // COMPLETE always carries a chain hash; without one, check again later rather than
   // record a settlement nobody can verify on Arc.
   if (!status.txHash) return "in_flight";
+  let chainReply: string | null = null;
   {
     const receipt = await publicClient.getTransactionReceipt({ hash: status.txHash as Hex });
+    if (action === "accept" && receipt.status === "success") {
+      // The reply the bidder paid for is the one in the BidAccepted log.
+      const accepted = parseEventLogs({ abi: escrowAbi, eventName: "BidAccepted", logs: receipt.logs as never }).find(
+        (l) => l.args.bidId.toString() === bid.onChainBidId,
+      );
+      chainReply = accepted?.args.reply ?? null;
+    }
     if (receipt.status !== "success") {
       await db
         .update(bids)
@@ -688,6 +705,7 @@ export async function finalizeSettlement(bidId: string): Promise<SettlementOutco
       settledAt: new Date(),
       settlementOnChainTxHash: status.txHash ?? null,
       failReason: null,
+      ...(chainReply !== null ? { reply: chainReply } : {}),
     })
     .where(
       and(eq(bids.id, bid.id), eq(bids.settlementTxHash, circleTxId), inArray(bids.status, SETTLEABLE)),

@@ -78,28 +78,6 @@ export async function provisionUserWallet(
   };
 }
 
-export interface WalletBalance {
-  amount: string;
-  usdc: string;
-}
-
-export async function getWalletBalance(walletId: string): Promise<WalletBalance> {
-  const client = getSDK();
-
-  const { data } = await client.getWalletTokenBalance({ id: walletId });
-  const wallet = data?.tokenBalances;
-  if (!wallet) throw new Error("Wallet not found");
-
-  const usdcBalance = Array.isArray(wallet)
-    ? wallet.find(
-        (b: { currency?: string; token?: { symbol?: string } }) =>
-          b.currency === "USD" || b.token?.symbol === "USDC",
-      )
-    : undefined;
-
-  return { amount: usdcBalance?.amount ?? "0", usdc: usdcBalance?.amount ?? "0" };
-}
-
 export interface ExecuteContractResult {
   txId: string;
   state: string;

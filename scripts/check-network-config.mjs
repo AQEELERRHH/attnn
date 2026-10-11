@@ -123,6 +123,19 @@ if (env("DATABASE_URL")) {
       else if (network === "mainnet") fail(`${b.n} bid(s) belong to another escrow. Use a fresh database for mainnet`);
       else warn(`${b.n} bid(s) belong to other (legacy) escrows`);
     }
+    // Row Level Security (migration 0009) hides tables from Supabase's public REST API.
+    // It doesn't restrict a table's OWNER, which is how the app connects, so every
+    // table must be owned by this connection's user.
+    const notOwned = await sql`select tablename from pg_tables where schemaname = 'public' and tableowner <> current_user`;
+    notOwned.length === 0
+      ? ok("The app's database user owns every table")
+      : fail(`The app's database user doesn't own: ${notOwned.map((r) => r.tablename).join(", ")}. With RLS on, the app couldn't read them`);
+    const noRls = await sql`
+      select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace
+      where n.nspname = 'public' and c.relkind = 'r' and not c.relrowsecurity`;
+    if (noRls.length === 0) ok("Row Level Security is on for every table");
+    else if (network === "mainnet") fail(`Row Level Security is off for: ${noRls.map((r) => r.relname).join(", ")} (run migration 0009)`);
+    else warn(`Row Level Security is off for ${noRls.length} table(s) (run migration 0009)`);
   } catch (err) {
     fail(`Could not read the database: ${err.message}`);
   } finally {

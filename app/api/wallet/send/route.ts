@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { stableUuid } from "@/lib/bid-rules";
 import { sameOrigin, serverError } from "@/lib/http-guard";
 import { LIMITS, limitOrNull } from "@/lib/rate-limit";
 import { mainWallet } from "@/lib/wallets";
@@ -27,7 +28,7 @@ export async function POST(req: NextRequest) {
     if (!wallet) return NextResponse.json({ error: "Wallet not found" }, { status: 404 });
 
     // Same request id → same transfer: a double click or retry never sends twice.
-    const result = await transferUSDC(wallet.circleWalletId, to, atomic.toString(), `send:${session.user.id}:${requestId}`);
+    const result = await transferUSDC(wallet.circleWalletId, to, atomic.toString(), `send:${stableUuid(`${session.user.id}:${requestId}`)}`);
 
     return NextResponse.json({ success: true, txId: result.txId });
   } catch (err) {

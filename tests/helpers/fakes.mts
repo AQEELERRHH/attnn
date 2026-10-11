@@ -50,6 +50,12 @@ export const world = {
   events: [] as { name: string; data: unknown }[],
   /** Throws from inngest.send when set. */
   failInngest: false,
+  /** Time of the "latest block" (health snapshots). Defaults to now. */
+  blockTimeMs: Date.now(),
+  /** When true, every Circle submission is mined at once with its on-chain effect. */
+  autoMine: false,
+  /** Circle wallet id → address (for autoMine's approve/placeBid effects). */
+  walletAddress: new Map<string, string>(),
 
   reset() {
     this.txs.length = 0;
@@ -61,6 +67,8 @@ export const world = {
     this.receipts.clear();
     this.events.length = 0;
     this.failInngest = false;
+    this.blockTimeMs = Date.now() + 1000;
+    this.autoMine = false;
     this.refundPeriodSeconds = BigInt(3 * 24 * 3600);
   },
 
@@ -105,7 +113,36 @@ function submit(params: { walletId: string; contractAddress: string; functionNam
     createDate: new Date().toISOString(),
   };
   world.txs.push(tx);
+  if (world.autoMine) mine(tx);
   return { txId: tx.id, state: tx.state };
+}
+
+/** Applies a submitted transaction's effect to the fake chain and completes it. */
+function mine(tx: FakeTx) {
+  const owner = lower(world.walletAddress.get(tx.walletId) ?? "");
+  const logs: unknown[] = [];
+  let ok = true;
+  if (tx.functionName === "approve") {
+    const [spender, amount] = tx.args as [string, string];
+    world.allowance.set(`${owner}:${lower(spender)}`, BigInt(amount));
+  } else if (tx.functionName === "placeBid") {
+    const [creator, amount] = tx.args as [string, string];
+    const key = `${owner}:${tx.contractAddress}`;
+    const allowance = world.allowance.get(key) ?? BigInt(0);
+    const balance = world.usdc.get(owner) ?? BigInt(0);
+    if (allowance < BigInt(amount) || balance < BigInt(amount)) {
+      ok = false;
+    } else {
+      world.allowance.set(key, allowance - BigInt(amount));
+      world.usdc.set(owner, balance - BigInt(amount));
+      world.usdc.set(tx.contractAddress, (world.usdc.get(tx.contractAddress) ?? BigInt(0)) + BigInt(amount));
+      const id = escrowBid({ bidder: owner, creator, amount: BigInt(amount) });
+      logs.push(bidPlacedLog(tx.contractAddress, BigInt(id), owner, creator, BigInt(amount)));
+    }
+  }
+  tx.state = "COMPLETE";
+  tx.txHash = `0x${tx.id.replace(/-/g, "").padEnd(64, "0")}`;
+  world.receipts.set(tx.txHash, { status: ok ? "success" : "reverted", logs });
 }
 
 /** A BidPlaced log as the escrow would emit it (for placeBid receipts). */
@@ -179,6 +216,12 @@ const fakePublicClient = {
   },
   async getLogs() {
     return [];
+  },
+  async getBlockNumber() {
+    return BigInt(1000);
+  },
+  async getBlock() {
+    return { timestamp: BigInt(Math.floor(world.blockTimeMs / 1000)) };
   },
   async getCode() {
     return "0x";

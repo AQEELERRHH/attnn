@@ -22,6 +22,9 @@ interface AISAResponse {
   usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
 }
 
+/** Longest a single AI call may take. Agent runs make up to ~11 calls inside a 10-minute lease. */
+const AI_TIMEOUT_MS = 25_000;
+
 async function callAI(prompt: string, systemPrompt?: string): Promise<string> {
   const messages: { role: string; content: string }[] = [];
   if (systemPrompt) messages.push({ role: "system", content: systemPrompt });
@@ -40,6 +43,8 @@ async function callAI(prompt: string, systemPrompt?: string): Promise<string> {
       max_tokens: 500,
       temperature: 0.3,
     }),
+    // A hung provider must not stall an agent run past its lease (lib/agent-lease.ts).
+    signal: AbortSignal.timeout(AI_TIMEOUT_MS),
   });
 
   if (!res.ok) {

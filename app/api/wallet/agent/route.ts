@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { stableUuid } from "@/lib/bid-rules";
 import { sameOrigin, serverError } from "@/lib/http-guard";
 import { LIMITS, limitOrNull } from "@/lib/rate-limit";
 import { auth } from "@/lib/auth";
@@ -64,7 +65,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Same request id → same transfer: a double click or retry never moves the money twice.
-    const tx = await transferUSDC(from.circleWalletId, to.address, amount.toString(), `move:${userId}:${requestId}`);
+    const tx = await transferUSDC(from.circleWalletId, to.address, amount.toString(), `move:${stableUuid(`${userId}:${requestId}`)}`);
     return NextResponse.json({ success: true, txId: tx.txId, amount: amount.toString() }, { status: 202 });
   } catch (err) {
     return serverError("wallet/agent", err, "We couldn't confirm the transfer. Check your balances before trying again.");

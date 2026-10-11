@@ -6,6 +6,17 @@ import { db } from "./db/client";
 import { accounts, sessions, users, verificationTokens } from "./db/schema";
 import { LIMITS, hit } from "./rate-limit";
 
+/** The requester's IP as Vercel reports it, or null outside a request. */
+async function requestIp(): Promise<string | null> {
+  try {
+    const { headers } = await import("next/headers");
+    const h = await headers();
+    return h.get("x-forwarded-for")?.split(",")[0]?.trim() || h.get("x-real-ip") || null;
+  } catch {
+    return null;
+  }
+}
+
 export const { handlers, signIn, signOut, auth } = NextAuth({
   adapter: DrizzleAdapter(db, {
   usersTable: users,
@@ -32,8 +43,10 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       maxAge: 60 * 60,
       sendVerificationRequest: async ({ identifier: email, url, provider }) => {
         // Stops anyone using the form to flood an inbox (or our Resend quota).
+        const ip = await requestIp();
+        if (ip && !(await hit(LIMITS.signInIp, ip))) throw new Error("Too many sign-in requests. Try again later.");
         if (!(await hit(LIMITS.signInEmail, email.trim().toLowerCase()))) {
-          throw new Error("Too many sign-in emails for this address. Try again in an hour.");
+          throw new Error("A sign-in link was just sent to this address. Check your inbox, or try again in a minute.");
         }
         const { Resend: ResendClient } = await import("resend");
         const resend = new ResendClient(provider.apiKey);

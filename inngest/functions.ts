@@ -5,7 +5,7 @@ import { eq, and, lt, gt, isNull, isNotNull, inArray } from "drizzle-orm";
 import { BidError, createBidIntent, declineReplacedBid, submitSettlement } from "@/lib/bids";
 import { applyVerdict, classifyOpenRows, findOrphans, indexOnChainBids, loadClosedRows, loadOpenRows, reopenOrphan } from "@/lib/reconcile";
 import { REFUND_PERIOD_MS } from "@/lib/bid-rules";
-import { AgentBusyError, acquireAgentLease, releaseAgentLease } from "@/lib/agent-lease";
+import { acquireAgentLease, releaseAgentLease } from "@/lib/agent-lease";
 import { spentToday } from "@/lib/agent";
 import { escrowAddress } from "@/lib/chain";
 import { confirmRegistration, confirmSettlement, listUnsyncedPendingBids, placeBid, sweepInFlightBids } from "./bid-lifecycle";
@@ -351,7 +351,9 @@ export const handleCounterOffer = inngest.createFunction(
       counterOfferAmount: string;
     };
 
-    const result = await step.run("place-counter-bid", async () => {
+    // The agent lease may be held by a run in progress: wait and try again (up to ~15
+    // minutes) instead of using up Inngest's retries. Unanswered counters still refund.
+    const answer = (attempt: number) => step.run(attempt === 0 ? "place-counter-bid" : `place-counter-bid-${attempt}`, async () => {
       const { bidderConfigs } = await import("@/lib/db/schema");
       const bid = await db.query.bids.findFirst({ where: eq(bids.id, bidId) });
       const config = await db.query.bidderConfigs.findFirst({ where: eq(bidderConfigs.userId, bidderUserId) });
@@ -381,7 +383,7 @@ export const handleCounterOffer = inngest.createFunction(
       // Same lock as an agent run: the budget read and the re-bid must not interleave
       // with another spend. Busy → throw, and Inngest retries in a moment.
       const lease = await acquireAgentLease(bidderUserId);
-      if (!lease) throw new AgentBusyError();
+      if (!lease) return { decision: "busy", reason: "An agent run is in progress" };
       try {
         const spent = await spentToday(bidderUserId);
         const remaining = BigInt(config.dailyBudget) - spent;
@@ -403,6 +405,11 @@ export const handleCounterOffer = inngest.createFunction(
       }
     });
 
+    let result = await answer(0);
+    for (let attempt = 1; result.decision === "busy" && attempt <= 15; attempt++) {
+      await step.sleep(`wait-for-agent-${attempt}`, "1m");
+      result = await answer(attempt);
+    }
     return result;
   },
 );
@@ -412,16 +419,45 @@ export const handleCounterOffer = inngest.createFunction(
 // 06:40 UTC. Read-only. Emails ALERT_EMAIL when anything needs a person (lib/health.ts,
 // docs/RUNBOOK.md). Run it by hand: send "attnn/admin.health-check" with { "full": true }.
 export const moneyHealthCheck = inngest.createFunction(
-  { id: "money-health-check", name: "Money Health Check", concurrency: 1, retries: 2 },
+  {
+    id: "money-health-check",
+    name: "Money Health Check",
+    concurrency: 1,
+    retries: 2,
+    // A check that can't run is itself a problem: say so instead of going quiet.
+    onFailure: async ({ error }) => {
+      const { sendAlert } = await import("@/lib/alerts");
+      await sendAlert("Money health check failed to run", [
+        `The health check stopped with: ${error.message}`,
+        "Until it runs again, problems with escrowed USDC won't be reported. See docs/RUNBOOK.md.",
+      ]);
+    },
+  },
   [{ cron: "40 * * * *" }, { event: "attnn/admin.health-check" }],
   async ({ event, step }) => {
-    const { quickHealthCheck, fullHealthCheck } = await import("@/lib/health");
+    const health = await import("@/lib/health");
     const { sendAlert } = await import("@/lib/alerts");
     const manualFull = (event?.data as { full?: boolean } | undefined)?.full === true;
     const full = manualFull || new Date().getUTCHours() === 6;
 
-    const quick = await step.run("quick", () => quickHealthCheck());
-    const daily = full ? await step.run("full", () => fullHealthCheck()) : { problems: [], notes: [] };
+    const quick = await step.run("quick", () => health.quickHealthCheck());
+    await step.run("prune-rate-limits", () => health.pruneRateLimits());
+
+    let daily: { problems: string[]; notes: string[] } = { problems: [], notes: [] };
+    if (full) {
+      // Every on-chain read is pinned to one block and split into small steps, so the
+      // check stays consistent and within time limits as the escrow grows.
+      const snap = await step.run("snapshot", () => health.snapshotBlock());
+      const counts = await step.run("bid-counts", () => health.escrowBidCounts(snap));
+      const chainBids: Awaited<ReturnType<typeof health.readEscrowBids>> = [];
+      for (const { escrow, count } of counts) {
+        for (let from = 1; from <= count; from += health.BIDS_PER_STEP) {
+          const to = Math.min(count, from + health.BIDS_PER_STEP - 1);
+          chainBids.push(...(await step.run(`read-${escrow.slice(2, 10)}-${from}`, () => health.readEscrowBids(escrow, from, to, snap))));
+        }
+      }
+      daily = await step.run("evaluate", () => health.evaluateFullHealth(chainBids, snap));
+    }
     const problems = [...quick.problems, ...daily.problems];
     const notes = [...quick.notes, ...daily.notes];
 

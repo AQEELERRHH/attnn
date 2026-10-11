@@ -33,6 +33,9 @@ export async function seedMarket(opts: { creatorMinBid?: string; bidderUsdc?: bi
   world.usdc.set(addr.bidderAgent, opts.agentUsdc ?? BigInt(100_000_000));
   world.usdc.set(addr.creatorMain, BigInt(10_000_000));
   world.activeCreators.add(addr.creatorMain);
+  world.walletAddress.set("w-bidder-main", addr.bidderMain);
+  world.walletAddress.set("w-bidder-agent", addr.bidderAgent);
+  world.walletAddress.set("w-creator-main", addr.creatorMain);
 }
 
 /** Inserts a bid that is already escrowed (pending) both in the DB and the fake escrow. */

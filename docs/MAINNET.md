@@ -40,7 +40,9 @@ read-only preflight before touching Vercel:
 `node --env-file=.env.mainnet scripts/check-network-config.mjs`. It checks the RPC's chain
 id, that the escrow uses Arc USDC and points at the registry, that `MIN_BID` / `MAX_BID` /
 `REFUND_PERIOD` match the app, that the registry supports `updateProfile`, that the Circle
-key is a LIVE key and that mock payments are off. It prints no secrets.
+key is a LIVE key and that mock payments are off. With `DATABASE_URL` set it also reads the
+database: no wallets or bids from another network, the app's user owns every table, and Row
+Level Security is on everywhere. It prints no secrets and changes nothing.
 - [ ] `ARC_NETWORK=mainnet` (RPC `https://rpc.mainnet.arc.io` and explorer
       `https://explorer.arc.io` are the defaults; override with `ARC_RPC_URL` / `ARC_EXPLORER_URL`)
 - [ ] `ATTN_ESCROW_CONTRACT`, `ATTN_REGISTRY_CONTRACT` = the mainnet addresses
@@ -53,8 +55,11 @@ key is a LIVE key and that mock payments are off. It prints no secrets.
 - [ ] Circle webhooks (wallet notifications + contract event monitoring for the new escrow)
       pointed at the production URL
 - [ ] New `DATABASE_URL` (see Data) and fresh Inngest keys if using a separate Inngest app
+- [ ] `ALERT_EMAIL` = who gets the money health-check alerts (and `RESEND_API_KEY`, already set)
 
 ## 4. Data
+- [ ] Apply every migration in `drizzle/` (0000–0009) to the new database, as the same user the
+      app connects with (so it owns every table; RLS in 0009 depends on that).
 - [ ] Mainnet starts with a **fresh database** (a new Supabase project). Not just a clean `bids`
       table: testnet wallets in it would be shown to users, and real USDC sent to them is stuck.
       The preflight check fails if any wallet or bid belongs to another network. Testnet bids,
@@ -82,6 +87,13 @@ only work on mainnet.
 - [ ] Open questions for Circle: do transfer caps count USDC pulled by a contract after
       `approve`? Policies on testnet? A server API for agent wallets or for spending policies
       on developer-controlled wallets?
+
+## 5b. Safety nets (before the first real bid)
+- [ ] GitHub → Settings → Branches → rule for `main`: require the three CI checks to pass.
+- [ ] Two-step login on Vercel, GitHub, Circle, Supabase and Inngest; fewest people with access.
+- [ ] Send `attnn/admin.health-check` `{ "full": true }` from Inngest and confirm the "Health check
+      passed" email arrives.
+- [ ] Read `docs/RUNBOOK.md`; fill in its contacts; practise pausing and resuming bids once.
 
 ## 6. After the switch
 - [ ] Run the x402 demo (`scripts/x402-demo.mjs`) against mainnet with a small Gateway deposit.

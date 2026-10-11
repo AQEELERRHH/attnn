@@ -115,6 +115,18 @@ describe("bids: placement, settlement and the races around them", () => {
     assert.equal(r.status, "pending", "still pending until Arc confirms");
   });
 
+  test("L2: two accepts racing with different replies: the saved reply is the one sent on-chain", async () => {
+    const bid = await seedEscrowedBid();
+    const other = REPLY.replace("considered", "careful");
+    await Promise.allSettled([
+      submitSettlement({ bidId: bid.id, action: "accept", actorUserId: ids.creator, reply: REPLY }),
+      submitSettlement({ bidId: bid.id, action: "accept", actorUserId: ids.creator, reply: other }),
+    ]);
+    const sent = world.calls("acceptBid");
+    assert.equal(sent.length, 1);
+    assert.equal((await row(bid.id)).reply, sent[0]!.args[1]);
+  });
+
   test("accept and decline racing: only one settlement ever reaches Circle", async () => {
     const bid = await seedEscrowedBid();
     await Promise.allSettled([

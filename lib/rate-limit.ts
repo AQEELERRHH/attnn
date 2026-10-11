@@ -23,10 +23,13 @@ export const LIMITS = {
   bidPlace: { name: "bid-place", max: 60, windowMs: 60 * 60 * 1000 },
   bidSettle: { name: "bid-settle", max: 120, windowMs: 60 * 60 * 1000 },
   agentRun: { name: "agent-run", max: 10, windowMs: 60 * 60 * 1000 },
-  aiCall: { name: "ai-call", max: 30, windowMs: 60 * 60 * 1000 },
   profileWrite: { name: "profile-write", max: 60, windowMs: 60 * 60 * 1000 },
   upload: { name: "upload", max: 20, windowMs: 60 * 60 * 1000 },
-  signInEmail: { name: "sign-in-email", max: 5, windowMs: 60 * 60 * 1000 },
+  // Per address: one link a minute. A cooldown, not a daily cap, so nobody can lock
+  // someone else out by requesting links for their address (those links go to the owner).
+  signInEmail: { name: "sign-in-email", max: 1, windowMs: 60 * 1000 },
+  // Per requesting IP: stops one client flooding many inboxes.
+  signInIp: { name: "sign-in-ip", max: 20, windowMs: 60 * 60 * 1000 },
 } satisfies Record<string, RateLimit>;
 
 /** Counts one request for `subject` (a user id, an email, an IP). True = allowed. */

@@ -208,10 +208,16 @@ export const bids = pgTable("bids", {
   creatorAddress: text("creator_address").notNull(),
   amountUsdc: text("amount_usdc").notNull(),
   message: text("message"),
+  // Random 32-byte hex salt for the message's on-chain fingerprint (v2 escrow, lib/escrow.ts).
+  // Set with the message; null when there is no message or on rows from before migration 0010.
+  messageSalt: text("message_salt"),
+  // Legacy: v1 escrows stored public messages unless this was set. Not used on v2.
   isPrivate: boolean("is_private").default(false).notNull(),
   status: bidStatusEnum("status").default("pending").notNull(),
   score: integer("score"),
   reply: text("reply"),
+  // Salt for the reply's on-chain fingerprint (v2). Saved and cleared together with reply.
+  replySalt: text("reply_salt"),
   // Who wrote the reply: "creator" (typed it), "template" (their saved template,
   // sent by them or their agent) or "ai" (drafted by the creator agent). Null on
   // rows from before this column. See lib/reply-rules.ts.

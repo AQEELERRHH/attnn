@@ -20,6 +20,15 @@ import { parseEventLogs, type Hex } from "viem";
 import { db } from "./db/client";
 import { bids, profiles } from "./db/schema";
 import { escrowAbi, publicClient, usdcAbi, USDC_ADDRESS } from "./arc";
+import {
+  acceptBidArgs,
+  escrowAbiFor,
+  escrowVersion,
+  matchesFingerprint,
+  newSalt,
+  readEscrowBid,
+  type EscrowBidView,
+} from "./escrow";
 import { escrowAddress, knownEscrowAddresses } from "./chain";
 import {
   classifyTxState,
@@ -137,7 +146,9 @@ export async function createBidIntent(input: BidIntentInput): Promise<BidRow> {
     bidderAddress: bidderWallet.address,
     creatorAddress: creatorWallet.address,
     amountUsdc: amount.toString(),
-    message: input.message ?? null,
+    message: input.message || null,
+    // The message's on-chain fingerprint is keccak256(salt ‖ message) (lib/escrow.ts).
+    messageSalt: input.message ? newSalt() : null,
     isPrivate: input.isPrivate ?? false,
     score: input.score ?? null,
     status: "placing" as const,
@@ -317,7 +328,8 @@ const RESERVATION_PREFIX = "reserved:";
 const RESERVATION_STALE_MS = 5 * 60 * 1000;
 const isReservation = (v: string | null | undefined) => !!v && v.startsWith(RESERVATION_PREFIX);
 /** An accept that didn't go through leaves no reply behind on the still-open bid. */
-const CLEAR_REPLY = (action: SettlementAction) => (action === "accept" ? { reply: null, replySource: null } : {});
+const CLEAR_REPLY = (action: SettlementAction) =>
+  action === "accept" ? { reply: null, replySalt: null, replySource: null } : {};
 const settlementOpKey = (bidId: string, action: SettlementAction, attempt: number) =>
   `settle:${bidId}:${action}:${attempt}`;
 
@@ -327,24 +339,29 @@ const CHAIN_FINAL: Record<number, BidRow["status"]> = {
   [ONCHAIN_STATUS.Refunded]: "refunded",
 };
 
-type OnChainBid = readonly [Hex, Hex, bigint, string, string, number, bigint];
-
-async function readOnChainBid(escrow: string, onChainBidId: string): Promise<OnChainBid> {
-  return publicClient.readContract({
-    address: escrow as Hex,
-    abi: escrowAbi,
-    functionName: "getBid",
-    args: [BigInt(onChainBidId)],
-  }) as Promise<OnChainBid>;
+/** True when the escrow's bid N is this row's bid (ids restart at 1 in every deployment). */
+function sameBid(onChain: EscrowBidView, bid: Pick<BidRow, "bidderAddress" | "creatorAddress" | "amountUsdc">): boolean {
+  return (
+    lower(onChain.bidder) === lower(bid.bidderAddress) &&
+    lower(onChain.creator) === lower(bid.creatorAddress) &&
+    onChain.amount.toString() === bid.amountUsdc
+  );
 }
 
-/** True when the escrow's bid N is this row's bid (ids restart at 1 in every deployment). */
-function sameBid(onChain: OnChainBid, bid: Pick<BidRow, "bidderAddress" | "creatorAddress" | "amountUsdc">): boolean {
-  return (
-    lower(onChain[0]) === lower(bid.bidderAddress) &&
-    lower(onChain[1]) === lower(bid.creatorAddress) &&
-    onChain[2].toString() === bid.amountUsdc
-  );
+/**
+ * The reply fields to record for a bid the escrow shows as accepted.
+ *   v1: the text is on-chain; that is what the bidder paid for.
+ *   v2: only the fingerprint is on-chain. Keep the reply we sent (still in `bid`, even
+ *       if the row was cleared after a failed attempt) when it matches; otherwise
+ *       record none, since the creator accepted with a reply we don't have.
+ */
+function acceptedReply(onChain: EscrowBidView, bid: BidRow) {
+  if (onChain.replyText !== null) return { reply: onChain.replyText || null };
+  if (matchesFingerprint(onChain.replyHash, bid.replySalt, bid.reply)) {
+    return { reply: bid.reply, replySalt: bid.replySalt, replySource: bid.replySource };
+  }
+  if (bid.reply) console.error(`acceptedReply: bid ${bid.id}: the on-chain reply fingerprint doesn't match the saved reply`);
+  return { reply: null, replySalt: null, replySource: null };
 }
 
 /**
@@ -357,7 +374,7 @@ export async function resolveBidEscrow(bid: BidRow): Promise<string | null> {
   if (bid.escrowAddress) return bid.escrowAddress;
   if (!bid.onChainBidId) return null;
   for (const candidate of knownEscrowAddresses()) {
-    const onChain = await readOnChainBid(candidate, bid.onChainBidId);
+    const onChain = await readEscrowBid(candidate, bid.onChainBidId);
     if (sameBid(onChain, bid)) {
       await db.update(bids).set({ escrowAddress: candidate }).where(and(eq(bids.id, bid.id), isNull(bids.escrowAddress)));
       return candidate;
@@ -390,9 +407,9 @@ async function refundPeriodMs(escrow: string): Promise<number> {
 async function reconcileFromEscrow(bid: BidRow): Promise<boolean> {
   const escrow = await resolveBidEscrow(bid);
   if (!escrow || !bid.onChainBidId) return false;
-  const onChain = await readOnChainBid(escrow, bid.onChainBidId);
+  const onChain = await readEscrowBid(escrow, bid.onChainBidId);
   if (!sameBid(onChain, bid)) return false;
-  const finalStatus = CHAIN_FINAL[onChain[5]];
+  const finalStatus = CHAIN_FINAL[onChain.status];
   if (!finalStatus) return false;
   // The settling transaction's hash, so the row counts as verified (not "Unverified").
   const chainTxHash = await findSettlementLog(escrow, bid.onChainBidId, finalStatus).catch(() => null);
@@ -407,7 +424,7 @@ async function reconcileFromEscrow(bid: BidRow): Promise<boolean> {
       failReason: null,
       ...(chainTxHash ? { settlementOnChainTxHash: chainTxHash } : {}),
       // What the escrow holds is what the bidder paid for.
-      ...(finalStatus === "accepted" ? { reply: onChain[4] || null } : {}),
+      ...(finalStatus === "accepted" ? acceptedReply(onChain, bid) : {}),
     })
     .where(and(eq(bids.id, bid.id), inArray(bids.status, SETTLEABLE)))
     .returning({ id: bids.id });
@@ -423,7 +440,7 @@ const SETTLEMENT_EVENT = { accepted: "BidAccepted", rejected: "BidRejected", ref
 async function findSettlementLog(escrow: string, onChainBidId: string, status: BidRow["status"]): Promise<string | null> {
   const eventName = SETTLEMENT_EVENT[status as keyof typeof SETTLEMENT_EVENT];
   if (!eventName) return null;
-  const event = escrowAbi.find((x) => x.type === "event" && x.name === eventName);
+  const event = escrowAbiFor(await escrowVersion(escrow)).find((x) => x.type === "event" && x.name === eventName);
   if (!event || event.type !== "event") return null;
   const logs = await publicClient.getLogs({
     address: escrow as Hex,
@@ -490,13 +507,13 @@ export async function submitSettlement(params: {
 
 
   // Check the chain before spending gas, so users get a clear reason.
-  const onChain = await readOnChainBid(escrow, bid.onChainBidId);
+  const onChain = await readEscrowBid(escrow, bid.onChainBidId);
   // Never act on a different bid that happens to share the id.
   if (!sameBid(onChain, bid)) {
     throw new BidError("The escrow's record for this bid doesn't match. It needs manual review.", 409);
   }
-  const [, , , , , onChainStatus, createdAt] = onChain;
-  if (onChainStatus !== ONCHAIN_STATUS.Pending) {
+  const { createdAt } = onChain;
+  if (onChain.status !== ONCHAIN_STATUS.Pending) {
     // Settled by some other transaction (or before the settlement fix): record what
     // the escrow says instead of leaving the row open forever.
     await reconcileFromEscrow(bid).catch(() => false);
@@ -518,9 +535,16 @@ export async function submitSettlement(params: {
   if (!actorWallet) throw new BidError("This bid was placed with a wallet you no longer have", 409);
 
   const fn = action === "accept" ? "acceptBid" : action === "reject" ? "rejectBid" : "claimRefund";
-  // A retry of our own reservation sends the reply saved with it, never a new text.
-  const replyText = action === "accept" ? (isReservation(bid.settlementTxHash) && bid.reply ? bid.reply : params.reply!.trim()) : null;
-  const args = action === "accept" ? [bid.onChainBidId, replyText!] : [bid.onChainBidId];
+  const version = await escrowVersion(escrow);
+  // A retry of our own reservation sends the reply (and salt) saved with it, never a
+  // new text: the fingerprint on-chain must match what the database shows.
+  const retrying = isReservation(bid.settlementTxHash) && !!bid.reply;
+  if (action === "accept" && retrying && version === 2 && !bid.replySalt) {
+    throw new BidError("This reply was saved without its fingerprint salt. It needs manual review.", 409);
+  }
+  const replyText = action === "accept" ? (retrying ? bid.reply! : params.reply!.trim()) : null;
+  const replySalt = action === "accept" ? (retrying && bid.replySalt ? bid.replySalt : newSalt()) : null;
+  const args = action === "accept" ? acceptBidArgs(version, bid.onChainBidId, replyText!, replySalt!) : [bid.onChainBidId];
 
   const opKey = settlementOpKey(bid.id, action, bid.settlementAttempt);
 
@@ -550,7 +574,7 @@ export async function submitSettlement(params: {
           failReason: null,
           // The reply is saved with the reservation, so the text in the database is
           // always the text sent on-chain, even if two accepts race.
-          ...(action === "accept" ? { reply: replyText!, replySource: params.replySource ?? "creator" } : {}),
+          ...(action === "accept" ? { reply: replyText!, replySalt, replySource: params.replySource ?? "creator" } : {}),
         })
         .where(and(eq(bids.id, bid.id), isNull(bids.settlementTxHash), inArray(bids.status, SETTLEABLE)))
         .returning({ id: bids.id });
@@ -566,7 +590,7 @@ export async function submitSettlement(params: {
     ({ txId } = await executeContractCallOnce({
       walletId: actorWallet.circleWalletId,
       contractAddress: escrow,
-      abi: escrowAbi,
+      abi: escrowAbiFor(version),
       functionName: fn,
       args,
       opKey,
@@ -675,12 +699,19 @@ export async function finalizeSettlement(bidId: string): Promise<SettlementOutco
   let chainReply: string | null = null;
   {
     const receipt = await publicClient.getTransactionReceipt({ hash: status.txHash as Hex });
-    if (action === "accept" && receipt.status === "success") {
-      // The reply the bidder paid for is the one in the BidAccepted log.
-      const accepted = parseEventLogs({ abi: escrowAbi, eventName: "BidAccepted", logs: receipt.logs as never }).find(
-        (l) => l.args.bidId.toString() === bid.onChainBidId,
+    if (action === "accept" && receipt.status === "success" && bid.escrowAddress) {
+      const version = await escrowVersion(bid.escrowAddress);
+      const accepted = parseEventLogs({ abi: escrowAbiFor(version), eventName: "BidAccepted", logs: receipt.logs as never }).find(
+        (l) => lower(l.address) === lower(bid.escrowAddress!) && l.args.bidId.toString() === bid.onChainBidId,
       );
-      chainReply = accepted?.args.reply ?? null;
+      const args = accepted?.args as { reply?: string; replyHash?: Hex } | undefined;
+      if (version === 1) {
+        // The reply the bidder paid for is the one in the BidAccepted log.
+        chainReply = args?.reply ?? null;
+      } else if (!matchesFingerprint(args?.replyHash, bid.replySalt, bid.reply)) {
+        // We sent the fingerprint of the saved reply, so this should never happen.
+        console.error(`finalizeSettlement: bid ${bid.id}: BidAccepted fingerprint doesn't match the saved reply`);
+      }
     }
     if (receipt.status !== "success") {
       await db

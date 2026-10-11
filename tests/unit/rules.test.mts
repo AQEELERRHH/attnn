@@ -142,3 +142,38 @@ describe("request origin", () => {
     assert.equal(sameOrigin(req({ origin: "null" }))?.status, 403);
   });
 });
+
+describe("fingerprints (D1)", async () => {
+  const { fingerprint, matchesFingerprint, newSalt, placeBidArgs, acceptBidArgs } = await import("../../lib/escrow.ts");
+  const salt = `0x${"ab".repeat(32)}` as const;
+  const text = "Naira ₦ reply, with unicode: café";
+
+  test("match the contract byte for byte (same vector as contracts/test/AttnnEscrow.t.sol)", () => {
+    assert.equal(fingerprint(salt, text), "0x353b97b4a5c624e72c31bbbe16cae6612611f3140c7e17e4635ec3734a7f6586");
+  });
+
+  test("check only the exact text with its salt; a malformed salt never matches", () => {
+    const h = fingerprint(salt, text);
+    assert.ok(matchesFingerprint(h, salt, text));
+    assert.ok(!matchesFingerprint(h, salt, `${text} `));
+    assert.ok(!matchesFingerprint(h, newSalt(), text));
+    assert.ok(!matchesFingerprint(h, "0x1234", text));
+    assert.ok(!matchesFingerprint(null, salt, text));
+    assert.throws(() => fingerprint("0x12" as `0x${string}`, text), /32 bytes/);
+  });
+
+  test("salts are fresh 32-byte values", () => {
+    const a = newSalt();
+    assert.match(a, /^0x[0-9a-f]{64}$/);
+    assert.notEqual(a, newSalt());
+  });
+
+  test("call arguments never carry text to a v2 escrow", () => {
+    const placed = placeBidArgs(2, { creator: "0xc", amount: "5", message: "hello", messageSalt: salt });
+    assert.deepEqual(placed, ["0xc", "5", fingerprint(salt, "hello")]);
+    assert.deepEqual(placeBidArgs(2, { creator: "0xc", amount: "5", message: null, messageSalt: null })[2], `0x${"0".repeat(64)}`);
+    assert.deepEqual(placeBidArgs(1, { creator: "0xc", amount: "5", message: "hello", messageSalt: salt }), ["0xc", "5", "", true]);
+    assert.deepEqual(acceptBidArgs(2, "7", text, salt), ["7", fingerprint(salt, text)]);
+    assert.deepEqual(acceptBidArgs(1, "7", text, salt), ["7", text]);
+  });
+});

@@ -157,7 +157,111 @@ export const registryAbi = [
   },
 ] as const;
 
+/**
+ * The current escrow (v2, contracts/src/AttnnEscrow.sol): bid messages and replies
+ * are stored only as fingerprints (bytes32), and an owner can pause NEW bids.
+ */
 export const escrowAbi = [
+  {
+    type: "function",
+    name: "placeBid",
+    inputs: [
+      { name: "creator", type: "address" },
+      { name: "amount", type: "uint256" },
+      { name: "messageHash", type: "bytes32" },
+    ],
+    outputs: [{ name: "bidId", type: "uint256" }],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "acceptBid",
+    inputs: [
+      { name: "bidId", type: "uint256" },
+      { name: "replyHash", type: "bytes32" },
+    ],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  { type: "function", name: "rejectBid", inputs: [{ name: "bidId", type: "uint256" }], outputs: [], stateMutability: "nonpayable" },
+  { type: "function", name: "claimRefund", inputs: [{ name: "bidId", type: "uint256" }], outputs: [], stateMutability: "nonpayable" },
+  {
+    type: "function",
+    name: "getBid",
+    inputs: [{ name: "bidId", type: "uint256" }],
+    outputs: [
+      { name: "bidder", type: "address" },
+      { name: "creator", type: "address" },
+      { name: "amount", type: "uint256" },
+      { name: "messageHash", type: "bytes32" },
+      { name: "replyHash", type: "bytes32" },
+      { name: "status", type: "uint8" },
+      { name: "createdAt", type: "uint256" },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "fingerprint",
+    inputs: [
+      { name: "salt", type: "bytes32" },
+      { name: "text", type: "string" },
+    ],
+    outputs: [{ name: "", type: "bytes32" }],
+    stateMutability: "pure",
+  },
+  { type: "function", name: "getCreatorBids", inputs: [{ name: "creator", type: "address" }], outputs: [{ name: "", type: "uint256[]" }], stateMutability: "view" },
+  { type: "function", name: "getBidderBids", inputs: [{ name: "bidder", type: "address" }], outputs: [{ name: "", type: "uint256[]" }], stateMutability: "view" },
+  { type: "function", name: "REFUND_PERIOD", inputs: [], outputs: [{ name: "", type: "uint256" }], stateMutability: "view" },
+  { type: "function", name: "getBidCount", inputs: [], outputs: [{ name: "", type: "uint256" }], stateMutability: "view" },
+  { type: "function", name: "paused", inputs: [], outputs: [{ name: "", type: "bool" }], stateMutability: "view" },
+  { type: "function", name: "owner", inputs: [], outputs: [{ name: "", type: "address" }], stateMutability: "view" },
+  { type: "function", name: "pendingOwner", inputs: [], outputs: [{ name: "", type: "address" }], stateMutability: "view" },
+  {
+    type: "event",
+    name: "BidPlaced",
+    inputs: [
+      { name: "bidId", type: "uint256", indexed: true },
+      { name: "bidder", type: "address", indexed: true },
+      { name: "creator", type: "address", indexed: true },
+      { name: "amount", type: "uint256", indexed: false },
+    ],
+  },
+  {
+    type: "event",
+    name: "BidAccepted",
+    inputs: [
+      { name: "bidId", type: "uint256", indexed: true },
+      { name: "creator", type: "address", indexed: true },
+      { name: "replyHash", type: "bytes32", indexed: false },
+    ],
+  },
+  {
+    type: "event",
+    name: "BidRejected",
+    inputs: [
+      { name: "bidId", type: "uint256", indexed: true },
+      { name: "creator", type: "address", indexed: true },
+    ],
+  },
+  {
+    type: "event",
+    name: "BidRefunded",
+    inputs: [
+      { name: "bidId", type: "uint256", indexed: true },
+      { name: "bidder", type: "address", indexed: true },
+    ],
+  },
+  { type: "event", name: "Paused", inputs: [{ name: "by", type: "address", indexed: true }] },
+  { type: "event", name: "Unpaused", inputs: [{ name: "by", type: "address", indexed: true }] },
+] as const;
+
+/**
+ * Escrows deployed before the privacy + pause change (v1): bid messages and replies
+ * as plain text. Testnet's legacy escrows use it; never deployed to mainnet. Pick the
+ * ABI for an address with escrowAbiFor() in lib/escrow.ts, never by assumption.
+ */
+export const escrowAbiV1 = [
   {
     type: "function",
     name: "placeBid",

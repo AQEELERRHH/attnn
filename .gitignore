@@ -56,3 +56,4 @@ recovery_file.dat
 contracts/cache/
 contracts/broadcast/
 contracts/lib/
+contracts/out/

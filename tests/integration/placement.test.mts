@@ -61,6 +61,39 @@ describe("placeBid job", () => {
     assert.equal(world.usdc.get(ESCROW), BigInt(10_000_000));
   });
 
+  test("D1: placeBid carries only the message's fingerprint (v2), and no message at all on a v1 escrow", async () => {
+    const { fingerprint, clearEscrowCache } = await import("../../lib/escrow.ts");
+    const bid = await createBidIntent({ bidderUserId: ids.bidder, creatorUserId: ids.creator, amountUsdc: "10000000", message: "Would love your take on our pitch" });
+    await job.__fn[2]({ event: { data: { bidId: bid.id } }, step: makeStep() });
+    const [placed] = world.calls("placeBid");
+    assert.equal(placed!.args.length, 3);
+    assert.equal(placed!.args[2], fingerprint(bid.messageSalt as `0x${string}`, "Would love your take on our pitch"));
+    assert.ok(!JSON.stringify(placed!.args).includes("pitch"));
+    assert.equal((await row(bid.id)).status, "pending");
+
+    // Legacy escrow: the message stays off-chain there too (empty + private).
+    world.reset();
+    clearEscrowCache();
+    world.escrowVersion = 1;
+    await truncateAll();
+    await seedMarket();
+    world.autoMine = true;
+    const legacy = await createBidIntent({ bidderUserId: ids.bidder, creatorUserId: ids.creator, amountUsdc: "10000000", message: "secret plans" });
+    await job.__fn[2]({ event: { data: { bidId: legacy.id } }, step: makeStep() });
+    assert.deepEqual(world.calls("placeBid")[0]!.args.slice(2), ["", true]);
+    clearEscrowCache();
+  });
+
+  test("D5: a placeBid refused because the escrow was paused meanwhile fails the bid with no USDC moved", async () => {
+    const bid = await createBidIntent({ bidderUserId: ids.bidder, creatorUserId: ids.creator, amountUsdc: "10000000" });
+    const step = makeStep({ "submit-place-bid": () => { world.escrowPaused = true; } });
+    await job.__fn[2]({ event: { data: { bidId: bid.id } }, step });
+    const r = await row(bid.id);
+    assert.equal(r.status, "failed");
+    assert.match(r.failReason ?? "", /No USDC moved/);
+    assert.equal(world.usdc.get(ESCROW) ?? BigInt(0), BigInt(0));
+  });
+
   test("M5: if another bid uses the approval first, it re-approves and still places once", async () => {
     const bid = await createBidIntent({ bidderUserId: ids.bidder, creatorUserId: ids.creator, amountUsdc: "10000000" });
     const step = makeStep({

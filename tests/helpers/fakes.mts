@@ -9,7 +9,7 @@
 import { mock } from "node:test";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { encodeAbiParameters, encodeEventTopics, type Hex } from "viem";
+import { encodeAbiParameters, encodeEventTopics, toFunctionSelector, zeroHash, type Hex } from "viem";
 
 const fileUrl = (p: string) => pathToFileURL(path.resolve(p)).href;
 const lower = (a: string) => a.toLowerCase();
@@ -30,8 +30,12 @@ export interface EscrowBid {
   bidder: string;
   creator: string;
   amount: bigint;
+  /** v1 escrows: plain text. */
   message: string;
   reply: string;
+  /** v2 escrows: fingerprints. */
+  messageHash: Hex;
+  replyHash: Hex;
   status: number; // 0 Pending, 1 Accepted, 2 Rejected, 3 Refunded
   createdAt: bigint; // seconds
 }
@@ -56,6 +60,12 @@ export const world = {
   autoMine: false,
   /** Circle wallet id → address (for autoMine's approve/placeBid effects). */
   walletAddress: new Map<string, string>(),
+  /** Which escrow generation the fake chain runs (lib/escrow.ts reads it from getCode). */
+  escrowVersion: 2 as 1 | 2,
+  /** v2 admin state. */
+  escrowPaused: false,
+  escrowOwner: "0x00000000000000000000000000000000000000ad",
+  escrowPendingOwner: "0x0000000000000000000000000000000000000000",
 
   reset() {
     this.txs.length = 0;
@@ -67,9 +77,14 @@ export const world = {
     this.receipts.clear();
     this.events.length = 0;
     this.failInngest = false;
-    this.blockTimeMs = Date.now() + 1000;
+    // A minute ahead, so rows seeded during a slow test still count as before the snapshot block.
+    this.blockTimeMs = Date.now() + 60_000;
     this.autoMine = false;
     this.refundPeriodSeconds = BigInt(3 * 24 * 3600);
+    this.escrowVersion = 2;
+    this.escrowPaused = false;
+    this.escrowOwner = "0x00000000000000000000000000000000000000ad";
+    this.escrowPendingOwner = "0x0000000000000000000000000000000000000000";
   },
 
   /** Circle calls made for a given contract function. */
@@ -130,13 +145,18 @@ function mine(tx: FakeTx) {
     const key = `${owner}:${tx.contractAddress}`;
     const allowance = world.allowance.get(key) ?? BigInt(0);
     const balance = world.usdc.get(owner) ?? BigInt(0);
-    if (allowance < BigInt(amount) || balance < BigInt(amount)) {
+    if ((world.escrowVersion === 2 && world.escrowPaused) || allowance < BigInt(amount) || balance < BigInt(amount)) {
       ok = false;
     } else {
       world.allowance.set(key, allowance - BigInt(amount));
       world.usdc.set(owner, balance - BigInt(amount));
       world.usdc.set(tx.contractAddress, (world.usdc.get(tx.contractAddress) ?? BigInt(0)) + BigInt(amount));
-      const id = escrowBid({ bidder: owner, creator, amount: BigInt(amount) });
+      const id = escrowBid({
+        bidder: owner,
+        creator,
+        amount: BigInt(amount),
+        ...(world.escrowVersion === 2 ? { messageHash: tx.args[2] as Hex } : { message: String(tx.args[2] ?? "") }),
+      });
       logs.push(bidPlacedLog(tx.contractAddress, BigInt(id), owner, creator, BigInt(amount)));
     }
   }
@@ -170,12 +190,38 @@ export function bidPlacedLog(escrow: string, bidId: bigint, bidder: string, crea
   };
 }
 
+/** A v2 BidAccepted log (the reply's fingerprint, never its text). */
+export function bidAcceptedLog(escrow: string, bidId: bigint, creator: string, replyHash: Hex) {
+  const event = {
+    type: "event",
+    name: "BidAccepted",
+    inputs: [
+      { name: "bidId", type: "uint256", indexed: true },
+      { name: "creator", type: "address", indexed: true },
+      { name: "replyHash", type: "bytes32", indexed: false },
+    ],
+  } as const;
+  return {
+    address: escrow as Hex,
+    topics: encodeEventTopics({ abi: [event], eventName: "BidAccepted", args: { bidId, creator: creator as Hex } }),
+    data: encodeAbiParameters([{ type: "bytes32" }], [replyHash]),
+    blockHash: `0x${"1".repeat(64)}`,
+    blockNumber: BigInt(1),
+    logIndex: 0,
+    transactionHash: `0x${"3".repeat(64)}`,
+    transactionIndex: 0,
+    removed: false,
+  };
+}
+
 /** Puts a bid in the fake escrow and returns its on-chain id. */
-export function escrowBid(bid: Omit<EscrowBid, "status" | "reply" | "message" | "createdAt"> & Partial<EscrowBid>): string {
+export function escrowBid(bid: Omit<EscrowBid, "status" | "reply" | "message" | "messageHash" | "replyHash" | "createdAt"> & Partial<EscrowBid>): string {
   const id = String(world.escrowBids.size + 1);
   world.escrowBids.set(id, {
     message: "",
     reply: "",
+    messageHash: zeroHash,
+    replyHash: zeroHash,
     status: 0,
     createdAt: BigInt(Math.floor(Date.now() / 1000)),
     ...bid,
@@ -195,9 +241,10 @@ const fakePublicClient = {
       case "getBid": {
         const b = world.escrowBids.get(String(args![0]));
         const zero = "0x0000000000000000000000000000000000000000";
+        const v2 = world.escrowVersion === 2;
         return b
-          ? [b.bidder, b.creator, b.amount, b.message, b.reply, b.status, b.createdAt]
-          : [zero, zero, BigInt(0), "", "", 0, BigInt(0)];
+          ? [b.bidder, b.creator, b.amount, v2 ? b.messageHash : b.message, v2 ? b.replyHash : b.reply, b.status, b.createdAt]
+          : [zero, zero, BigInt(0), v2 ? zeroHash : "", v2 ? zeroHash : "", 0, BigInt(0)];
       }
       case "getBidCount":
         return BigInt(world.escrowBids.size);
@@ -205,6 +252,11 @@ const fakePublicClient = {
         return world.refundPeriodSeconds;
       case "isActiveCreator":
         return world.activeCreators.has(lower(String(args![0])));
+      case "paused":
+      case "owner":
+      case "pendingOwner":
+        if (world.escrowVersion !== 2) throw new Error(`fake chain: v1 escrow has no ${functionName}()`);
+        return functionName === "paused" ? world.escrowPaused : functionName === "owner" ? world.escrowOwner : world.escrowPendingOwner;
       default:
         throw new Error(`fake chain: unhandled readContract ${functionName} on ${address}`);
     }
@@ -224,7 +276,9 @@ const fakePublicClient = {
     return { timestamp: BigInt(Math.floor(world.blockTimeMs / 1000)) };
   },
   async getCode() {
-    return "0x";
+    // Enough bytecode for lib/escrow.ts to tell the escrow generation apart.
+    const marker = toFunctionSelector(world.escrowVersion === 2 ? "acceptBid(uint256,bytes32)" : "acceptBid(uint256,string)").slice(2);
+    return `0x6080604052${marker}`;
   },
 };
 

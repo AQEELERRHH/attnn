@@ -7,6 +7,7 @@ import { and, desc, eq, gte, inArray, isNotNull, ne, or, sql } from "drizzle-orm
 import { addressUrl, arc, escrowAddress, txUrl } from "@/lib/chain";
 import { ESCROW_MAX_BID, ESCROW_MIN_BID, REFUND_PERIOD_MS, formatUsd } from "@/lib/bid-rules";
 import { computeChecklist } from "@/lib/onboarding";
+import { escrowVersion } from "@/lib/escrow";
 import { getUsdcBalance } from "@/lib/activation";
 import { spentToday } from "@/lib/agent";
 import { registrationState } from "@/lib/registration";
@@ -150,6 +151,8 @@ export default async function DashboardPage() {
 
   const role = userRow?.role ?? session.user.role;
   const isTestnet = arc.network === "testnet";
+  const currentEscrow = escrowAddress();
+  const escrowV2 = currentEscrow ? await escrowVersion(currentEscrow).then((v) => v === 2).catch(() => false) : false;
   const checklist = computeChecklist({
     role,
     hasWallet: !!wallet,
@@ -184,6 +187,7 @@ export default async function DashboardPage() {
         minBid: ESCROW_MIN_BID.toString(),
         maxBid: ESCROW_MAX_BID.toString(),
         refundDays: Math.round(REFUND_PERIOD_MS / DAY),
+        escrowV2,
         agentWallet: agentWalletRow
           ? { address: agentWalletRow.address, href: addressUrl(agentWalletRow.address), usdc: agentWalletUsdc }
           : null,

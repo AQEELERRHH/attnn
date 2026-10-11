@@ -1,7 +1,7 @@
 import "../helpers/env.mts";
 import { after, before, beforeEach, describe, test } from "node:test";
 import assert from "node:assert/strict";
-import { installFakes, world, bidPlacedLog } from "../helpers/fakes.mts";
+import { installFakes, world, bidPlacedLog, bidAcceptedLog } from "../helpers/fakes.mts";
 import { addr, closeDb, ids, resetDatabase, truncateAll } from "../helpers/db.mts";
 import { seedEscrowedBid, seedMarket } from "../helpers/seed.mts";
 import { ESCROW } from "../helpers/env.mts";
@@ -11,6 +11,7 @@ const { db } = await import("../../lib/db/client.ts");
 const { bids, appSettings } = await import("../../lib/db/schema.ts");
 const { BidError, createBidIntent, finalizePlacement, finalizeSettlement, submitSettlement } = await import("../../lib/bids.ts");
 const { clearSettingsCache } = await import("../../lib/app-settings.ts");
+const { fingerprint } = await import("../../lib/escrow.ts");
 const { eq } = await import("drizzle-orm");
 
 const REPLY = "Thanks for your bid. Here is a considered answer to your question, with enough detail to be genuinely useful to you.";
@@ -124,7 +125,9 @@ describe("bids: placement, settlement and the races around them", () => {
     ]);
     const sent = world.calls("acceptBid");
     assert.equal(sent.length, 1);
-    assert.equal((await row(bid.id)).reply, sent[0]!.args[1]);
+    const r = await row(bid.id);
+    // v2 sends the fingerprint of exactly the saved reply.
+    assert.equal(sent[0]!.args[1], fingerprint(r.replySalt as `0x${string}`, r.reply!));
   });
 
   test("accept and decline racing: only one settlement ever reaches Circle", async () => {
@@ -158,11 +161,12 @@ describe("bids: placement, settlement and the races around them", () => {
     tx.state = "COMPLETE"; // COMPLETE but Circle hasn't reported the hash yet
     assert.equal(await finalizeSettlement(bid.id), "in_flight");
     assert.equal((await row(bid.id)).status, "pending");
-    world.complete(txId);
+    world.complete(txId, [bidAcceptedLog(ESCROW, BigInt(bid.onChainBidId!), addr.creatorMain, tx.args[1] as `0x${string}`)]);
     assert.equal(await finalizeSettlement(bid.id), "settled");
     const r = await row(bid.id);
     assert.equal(r.status, "accepted");
     assert.ok(r.settlementOnChainTxHash, "earnings only count settlements with a chain hash");
+    assert.equal(r.reply, REPLY, "the reply matching the on-chain fingerprint is kept");
   });
 
   test("a failed settlement goes back to pending with a reason, a new attempt number and no reply", async () => {
@@ -174,6 +178,7 @@ describe("bids: placement, settlement and the races around them", () => {
     assert.equal(r.status, "pending");
     assert.equal(r.settlementAttempt, 1);
     assert.equal(r.reply, null);
+    assert.equal(r.replySalt, null);
     assert.match(r.failReason ?? "", /accept failed/);
   });
 
@@ -223,5 +228,98 @@ describe("bids: placement, settlement and the races around them", () => {
       createBidIntent({ bidderUserId: ids.bidder, creatorUserId: ids.creator, amountUsdc: "20000000", replacesBidId: original.id, fromAgentWallet: true }),
       /already settled/,
     );
+  });
+
+  // ── D1: replies and messages go on-chain only as fingerprints ──
+  test("D1: acceptBid carries only the reply's fingerprint; text and salt stay in the database", async () => {
+    const bid = await seedEscrowedBid();
+    await submitSettlement({ bidId: bid.id, action: "accept", actorUserId: ids.creator, reply: REPLY });
+    const [sent] = world.calls("acceptBid");
+    const r = await row(bid.id);
+    assert.match(r.replySalt ?? "", /^0x[0-9a-f]{64}$/, "a 32-byte salt was saved");
+    assert.match(String(sent!.args[1]), /^0x[0-9a-f]{64}$/);
+    assert.equal(sent!.args[1], fingerprint(r.replySalt as `0x${string}`, REPLY));
+    assert.ok(!JSON.stringify(sent!.args).includes("considered"), "no reply text reaches the chain");
+  });
+
+  test("D1: each reply gets its own salt, so equal replies get different fingerprints", async () => {
+    const a = await seedEscrowedBid();
+    const b = await seedEscrowedBid();
+    await submitSettlement({ bidId: a.id, action: "accept", actorUserId: ids.creator, reply: REPLY });
+    await submitSettlement({ bidId: b.id, action: "accept", actorUserId: ids.creator, reply: REPLY });
+    const [x, y] = world.calls("acceptBid");
+    assert.notEqual(x!.args[1], y!.args[1]);
+  });
+
+  test("D1: retrying our own reservation sends the saved reply and salt, never the new text", async () => {
+    const bid = await seedEscrowedBid();
+    const salt = `0x${"ab".repeat(32)}` as const;
+    await db
+      .update(bids)
+      .set({ settlementTxHash: `reserved:${Date.now()}`, settlementAction: "accept", reply: REPLY, replySalt: salt, replySource: "creator" })
+      .where(eq(bids.id, bid.id));
+    await submitSettlement({ bidId: bid.id, action: "accept", actorUserId: ids.creator, reply: REPLY.replace("considered", "different") });
+    assert.equal(world.calls("acceptBid")[0]!.args[1], fingerprint(salt, REPLY));
+    assert.equal((await row(bid.id)).reply, REPLY);
+  });
+
+  test("D1: our accept reported failed but the escrow shows it accepted with our fingerprint: reply restored", async () => {
+    const bid = await seedEscrowedBid();
+    const { txId } = await submitSettlement({ bidId: bid.id, action: "accept", actorUserId: ids.creator, reply: REPLY });
+    const before = await row(bid.id);
+    const onChain = world.escrowBids.get(bid.onChainBidId!)!;
+    onChain.status = 1;
+    onChain.replyHash = fingerprint(before.replySalt as `0x${string}`, REPLY);
+    world.fail(txId);
+    assert.equal(await finalizeSettlement(bid.id), "settled");
+    const r = await row(bid.id);
+    assert.equal(r.status, "accepted");
+    assert.equal(r.reply, REPLY);
+    assert.equal(r.replySalt, before.replySalt);
+  });
+
+  test("D1: accepted on-chain with a fingerprint we don't have: no reply is shown", async () => {
+    const bid = await seedEscrowedBid();
+    const { txId } = await submitSettlement({ bidId: bid.id, action: "accept", actorUserId: ids.creator, reply: REPLY });
+    const onChain = world.escrowBids.get(bid.onChainBidId!)!;
+    onChain.status = 1;
+    onChain.replyHash = `0x${"cd".repeat(32)}`;
+    world.fail(txId);
+    assert.equal(await finalizeSettlement(bid.id), "settled");
+    const r = await row(bid.id);
+    assert.equal(r.status, "accepted");
+    assert.equal(r.reply, null, "never show a reply that isn't the one paid for");
+  });
+
+  test("D1: a bid's message gets a salt; a bid without one doesn't", async () => {
+    const withMsg = await createBidIntent({ bidderUserId: ids.bidder, creatorUserId: ids.creator, amountUsdc: "10000000", message: "hello there" });
+    const without = await createBidIntent({ bidderUserId: ids.bidder, creatorUserId: ids.creator, amountUsdc: "10000000" });
+    assert.match(withMsg.messageSalt ?? "", /^0x[0-9a-f]{64}$/);
+    assert.equal(without.messageSalt, null);
+  });
+
+  // ── D5: the escrow's own pause ──
+  test("D5: while the escrow is paused on-chain, new bids are refused but declines and refunds go through", async () => {
+    const open = await seedEscrowedBid();
+    const old = await seedEscrowedBid({ ageSeconds: 3 * 24 * 3600 + 5 });
+    world.escrowPaused = true;
+    clearSettingsCache();
+    await assert.rejects(
+      createBidIntent({ bidderUserId: ids.bidder, creatorUserId: ids.creator, amountUsdc: "10000000" }),
+      (e: unknown) => e instanceof BidError && /paused/.test(e.message) && e.status === 503,
+    );
+    await submitSettlement({ bidId: open.id, action: "reject", actorUserId: ids.creator });
+    await submitSettlement({ bidId: old.id, action: "refund", actorUserId: ids.bidder });
+    assert.equal(world.calls("rejectBid").length, 1);
+    assert.equal(world.calls("claimRefund").length, 1);
+  });
+
+  // ── Legacy v1 escrows (testnet) keep working ──
+  test("a v1 escrow still gets the reply text (it has no fingerprint function)", async () => {
+    world.escrowVersion = 1;
+    clearSettingsCache();
+    const bid = await seedEscrowedBid();
+    await submitSettlement({ bidId: bid.id, action: "accept", actorUserId: ids.creator, reply: REPLY });
+    assert.equal(world.calls("acceptBid")[0]!.args[1], REPLY);
   });
 });

@@ -28,7 +28,7 @@ function validate(body: Record<string, unknown>): string | null {
     if (typeof v !== "string") return `${label} must be text`;
     return v.length > max ? `${label} can be at most ${max} characters` : null;
   };
-  // The default message is written on-chain with every agent bid, so it stays short.
+  // The default message goes with every agent bid (only its fingerprint is on-chain).
   const textError =
     text("defaultMessage", "Default bid message", 500) ?? text("goal", "Goal", 500) ?? text("agentName", "Agent name", 60);
   if (textError) return textError;

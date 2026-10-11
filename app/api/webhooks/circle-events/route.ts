@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { and, eq, inArray } from "drizzle-orm";
-import { decodeEventLog, type DecodeEventLogReturnType } from "viem";
+import { decodeEventLog, type Hex } from "viem";
 import { db } from "@/lib/db/client";
 import { bids, webhookEvents } from "@/lib/db/schema";
-import { escrowAbi } from "@/lib/arc";
+import { escrowAbiFor, escrowVersion, matchesFingerprint } from "@/lib/escrow";
 import { arc, escrowAddress } from "@/lib/chain";
 import { verifyCircleSignature } from "@/lib/circle-webhook";
 import { finalizePlacement, finalizeSettlement, notifyBidEscrowed } from "@/lib/bids";
@@ -97,19 +97,23 @@ async function handle(body: {
     return { ignored: `contract ${contractAddress} is not the current escrow` };
   }
 
-  let decoded: DecodeEventLogReturnType<typeof escrowAbi>;
+  const version = await escrowVersion(escrow);
+  let decoded: { eventName: string; args: Record<string, unknown> };
   try {
     decoded = decodeEventLog({
-      abi: escrowAbi,
-      data: (data ?? "0x") as `0x${string}`,
-      topics: (topics ?? []) as [`0x${string}`, ...`0x${string}`[]],
-    });
+      abi: escrowAbiFor(version),
+      data: (data ?? "0x") as Hex,
+      topics: (topics ?? []) as [Hex, ...Hex[]],
+    }) as unknown as { eventName: string; args: Record<string, unknown> };
   } catch {
     return { ignored: "not an escrow event" };
   }
+  if (!["BidPlaced", "BidAccepted", "BidRejected", "BidRefunded"].includes(decoded.eventName)) {
+    return { ignored: `event ${decoded.eventName}` }; // Paused / Unpaused: the health check reports those
+  }
 
   if (decoded.eventName === "BidPlaced") {
-    const bidder = decoded.args.bidder.toLowerCase();
+    const bidder = String(decoded.args.bidder).toLowerCase();
     // Placing bids from this bidder in this escrow that have a submitted transaction.
     const candidates = await db
       .select({ id: bids.id, bidderAddress: bids.bidderAddress })
@@ -126,7 +130,7 @@ async function handle(body: {
     return { event: "BidPlaced", escrowed };
   }
 
-  const onChainBidId = decoded.args.bidId.toString();
+  const onChainBidId = String(decoded.args.bidId);
   const bid = await db.query.bids.findFirst({
     where: and(
       eq(bids.onChainBidId, onChainBidId),
@@ -157,10 +161,25 @@ async function handle(body: {
       settlementSubmittedAt: null,
       settlementAction: null,
       failReason: null,
-      // The reply in the log is the one the bidder paid for.
-      ...(decoded.eventName === "BidAccepted" ? { reply: decoded.args.reply || null } : {}),
+      ...(decoded.eventName === "BidAccepted" ? acceptedReply(version, decoded.args, bid) : {}),
     })
     .where(and(eq(bids.id, bid.id), inArray(bids.status, [...SETTLEABLE])))
     .returning({ id: bids.id });
   return { event: decoded.eventName, updated: updated.length };
+}
+
+/**
+ * Reply fields for a bid accepted outside our own settlement flow. v1 logs carry the
+ * text the bidder paid for. v2 logs carry only its fingerprint: keep the saved reply
+ * when it matches, otherwise record none.
+ */
+function acceptedReply(
+  version: 1 | 2,
+  args: Record<string, unknown>,
+  bid: { reply: string | null; replySalt: string | null },
+) {
+  if (version === 1) return { reply: (args.reply as string) || null };
+  return matchesFingerprint(args.replyHash as string, bid.replySalt, bid.reply)
+    ? {}
+    : { reply: null, replySalt: null, replySource: null };
 }

@@ -60,6 +60,7 @@ if (!isAddr(registry)) fail("ATTN_REGISTRY_CONTRACT missing or not an address");
 // ── Chain ──
 console.log("\nArc");
 const client = createPublicClient({ transport: http(rpcUrl) });
+let escrowOwner = null; // set below for a v2 escrow
 try {
   const chainId = await client.getChainId();
   chainId === expected.chainId ? ok(`RPC ${rpcUrl} is chain ${chainId}`) : fail(`RPC ${rpcUrl} is chain ${chainId}, expected ${expected.chainId}`);
@@ -74,6 +75,9 @@ const escrowAbi = [
   { type: "function", name: "usdc", inputs: [], outputs: [{ type: "address" }], stateMutability: "view" },
   { type: "function", name: "registry", inputs: [], outputs: [{ type: "address" }], stateMutability: "view" },
   { type: "function", name: "getBidCount", inputs: [], outputs: [{ type: "uint256" }], stateMutability: "view" },
+  { type: "function", name: "owner", inputs: [], outputs: [{ type: "address" }], stateMutability: "view" },
+  { type: "function", name: "pendingOwner", inputs: [], outputs: [{ type: "address" }], stateMutability: "view" },
+  { type: "function", name: "paused", inputs: [], outputs: [{ type: "bool" }], stateMutability: "view" },
 ];
 
 if (isAddr(escrow) && isAddr(registry)) {
@@ -95,6 +99,25 @@ if (isAddr(escrow) && isAddr(registry)) {
       maxBid === BigInt(1_000_000_000) ? ok("Maximum bid $1,000") : fail(`Escrow MAX_BID is ${maxBid}; the app assumes $1,000`);
       refund === BigInt(3 * 24 * 3600) ? ok("Refund period 3 days") : fail(`Escrow REFUND_PERIOD is ${refund}s; the app and Spending policy say 3 days`);
       ok(`Escrow has ${count} bid(s)`);
+      // v2: only fingerprints of messages/replies on-chain, and an admin that can pause new bids.
+      const v2 = code.toLowerCase().includes(toFunctionSelector("acceptBid(uint256,bytes32)").slice(2).toLowerCase());
+      if (!v2) {
+        network === "mainnet"
+          ? fail("Escrow is v1 (stores replies as public text, no pause): deploy the current contracts/src/AttnnEscrow.sol")
+          : warn("Escrow is v1 (legacy testnet escrow: public reply text, no pause)");
+      } else {
+        ok("Escrow is v2 (fingerprints only, pause for new bids)");
+        const [owner, pending, paused] = await Promise.all(["owner", "pendingOwner", "paused"].map(read));
+        escrowOwner = owner;
+        const admin = env("ATTN_ESCROW_ADMIN");
+        if (!isAddr(admin)) {
+          (network === "mainnet" ? fail : warn)(`ATTN_ESCROW_ADMIN not set (escrow owner is ${owner}); the health check can't watch it`);
+        } else if (getAddress(admin) !== getAddress(owner)) {
+          fail(`Escrow owner is ${owner}, but ATTN_ESCROW_ADMIN is ${admin}`);
+        } else ok(`Escrow admin ${owner} matches ATTN_ESCROW_ADMIN`);
+        /^0x0{40}$/i.test(pending) ? ok("No ownership handover open") : fail(`An ownership handover to ${pending} is open`);
+        paused ? warn("Escrow is PAUSED: new bids are refused") : ok("Escrow is not paused");
+      }
       const selector = toFunctionSelector("updateProfile(uint256,string[],string)").slice(2).toLowerCase();
       regCode.toLowerCase().includes(selector)
         ? ok("Registry supports updateProfile (tag/floor edits sync to Arc)")
@@ -122,6 +145,12 @@ if (env("DATABASE_URL")) {
       if (b.n === 0) ok("Every bid belongs to ATTN_ESCROW_CONTRACT");
       else if (network === "mainnet") fail(`${b.n} bid(s) belong to another escrow. Use a fresh database for mainnet`);
       else warn(`${b.n} bid(s) belong to other (legacy) escrows`);
+    }
+    // The escrow admin must not be a wallet Attnn. holds the keys to: then a server
+    // breach could pause bids or hand the role away.
+    if (escrowOwner) {
+      const [own] = await sql`select count(*)::int as n from wallets where lower(address) = ${escrowOwner.toLowerCase()}`;
+      own.n === 0 ? ok("The escrow admin is not an Attnn. (Circle) wallet") : fail(`The escrow admin ${escrowOwner} is an Attnn. Circle wallet: use a wallet you hold yourself`);
     }
     // Row Level Security (migration 0009) hides tables from Supabase's public REST API.
     // It doesn't restrict a table's OWNER, which is how the app connects, so every

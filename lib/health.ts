@@ -20,9 +20,10 @@ import type { Hex } from "viem";
 import { db } from "./db/client";
 import { bids, profiles, rateLimits } from "./db/schema";
 import { escrowAbi, publicClient, usdcAbi, USDC_ADDRESS } from "./arc";
+import { escrowAdmin, readEscrowBid } from "./escrow";
 import { escrowAddress, knownEscrowAddresses } from "./chain";
 import { formatUsd } from "./bid-rules";
-import { bidsPaused } from "./app-settings";
+import { appSwitchPaused } from "./app-settings";
 import { classifyOpenRows, findOrphans, loadClosedRows, loadOpenRows, type OnChainEntry } from "./reconcile";
 
 export interface HealthReport {
@@ -75,9 +76,40 @@ export async function quickHealthCheck(now = Date.now()): Promise<HealthReport> 
     );
   if (registering.length) notes.push(`${registering.length} creator market(s) still registering on Arc: ${registering.map((p) => p.handle).slice(0, 10).join(", ")}`);
 
-  if (await bidsPaused()) notes.push("New bids are PAUSED (app_settings.bids_paused = true).");
+  if (await appSwitchPaused()) notes.push("New bids are PAUSED (app_settings.bids_paused = true).");
+  await checkEscrowAdmin(problems, notes);
 
   return { problems, notes };
+}
+
+/**
+ * The escrow's admin state (v2). Pausing is an emergency action, and a new owner or an
+ * open handover nobody planned means the admin wallet may be compromised, so all three
+ * are alerts. ATTN_ESCROW_ADMIN is the address you expect to own the escrow.
+ */
+async function checkEscrowAdmin(problems: string[], notes: string[]): Promise<void> {
+  const escrow = escrowAddress();
+  if (!escrow) return;
+  let admin: Awaited<ReturnType<typeof escrowAdmin>>;
+  try {
+    admin = await escrowAdmin(escrow);
+  } catch (err) {
+    problems.push(`Could not read the escrow's admin state: ${err instanceof Error ? err.message : String(err)}`);
+    return;
+  }
+  if (!admin) return; // v1 escrow: no admin
+  if (admin.paused) {
+    problems.push("The escrow contract is PAUSED on-chain: new bids are refused (replies and refunds still work). If you didn't pause it, the admin wallet may be compromised: see docs/RUNBOOK.md.");
+  }
+  const expected = process.env.ATTN_ESCROW_ADMIN?.trim().toLowerCase();
+  if (!expected) {
+    notes.push(`ATTN_ESCROW_ADMIN is not set, so the escrow owner (${admin.owner}) isn't being checked.`);
+  } else if (admin.owner.toLowerCase() !== expected) {
+    problems.push(`The escrow's owner is ${admin.owner}, not ATTN_ESCROW_ADMIN (${expected}). If you didn't hand it over, treat the admin wallet as compromised: see docs/RUNBOOK.md.`);
+  }
+  if (!/^0x0{40}$/i.test(admin.pendingOwner)) {
+    problems.push(`An escrow ownership handover to ${admin.pendingOwner} is open. If you didn't start it, cancel it now: see docs/RUNBOOK.md.`);
+  }
 }
 
 /** One block every on-chain read of a full check is pinned to (JSON-safe for Inngest steps). */
@@ -119,20 +151,14 @@ export async function readEscrowBids(escrow: string, from: number, to: number, s
   for (let i = 0; i < ids.length; i += 20) {
     const chunk = await Promise.all(
       ids.slice(i, i + 20).map(async (id) => {
-        const b = (await publicClient.readContract({
-          address: escrow as Hex,
-          abi: escrowAbi,
-          functionName: "getBid",
-          args: [BigInt(id)],
-          blockNumber: BigInt(snap.blockNumber),
-        })) as readonly [Hex, Hex, bigint, string, string, number, bigint];
+        const b = await readEscrowBid(escrow, BigInt(id), BigInt(snap.blockNumber));
         return {
           escrow,
           id: String(id),
-          bidder: b[0].toLowerCase(),
-          creator: b[1].toLowerCase(),
-          amount: b[2].toString(),
-          status: Number(b[5]),
+          bidder: b.bidder.toLowerCase(),
+          creator: b.creator.toLowerCase(),
+          amount: b.amount.toString(),
+          status: b.status,
         };
       }),
     );

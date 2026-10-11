@@ -16,6 +16,11 @@ contract Deploy is Script {
         console.log(block.chainid == 5042 ? "Network: Arc MAINNET (real USDC)" : "Network: Arc Testnet");
         // Read private key from environment
         uint256 deployerPrivateKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
+        // The escrow admin (pause new bids only). A separate wallet you control (hardware
+        // wallet or multisig), never the deployer key or a key on the Attnn server.
+        address admin = vm.envAddress("ESCROW_ADMIN_ADDRESS");
+        require(admin != address(0), "Deploy: ESCROW_ADMIN_ADDRESS is zero");
+        require(admin != vm.addr(deployerPrivateKey), "Deploy: ESCROW_ADMIN_ADDRESS must not be the deployer");
         
         // Start broadcasting transactions
         vm.startBroadcast(deployerPrivateKey);
@@ -24,7 +29,7 @@ contract Deploy is Script {
         registry = new AttnnRegistry();
         
         // Deploy AttnnEscrow with registry and USDC addresses
-        escrow = new AttnnEscrow(USDC, address(registry));
+        escrow = new AttnnEscrow(USDC, address(registry), admin);
         
         vm.stopBroadcast();
         
@@ -34,5 +39,6 @@ contract Deploy is Script {
         console.log("USDC address:", USDC);
         console.log("Escrow MIN_BID (atomic):", escrow.MIN_BID());
         console.log("Escrow REFUND_PERIOD (s):", escrow.REFUND_PERIOD());
+        console.log("Escrow admin (can pause new bids only):", escrow.owner());
     }
 }

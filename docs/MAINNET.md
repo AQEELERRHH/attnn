@@ -15,15 +15,33 @@ here runs automatically; contract deploys and database changes need the owner's 
       **before** sending USDC (checks-effects-interactions). Arc's USDC has no transfer
       callbacks, so this wasn't exploitable, but a test shows the old order would pay a
       re-entering creator twice on a token that did.
-- [x] Foundry tests: 31 passing (`npm run test:contracts`), including fuzz tests that the
-      escrow always holds exactly the open bids, and the re-entrancy test.
+- [x] **D1, private messages and replies (escrow v2):** the escrow stores only fingerprints,
+      `keccak256(salt ‖ text)` (`placeBid(creator, amount, messageHash)`,
+      `acceptBid(bidId, replyHash)`). Text and a random salt per message/reply stay in the
+      database (migration 0010). Anyone given both can check them against the chain with the
+      contract's `fingerprint(salt, text)` view. The 100-character reply minimum stays an app
+      rule (the contract can't see the text).
+- [x] **D5, emergency pause (escrow v2):** an `owner` (the escrow admin) can `pause()` new bids
+      and hand the role over in two steps. It can't touch escrowed USDC; settlements never
+      pause. See the RUNBOOK's "contract pause".
+- [x] The app supports both escrow generations (read from the bytecode, `lib/escrow.ts`), so
+      testnet's legacy escrows keep settling.
+- [x] Foundry tests: 44 passing (`npm run test:contracts`), including fuzz tests that the
+      escrow always holds exactly the open bids (also while paused), the re-entrancy test,
+      the admin's limits and a fingerprint vector shared with the app's unit tests.
 - [x] Deploy script refuses non-Arc chains and prints the network, `MIN_BID` and
       `REFUND_PERIOD`. Simulated against a local chain with mainnet's chain id.
+- [ ] **Escrow admin wallet**: create it yourself, separate from Attnn. and Circle: a hardware
+      wallet, or better a multisig if one is available on Arc. Never a key in `.env` or on the
+      server. Put a little USDC in it for gas. Send only its public address.
 - [ ] **Deploy** (owner's go-ahead): fund a fresh deployer key with a little USDC for gas, then
-      `ARC_RPC_DEPLOY=https://rpc.mainnet.arc.io npm run deploy:contracts`. Run once without
+      `ESCROW_ADMIN_ADDRESS=<admin address> ARC_RPC_DEPLOY=https://rpc.mainnet.arc.io npm run deploy:contracts`.
+      The script refuses a zero admin or the deployer's own address. Run once without
       `--broadcast` first (`forge script … --rpc-url $ARC_RPC_DEPLOY`) to see the simulation.
-- [ ] Verify the bytecode on the explorer (https://explorer.arc.io); record the addresses
-      in README and Vercel.
+- [ ] Verify the source on the explorer (https://explorer.arc.io), so its "Write contract" tab can
+      call `pause()`; record the addresses in README and Vercel.
+- [ ] From the admin wallet, rehearse once: `scripts/escrow-admin.mjs pause`, check a bid is
+      refused, then `unpause`.
 - [ ] The contracts are not audited. Until they are, consider a soft cap in the app (e.g. a lower
       `ESCROW_MAX_BID` for launch) so no single bid risks much real money.
 
@@ -40,12 +58,16 @@ read-only preflight before touching Vercel:
 `node --env-file=.env.mainnet scripts/check-network-config.mjs`. It checks the RPC's chain
 id, that the escrow uses Arc USDC and points at the registry, that `MIN_BID` / `MAX_BID` /
 `REFUND_PERIOD` match the app, that the registry supports `updateProfile`, that the Circle
-key is a LIVE key and that mock payments are off. With `DATABASE_URL` set it also reads the
+key is a LIVE key and that mock payments are off. On mainnet it also requires a v2 escrow
+whose owner equals `ATTN_ESCROW_ADMIN` with no handover open, and that the admin isn't one of
+Attnn.'s own Circle wallets. With `DATABASE_URL` set it also reads the
 database: no wallets or bids from another network, the app's user owns every table, and Row
 Level Security is on everywhere. It prints no secrets and changes nothing.
 - [ ] `ARC_NETWORK=mainnet` (RPC `https://rpc.mainnet.arc.io` and explorer
       `https://explorer.arc.io` are the defaults; override with `ARC_RPC_URL` / `ARC_EXPLORER_URL`)
 - [ ] `ATTN_ESCROW_CONTRACT`, `ATTN_REGISTRY_CONTRACT` = the mainnet addresses
+- [ ] `ATTN_ESCROW_ADMIN` = the escrow admin's address (the health check alerts if the
+      escrow's owner ever differs, or a handover is opened)
 - [ ] `ATTN_LEGACY_ESCROW_CONTRACTS=none` (testnet escrows don't exist on mainnet)
 - [ ] `NEXT_PUBLIC_ESCROW_MIN_BID_USDC=1000000` (the $1 minimum; it's built into the client
       bundle, so redeploy after changing it)

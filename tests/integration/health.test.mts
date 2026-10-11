@@ -94,4 +94,32 @@ describe("money health check", () => {
     assert.equal((await quickHealthCheck()).problems.length, 0);
     assert.match((await fullHealthCheck()).problems.join("\n"), /failed settlement/);
   });
+
+  // ── D5: the escrow's admin is watched ──
+  test("D5: alerts when the escrow is paused on-chain, owned by someone unexpected, or a handover is open", async () => {
+    process.env.ATTN_ESCROW_ADMIN = world.escrowOwner;
+    try {
+      assert.deepEqual((await quickHealthCheck()).problems, [], "expected owner, not paused: quiet");
+
+      world.escrowPaused = true;
+      assert.match((await quickHealthCheck()).problems.join("\n"), /PAUSED on-chain/);
+      world.escrowPaused = false;
+
+      world.escrowOwner = "0x00000000000000000000000000000000000000ee";
+      assert.match((await quickHealthCheck()).problems.join("\n"), /not ATTN_ESCROW_ADMIN/);
+      world.escrowOwner = process.env.ATTN_ESCROW_ADMIN!;
+
+      world.escrowPendingOwner = "0x00000000000000000000000000000000000000ee";
+      assert.match((await quickHealthCheck()).problems.join("\n"), /handover/);
+    } finally {
+      delete process.env.ATTN_ESCROW_ADMIN;
+    }
+  });
+
+  test("D5: without ATTN_ESCROW_ADMIN the owner isn't checked, and the report says so", async () => {
+    delete process.env.ATTN_ESCROW_ADMIN;
+    const r = await quickHealthCheck();
+    assert.deepEqual(r.problems, []);
+    assert.match(r.notes.join("\n"), /ATTN_ESCROW_ADMIN is not set/);
+  });
 });

@@ -19,7 +19,7 @@
  *   ok                Matches.
  */
 import postgres from "postgres";
-import { createPublicClient, http } from "viem";
+import { createPublicClient, http, toFunctionSelector } from "viem";
 import { writeFileSync } from "node:fs";
 
 const ESCROW = process.env.ATTN_ESCROW_CONTRACT?.toLowerCase();
@@ -29,11 +29,19 @@ if (!process.env.DATABASE_URL || !ESCROW) {
   process.exit(1);
 }
 
+// v2 escrows store message/reply fingerprints (bytes32); v1 stored text. Read from the bytecode.
+const client0 = createPublicClient({ transport: http(process.env.ARC_RPC_URL || "https://rpc.testnet.arc.network") });
+const code = await client0.getCode({ address: ESCROW });
+if (!code || code === "0x") {
+  console.error(`No contract at ${ESCROW}`);
+  process.exit(1);
+}
+const textType = code.toLowerCase().includes(toFunctionSelector("acceptBid(uint256,bytes32)").slice(2)) ? "bytes32" : "string";
 const escrowAbi = [
   { type: "function", name: "getBid", stateMutability: "view", inputs: [{ name: "bidId", type: "uint256" }],
     outputs: [
       { name: "bidder", type: "address" }, { name: "creator", type: "address" }, { name: "amount", type: "uint256" },
-      { name: "message", type: "string" }, { name: "reply", type: "string" }, { name: "status", type: "uint8" },
+      { name: "message", type: textType }, { name: "reply", type: textType }, { name: "status", type: "uint8" },
       { name: "createdAt", type: "uint256" },
     ] },
   { type: "function", name: "getBidderBids", stateMutability: "view", inputs: [{ name: "bidder", type: "address" }],

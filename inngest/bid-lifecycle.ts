@@ -13,7 +13,8 @@ import { inngest } from "@/lib/inngest";
 import { db } from "@/lib/db/client";
 import { walletByAddress } from "@/lib/wallets";
 import { bids } from "@/lib/db/schema";
-import { escrowAbi, publicClient, usdcAbi, USDC_ADDRESS } from "@/lib/arc";
+import { publicClient, usdcAbi, USDC_ADDRESS } from "@/lib/arc";
+import { escrowAbiFor, escrowVersion, placeBidArgs } from "@/lib/escrow";
 import {
   classifyTxState,
   describeTxFailure,
@@ -97,8 +98,8 @@ export const placeBid = inngest.createFunction(
         creator: row.creatorAddress,
         escrow: row.escrowAddress,
         amount: row.amountUsdc,
-        message: row.isPrivate ? "" : (row.message ?? ""),
-        isPrivate: row.isPrivate,
+        message: row.message,
+        messageSalt: row.messageSalt,
         alreadySubmitted: Boolean(row.bidTxHash),
         createdAt: row.createdAt.toISOString(),
       };
@@ -193,12 +194,14 @@ export const placeBid = inngest.createFunction(
             args: [bid.bidder as `0x${string}`, bid.escrow as `0x${string}`],
           });
           if (allowance < BigInt(bid.amount)) return { reapprove: true as const };
+          // v2 escrows get only the message's fingerprint; the text stays in our database.
+          const version = await escrowVersion(bid.escrow);
           const res = await executeContractCallOnce({
             walletId: bid.walletId,
             contractAddress: bid.escrow,
-            abi: escrowAbi,
+            abi: escrowAbiFor(version),
             functionName: "placeBid",
-            args: [bid.creator, bid.amount, bid.message, bid.isPrivate],
+            args: placeBidArgs(version, bid),
             opKey: `place:${bidId}`,
           });
           const saved = await db

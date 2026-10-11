@@ -18,6 +18,7 @@ import type { Hex } from "viem";
 import { db } from "./db/client";
 import { bids } from "./db/schema";
 import { escrowAbi, publicClient } from "./arc";
+import { readEscrowBid } from "./escrow";
 import { knownEscrowAddresses } from "./chain";
 
 const lower = (a: string) => a.toLowerCase();
@@ -40,9 +41,9 @@ export async function indexOnChainBids(): Promise<Record<string, OnChainEntry[]>
   for (const escrow of knownEscrowAddresses()) {
     const count = (await publicClient.readContract({ address: escrow as Hex, abi: escrowAbi, functionName: "getBidCount" })) as bigint;
     for (let i = BigInt(1); i <= count; i++) {
-      const b = await publicClient.readContract({ address: escrow as Hex, abi: escrowAbi, functionName: "getBid", args: [i] });
-      const bidder = lower(b[0]);
-      (index[bidder] ??= []).push({ escrow, id: i.toString(), creator: lower(b[1]), amount: b[2].toString(), status: Number(b[5]) });
+      const b = await readEscrowBid(escrow, i);
+      const bidder = lower(b.bidder);
+      (index[bidder] ??= []).push({ escrow, id: i.toString(), creator: lower(b.creator), amount: b.amount.toString(), status: b.status });
     }
   }
   return index;

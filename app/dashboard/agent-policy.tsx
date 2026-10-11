@@ -1,6 +1,7 @@
 import { Check, ExternalLink, Lock, X } from "lucide-react";
 import { Money, Num, Panel } from "@/components/market";
 import { shortAddress } from "@/lib/format";
+import { glossary } from "@/lib/glossary";
 import type { AgentPolicyInfo, BidderConfigData } from "./types";
 
 /**
@@ -63,6 +64,8 @@ export function AgentPolicy({ config, spent, policy }: { config: BidderConfigDat
             <Rule kind="locked">Only the creator can release your USDC, by replying within {policy.refundDays} days</Rule>
             <Rule kind="locked">No reply in {policy.refundDays} days: the refund can only go back to your wallet</Rule>
             <Rule kind="locked">A declined bid is refunded to you straight away</Rule>
+            {policy.escrowV2 && <Rule kind="locked">{glossary.escrowPause}</Rule>}
+            {policy.escrowV2 && <Rule kind="locked">{glossary.escrowPrivacy}</Rule>}
           </ul>
         </section>
       </div>

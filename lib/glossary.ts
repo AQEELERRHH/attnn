@@ -6,7 +6,8 @@
  * Keep every sentence true to the code and the escrow contract (see the Spending
  * policy card in app/dashboard/agent-policy.tsx): the escrow pays the creator only
  * when they reply, refunds the bidder on a decline or after REFUND_PERIOD, and
- * nothing else.
+ * nothing else. The two v2 lines (escrowPrivacy, escrowPause) are shown only when the
+ * deployed escrow is v2 (lib/escrow.ts escrowVersion).
  */
 export const glossary = {
   usdc: "USDC is a digital dollar: 1 USDC is always worth $1. Every price, bid and payout on Attnn. is in USDC.",
@@ -32,4 +33,8 @@ export const glossary = {
   fitScore:
     "Your agent's AI rates each creator from 0 to 10 against your goal. It only bids on creators scoring at least this. If the AI can't score a creator, it doesn't bid.",
   searchTags: "Topics to look for. Your agent only considers creators whose tags match at least one of these.",
+  escrowPrivacy:
+    "Bid messages and replies are never written on Arc. Only a fingerprint of each is, so anyone can check a reply wasn't changed, but nobody can read it.",
+  escrowPause:
+    "In an emergency Attnn. can pause new bids. It can never move or freeze USDC already in the escrow: replies, declines and refunds keep working.",
 } as const;

@@ -167,13 +167,14 @@ export function WalletDialog({ address, balanceUsdc, isTestnet }: { address: str
             {overBalance && <p className="mt-1 text-xs text-arc-coral">That&apos;s more than your balance.</p>}
             {!overBalance && overAllowance && allowance && (
               <p className="mt-1 text-xs text-arc-coral">
-                That&apos;s more than you can send right now: <Money atomic={allowance.remaining} /> left in the last 24 hours.
+                That&apos;s more than can leave your wallet right now: <Money atomic={allowance.remaining} /> left in the last 24 hours.
               </p>
             )}
             {allowance && (
               <p className="mt-1 text-xs text-text-secondary">
-                For your safety you can send up to <Money atomic={allowance.limit} /> in any 24 hours (<Money atomic={allowance.remaining} /> left). The
-                first time you send to a new address, we email you a code to confirm it.
+                For your safety, up to <Money atomic={allowance.limit} /> can leave your wallet in any 24 hours: sends, bids you place and moves
+                to your agent together (<Money atomic={allowance.remaining} /> left). The first time you send to a new address, we email you a code
+                to confirm it.
               </p>
             )}
           </div>

@@ -7,24 +7,26 @@ import { auth } from "@/lib/auth";
 import { parseRequestId, rejectedByCircle, transferUSDC } from "@/lib/circle";
 import { dollarsToAtomic } from "@/lib/format";
 import {
-  WITHDRAWAL_LIMIT_24H,
+  DAILY_ALLOWANCE,
+  AllowanceExceeded,
   WithdrawalError,
+  allowanceRemaining,
+  codeSubject,
   confirmWithdrawalAddress,
   isConfirmedAddress,
   markWithdrawal,
   notifyWithdrawal,
-  remainingLast24h,
+  requestSecurityCode,
   reserveWithdrawal,
-  sendWithdrawalCode,
 } from "@/lib/withdrawals";
 
-/** What the Send form shows: the 24-hour limit and what's left of it. */
+/** What the Send form shows: the shared 24-hour allowance and what's left of it. */
 export async function GET() {
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
-    const remaining = await remainingLast24h(session.user.id);
-    return NextResponse.json({ limit: WITHDRAWAL_LIMIT_24H.toString(), remaining: remaining.toString() });
+    const remaining = await allowanceRemaining(session.user.id);
+    return NextResponse.json({ limit: DAILY_ALLOWANCE.toString(), remaining: remaining.toString() });
   } catch (err) {
     return serverError("wallet/send GET", err, "Couldn't load your sending limit.");
   }
@@ -35,7 +37,7 @@ export async function GET() {
  *   - a new address needs the 6-digit code emailed to the account: without `code` the
  *     route emails one and answers 202 { needsCode: true }; with it, the address is
  *     confirmed for next time;
- *   - at most $500 in any 24 hours;
+ *   - counts against the shared $500 / 24 h allowance (sends never go over it);
  *   - the browser's requestId makes it idempotent.
  */
 export async function POST(req: NextRequest) {
@@ -67,9 +69,12 @@ export async function POST(req: NextRequest) {
     const own = !!(await walletByAddress(userId, to));
     if (!own && !(await isConfirmedAddress(userId, to))) {
       if (typeof code !== "string" || code.trim() === "") {
+        // Don't email a code for a send the allowance would refuse anyway.
+        const remaining = await allowanceRemaining(userId);
+        if (atomic > remaining) throw new AllowanceExceeded(remaining, false);
         const blockedCode = await limitOrNull(LIMITS.withdrawalCode, userId);
         if (blockedCode) return blockedCode;
-        const { sentTo } = await sendWithdrawalCode(userId, to);
+        const { sentTo } = await requestSecurityCode(userId, codeSubject.address(to), `confirm sending USDC to the new address ${to}`);
         return NextResponse.json({ needsCode: true, sentTo }, { status: 202 });
       }
       await confirmWithdrawalAddress(userId, to, code.trim());
@@ -77,7 +82,7 @@ export async function POST(req: NextRequest) {
 
     // Same request id → same transfer: a double click or retry never sends twice.
     const requestKey = `send:${stableUuid(`${userId}:${requestId}`)}`;
-    const { row, retry } = await reserveWithdrawal({ userId, requestKey, to, amount: atomic });
+    const { row, retry } = await reserveWithdrawal({ userId, kind: "send", requestKey, to, amount: atomic });
     if (retry && row.status === "failed") {
       return NextResponse.json({ error: "That send didn't go through and nothing was sent. Please start it again.", restart: true }, { status: 409 });
     }
@@ -87,14 +92,14 @@ export async function POST(req: NextRequest) {
 
     try {
       const result = await transferUSDC(wallet.circleWalletId, row.toAddress, row.amountUsdc, requestKey);
-      await markWithdrawal(row.id, { circleTxId: result.txId });
-      if (!retry) await notifyWithdrawal(userId, row.toAddress, BigInt(row.amountUsdc));
+      // The notice goes out once, when the row first becomes "submitted" (also after a retry).
+      if (await markWithdrawal(row.id, { circleTxId: result.txId })) await notifyWithdrawal(userId, row.toAddress, BigInt(row.amountUsdc));
       return NextResponse.json({ success: true, txId: result.txId });
     } catch (err) {
-      // Refused outright: nothing was sent, so it doesn't count against the limit.
-      // Otherwise it may have gone through; it stays counted and a retry with the same
-      // request id finishes it (Circle's idempotency returns the original transfer).
-      if (rejectedByCircle(err)) await markWithdrawal(row.id, { failed: true });
+      // Refused outright on the FIRST try: nothing was sent, so it doesn't count. On a
+      // retry an earlier attempt may have gone through, so it stays counted; so does any
+      // unclear error (a retry with the same request id finishes it idempotently).
+      if (!retry && rejectedByCircle(err)) await markWithdrawal(row.id, { failed: true });
       throw err;
     }
   } catch (err) {

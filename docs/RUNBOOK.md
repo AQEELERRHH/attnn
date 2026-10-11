@@ -46,13 +46,14 @@ The **Money Health Check** job (Inngest) runs every hour, plus a full escrow che
 | Accepted bid(s) show no reply, or one that doesn't match the fingerprint | The creator was paid (on Arc) for a reply fingerprint that matches none of the replies saved for that bid, so the bidder sees no reply. Rare: the creator accepted outside Attnn., or saved replies were lost. | Look at the bid's `reply_candidates` and Circle transactions. If the text can't be recovered, tell the bidder and the creator plainly and ask the creator to resend the reply. The alert repeats daily for that bid; note the bid id as known. |
 | Failed settlement waiting for a retry | Circle or the chain refused an accept, decline or refund. The bid is still open and its USDC is still in escrow. | Read `fail_reason`. Usually the wallet is out of gas USDC; add $1 to that wallet. The creator can retry; auto-refund retries refunds hourly. |
 
-## Withdrawals (sending USDC out)
+## Money leaving a wallet (the daily allowance)
 
-- Each account can send at most **$500 in any 24 hours** (`WITHDRAWAL_LIMIT_24H` in `lib/withdrawals.ts`; changing it is a code change). Sends between a user's own main and agent wallets don't count.
-- The first send to a new address needs a 6-digit code emailed to the account. **No email service, no code**: if Resend is down, sends to new addresses wait; confirmed addresses keep working.
-- Every send emails the account a notice. A user who gets one they didn't make: treat it as a stolen session. Sign them out everywhere (`delete from sessions where user_id = '…'`), and pause bids if more accounts are affected.
-- A user who can't get the code: check Resend's logs for their address. Never read a code out to anyone, and never add an address to `withdrawal_addresses` by hand unless you've confirmed the user's identity outside the app.
-- Their sends: `select created_at, to_address, amount_usdc, status from withdrawals where user_id = '…' order by created_at desc;` (`sending` = may have gone through and still counts; `failed` = Circle refused it, nothing moved).
+- At most **$500 can leave a main wallet in any 24 hours**, counting sends, bids placed by hand and moves into the agent wallet together (`DAILY_ALLOWANCE` in `lib/withdrawals.ts`; changing it is a code change). Moving USDC back from the agent wallet doesn't count, nor do the agent's own bids.
+- Sends never go over it. A bid or agent top-up over it, raising the agent's daily budget or per-creator cap, and the first send to a new address each need a 6-digit code emailed to the account.
+- **No email service, no codes**: if Resend is down, only actions within the allowance to known addresses work. Nothing is lost.
+- Every send emails the account a notice. A user who gets one, or a code, they didn't ask for: treat it as a stolen session. Sign them out everywhere (`delete from sessions where user_id = '…';`) and pause bids if more accounts are affected.
+- A user who can't get a code: check Resend's logs for their address. Never read a code out to anyone, and never add rows to `withdrawal_addresses` by hand unless you've confirmed the user's identity outside the app.
+- What counted: `select created_at, kind, to_address, amount_usdc, status from withdrawals where user_id = '…' order by created_at desc;` plus their bids placed from the main wallet. `sending` = may have gone through, still counts; `failed` = Circle refused it, nothing moved.
 
 ## A user says their money is missing
 

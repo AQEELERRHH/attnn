@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { Button } from "@/components/ui/button";
-import { FieldHint, Panel } from "@/components/market";
+import { FieldHint, Panel, SecurityCodeField, isSecurityCode } from "@/components/market";
 import { glossary } from "@/lib/glossary";
 import { toast } from "@/hooks/use-toast";
 import { ESCROW_MAX_BID, ESCROW_MIN_BID, formatUsd } from "@/lib/bid-rules";
@@ -33,6 +33,14 @@ export function BidderSetupForm({
   const [defaultMessage, setDefaultMessage] = React.useState(existingConfig?.defaultMessage ?? "");
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState("");
+  /** Raising the budget or cap needs the emailed code (D4). */
+  const [codeSentTo, setCodeSentTo] = React.useState<string | null>(null);
+  const [code, setCode] = React.useState("");
+  // A code approves one exact pair of limits: changing them starts over.
+  React.useEffect(() => {
+    setCodeSentTo(null);
+    setCode("");
+  }, [dailyBudget, maxBid]);
 
   const budget = dollarsToAtomic(dailyBudget);
   const cap = dollarsToAtomic(maxBid);
@@ -46,6 +54,7 @@ export function BidderSetupForm({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (invalid || budget === null || cap === null) return;
+    if (codeSentTo && !isSecurityCode(code)) return;
     setLoading(true);
     setError("");
     try {
@@ -60,10 +69,14 @@ export function BidderSetupForm({
           maxBidPerCreator: cap.toString(),
           agentName: agentName || null,
           defaultMessage: defaultMessage || null,
+          ...(codeSentTo ? { code: code.trim() } : {}),
         }),
       });
       const data = await res.json().catch(() => ({}));
-      if (data.success) {
+      if (data.needsCode) {
+        setCodeSentTo(String(data.sentTo ?? "your email"));
+        setError("");
+      } else if (data.success) {
         toast({ title: existingConfig ? "Strategy saved" : "Bidder agent created", variant: "success" });
         onComplete();
       } else {
@@ -202,6 +215,16 @@ export function BidderSetupForm({
             onChange={(e) => setDefaultMessage(e.target.value)}
           />
         </div>
+        {codeSentTo && (
+          <SecurityCodeField
+            id="bs-code"
+            className="sm:col-span-2"
+            sentTo={codeSentTo}
+            value={code}
+            onChange={setCode}
+            reason="Raising your agent's daily budget or per-creator maximum needs your approval."
+          />
+        )}
         {error && (
           <p role="alert" className="text-sm text-arc-coral sm:col-span-2">
             {error}
@@ -214,7 +237,7 @@ export function BidderSetupForm({
             </Button>
           )}
           <Button type="submit" className="flex-1" disabled={loading || invalid}>
-            {loading ? "Saving…" : existingConfig ? "Save strategy" : "Create agent"}
+            {loading ? "Saving…" : codeSentTo ? "Approve & save" : existingConfig ? "Save strategy" : "Create agent"}
           </Button>
         </div>
         {!existingConfig && (

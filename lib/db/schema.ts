@@ -428,7 +428,9 @@ export const withdrawals = pgTable(
     userId: uuid("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    /** The transfer's op key (send:<stable uuid of user + browser request id>). */
+    /** send = to another address; agent_fund = main → agent wallet. Hand-placed bids are read from bids. */
+    kind: text("kind").$type<"send" | "agent_fund">().notNull().default("send"),
+    /** The transfer's op key (send:/move:<stable uuid of user + browser request id>). */
     requestKey: text("request_key").notNull().unique(),
     toAddress: text("to_address").notNull(),
     amountUsdc: text("amount_usdc").notNull(),
@@ -454,7 +456,7 @@ export const withdrawalAddresses = pgTable(
   (t) => [uniqueIndex("withdrawal_addresses_user_address_uq").on(t.userId, t.address)],
 );
 
-/** The one live email code per user + new address (HMAC of the code, never the code). */
+/** The one live security code per user + subject (sha256 of the action it confirms; HMAC of the code, never the code). */
 export const withdrawalCodes = pgTable(
   "withdrawal_codes",
   {
@@ -462,11 +464,11 @@ export const withdrawalCodes = pgTable(
     userId: uuid("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    address: text("address").notNull(),
+    subject: text("subject").notNull(),
     codeHash: text("code_hash").notNull(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     attempts: integer("attempts").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
-  (t) => [uniqueIndex("withdrawal_codes_user_address_uq").on(t.userId, t.address)],
+  (t) => [uniqueIndex("withdrawal_codes_user_subject_uq").on(t.userId, t.subject)],
 );

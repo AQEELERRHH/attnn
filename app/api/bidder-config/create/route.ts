@@ -7,6 +7,7 @@ import { db } from "@/lib/db/client";
 import { bidderConfigs } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { ESCROW_MAX_BID, ESCROW_MIN_BID, formatUsd, parseAtomicUsdc } from "@/lib/bid-rules";
+import { WithdrawalError, codeSubject, consumeSecurityCode, requestSecurityCode } from "@/lib/withdrawals";
 
 /** Checks the money and score fields that were sent. Returns an error message or null. */
 function validate(body: Record<string, unknown>): string | null {
@@ -63,6 +64,26 @@ export async function POST(req: NextRequest) {
     // Check if already exists
     const existing = await db.query.bidderConfigs.findFirst({ where: eq(bidderConfigs.userId, session.user.id) });
     if (existing) {
+      // Raising what the agent may spend needs the emailed code (D4): a stolen session
+      // can't widen the agent's limits. Lowering them, or any other change, doesn't.
+      const nextDaily = dailyBudget ?? existing.dailyBudget;
+      const nextMax = maxBidPerCreator ?? existing.maxBidPerCreator;
+      const raising = BigInt(nextDaily) > BigInt(existing.dailyBudget) || BigInt(nextMax) > BigInt(existing.maxBidPerCreator);
+      if (raising) {
+        const subject = codeSubject.agentLimits(nextDaily, nextMax);
+        const code = typeof body.code === "string" ? body.code.trim() : "";
+        if (!code) {
+          const blockedCode = await limitOrNull(LIMITS.withdrawalCode, session.user.id);
+          if (blockedCode) return blockedCode;
+          const { sentTo } = await requestSecurityCode(
+            session.user.id,
+            subject,
+            `approve raising your agent's limits to a ${formatUsd(BigInt(nextDaily))} daily budget and ${formatUsd(BigInt(nextMax))} per creator`,
+          );
+          return NextResponse.json({ needsCode: true, sentTo }, { status: 202 });
+        }
+        await consumeSecurityCode(session.user.id, subject, code);
+      }
       // Update instead
       const updates: Record<string, unknown> = {};
       if (goal !== undefined) updates.goal = goal;
@@ -95,6 +116,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ config, success: true });
   } catch (err) {
+    if (err instanceof WithdrawalError) return NextResponse.json({ error: err.message }, { status: err.status });
     return serverError("bidder-config/create", err, "Couldn't save your agent settings. Please try again.");
   }
 }

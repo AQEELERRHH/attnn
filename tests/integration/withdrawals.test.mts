@@ -37,9 +37,24 @@ const { db } = await import("../../lib/db/client.ts");
 const { withdrawals, withdrawalCodes } = await import("../../lib/db/schema.ts");
 const { NextRequest } = await import("next/server");
 const route = await import("../../app/api/wallet/send/route.ts");
+const bidRoute = await import("../../app/api/bid/place/route.ts");
+const agentRoute = await import("../../app/api/wallet/agent/route.ts");
+const configRoute = await import("../../app/api/bidder-config/create/route.ts");
+const { bids, bidderConfigs } = await import("../../lib/db/schema.ts");
+const { eq } = await import("drizzle-orm");
+const { clearSettingsCache } = await import("../../lib/app-settings.ts");
 
 const NEW = "0x2222222222222222222222222222222222222222";
 const OTHER = "0x3333333333333333333333333333333333333333";
+const postTo = (url: string, body: unknown) =>
+  new NextRequest(`http://localhost:3000${url}`, {
+    method: "POST",
+    headers: { "content-type": "application/json", host: "localhost:3000", origin: "http://localhost:3000" },
+    body: JSON.stringify(body),
+  });
+const bid = (amountUsdc: string, code?: string) => bidRoute.POST(postTo("/api/bid/place", { creatorHandle: "amina", amountUsdc, message: "hi", ...(code ? { code } : {}) }));
+const topUp = (amount: string, requestId = crypto.randomUUID(), code?: string) =>
+  agentRoute.POST(postTo("/api/wallet/agent", { action: "fund", amount, requestId, ...(code ? { code } : {}) }));
 const post = (body: unknown) =>
   new NextRequest("http://localhost:3000/api/wallet/send", {
     method: "POST",
@@ -68,6 +83,7 @@ describe("D4: withdrawals", () => {
     session.userId = ids.bidder;
     mail.sent.length = 0;
     mail.failNext = false;
+    clearSettingsCache();
   });
   after(closeDb);
 
@@ -205,5 +221,90 @@ describe("D4: withdrawals", () => {
     assert.equal((await send(NEW, "5")).status, 401);
     assert.equal((await route.GET()).status, 401);
     assert.equal(world.txs.length, 0);
+  });
+
+  // ── One allowance for everything that leaves the main wallet ──
+  test("bids placed by hand and sends share the $500: a $300 bid leaves $200 to send", async () => {
+    await confirm(); // $1
+    assert.equal((await bid("300000000")).status, 202, "bid queued");
+    const over = await send(NEW, "250");
+    assert.equal(over.status, 429);
+    assert.match((await over.json()).error, /\$199\.00 left/);
+    assert.equal((await (await route.GET()).json()).remaining, "199000000");
+  });
+
+  test("a bid over the allowance needs the emailed code, approves only that bid, then counts", async () => {
+    assert.equal((await bid("400000000")).status, 202);
+    const over = await bid("200000000"); // $600 > $500
+    assert.equal(over.status, 202);
+    const body = await over.json();
+    assert.equal(body.needsCode, true);
+    assert.equal((await db.select().from(bids)).length, 1, "no bid recorded without the code");
+    const code = lastCode()!;
+    // The code is for $200 to this creator, not for a different amount.
+    assert.equal((await bid("250000000", code)).status, 410);
+    assert.equal((await bid("200000000")).status, 429, "asking again within a minute: refused, the old code stands");
+    // A fresh code for $200 approves exactly that bid.
+    await db.delete((await import("../../lib/db/schema.ts")).withdrawalCodes);
+    await bid("200000000");
+    assert.equal((await bid("200000000", lastCode())).status, 202);
+    assert.equal((await db.select().from(bids)).length, 2);
+    assert.equal((await (await route.GET()).json()).remaining, "0");
+  });
+
+  test("agent bids aren't counted again (the agent wallet was funded under the allowance)", async () => {
+    const { createBidIntent } = await import("../../lib/bids.ts");
+    await createBidIntent({ bidderUserId: ids.bidder, creatorUserId: ids.creator, amountUsdc: "20000000", fromAgentWallet: true });
+    assert.equal((await (await route.GET()).json()).remaining, "500000000");
+  });
+
+  test("moving USDC to the agent counts; over the allowance it needs the code; moving it back doesn't count", async () => {
+    world.usdc.set(addr.bidderMain, BigInt(2_000_000_000));
+    assert.equal((await topUp("450")).status, 202);
+    const requestId = crypto.randomUUID();
+    const over = await topUp("100", requestId);
+    assert.equal((await over.json()).needsCode, true);
+    assert.equal(world.calls("transfer").length, 1);
+    const ok = await topUp("100", requestId, lastCode());
+    assert.equal(ok.status, 202);
+    assert.equal(world.calls("transfer").length, 2);
+    const back = await agentRoute.POST(postTo("/api/wallet/agent", { action: "withdraw", amount: "50", requestId: crypto.randomUUID() }));
+    assert.equal(back.status, 202);
+    assert.equal((await (await route.GET()).json()).remaining, "0", "$550 out; moving $50 back doesn't refill it");
+    assert.equal((await send(NEW, "1")).status, 429, "sends never go over");
+  });
+
+  test("raising the agent's budget or cap needs the code; lowering it doesn't", async () => {
+    const save = (body: Record<string, unknown>) => configRoute.POST(postTo("/api/bidder-config/create", body));
+    const raise = await save({ dailyBudget: "900000000", maxBidPerCreator: "20000000" });
+    assert.equal(raise.status, 202);
+    assert.equal((await raise.json()).needsCode, true);
+    const cfg = async () => (await db.query.bidderConfigs.findFirst({ where: eq(bidderConfigs.userId, ids.bidder) }))!;
+    assert.equal((await cfg()).dailyBudget, "50000000", "unchanged without the code");
+    const ok = await save({ dailyBudget: "900000000", maxBidPerCreator: "20000000", code: lastCode() });
+    assert.equal(ok.status, 200);
+    assert.equal((await cfg()).dailyBudget, "900000000");
+    const lower = await save({ dailyBudget: "10000000", maxBidPerCreator: "5000000", goal: "find designers" });
+    assert.equal(lower.status, 200);
+    assert.equal((await cfg()).maxBidPerCreator, "5000000");
+  });
+
+  test("M2: a send that needed a retry still emails the notice, exactly once", async () => {
+    await confirm();
+    mail.sent.length = 0;
+    world.timeoutNextSubmit = true;
+    const requestId = crypto.randomUUID();
+    assert.equal((await route.POST(post({ to: NEW, amount: "20", requestId }))).status, 500);
+    assert.equal((await route.POST(post({ to: NEW, amount: "20", requestId }))).status, 200);
+    assert.equal((await route.POST(post({ to: NEW, amount: "20", requestId }))).status, 200);
+    assert.equal(mail.sent.filter((m) => m.subject.includes("You sent $20.00")).length, 1);
+  });
+
+  test("no code is emailed for a send the allowance would refuse", async () => {
+    await confirm();
+    await send(NEW, "499");
+    mail.sent.length = 0;
+    assert.equal((await send(OTHER, "5")).status, 429);
+    assert.equal(mail.sent.length, 0);
   });
 });

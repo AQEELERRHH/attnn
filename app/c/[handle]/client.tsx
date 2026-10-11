@@ -90,13 +90,14 @@ export function CreatorMarket(props: CreatorMarketProps) {
         ? "This creator isn't accepting bids right now."
         : null;
 
-  async function placeBid(amountUsdc: string, message: string) {
+  async function placeBid(amountUsdc: string, message: string, code?: string) {
     const res = await fetch("/api/bid/place", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ creatorHandle: handle, amountUsdc, message, isPrivate: false }),
+      body: JSON.stringify({ creatorHandle: handle, amountUsdc, message, isPrivate: false, ...(code ? { code } : {}) }),
     });
     const data = await res.json().catch(() => ({}));
+    if (data.needsCode) return { ok: false, needsCode: String(data.sentTo ?? "your email"), error: data.error as string | undefined };
     if (res.ok && data.success) {
       router.refresh();
       return { ok: true };

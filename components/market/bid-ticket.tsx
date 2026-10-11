@@ -5,6 +5,7 @@ import { cn } from "@/lib/cn";
 import { ESCROW_MAX_BID, creatorFloor, formatUsd } from "@/lib/bid-rules";
 import { glossary } from "@/lib/glossary";
 import { FieldHint } from "./field-hint";
+import { SecurityCodeField, isSecurityCode } from "./security-code-field";
 import { atomicToDollarInput, dollarsToAtomic, shortAddress } from "@/lib/format";
 
 export interface BidTicketProps {
@@ -18,10 +19,12 @@ export interface BidTicketProps {
   /** Explorer URL for the escrow contract. */
   escrowHref?: string | null;
   /**
-   * Called with the atomic amount and message. Resolve { ok: true } once the
-   * bid is queued (it shows as "placing" until it confirms on Arc).
+   * Called with the atomic amount, message and (when asked for) the emailed code.
+   * Resolve { ok: true } once the bid is queued (it shows as "placing" until it
+   * confirms on Arc), or { ok: false, needsCode: maskedEmail } when the bid is over the
+   * 24-hour allowance and needs the code to go ahead.
    */
-  onSubmit: (amountUsdc: string, message: string) => Promise<{ ok: boolean; error?: string }>;
+  onSubmit: (amountUsdc: string, message: string, code?: string) => Promise<{ ok: boolean; error?: string; needsCode?: string }>;
   /** When set, the ticket is shown but disabled with this explanation. */
   disabledReason?: string | null;
   className?: string;
@@ -47,6 +50,9 @@ export function BidTicket({
   const [message, setMessage] = React.useState("");
   const [submitting, setSubmitting] = React.useState(false);
   const [result, setResult] = React.useState<{ ok: boolean; text: string } | null>(null);
+  /** Masked email once a code was sent for this exact amount. */
+  const [codeSentTo, setCodeSentTo] = React.useState<string | null>(null);
+  const [code, setCode] = React.useState("");
 
   const amount = dollarsToAtomic(amountInput);
   const belowFloor = amount !== null && amount < floor;
@@ -63,16 +69,26 @@ export function BidTicket({
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!valid || amount === null || disabledReason) return;
+    if (codeSentTo && !isSecurityCode(code)) return;
     setSubmitting(true);
     setResult(null);
     try {
-      const r = await onSubmit(amount.toString(), message.trim());
+      const r = await onSubmit(amount.toString(), message.trim(), codeSentTo ? code.trim() : undefined);
+      if (r.needsCode) {
+        setCodeSentTo(r.needsCode);
+        setResult({ ok: false, text: r.error ?? "This bid is over your 24-hour allowance. Enter the code from your email to approve it." });
+        return;
+      }
       setResult(
         r.ok
           ? { ok: true, text: "Bid submitted. It shows as “Confirming on Arc” until the USDC is escrowed." }
           : { ok: false, text: r.error ?? "Could not place bid." },
       );
-      if (r.ok) setMessage("");
+      if (r.ok) {
+        setMessage("");
+        setCodeSentTo(null);
+        setCode("");
+      }
     } catch {
       setResult({ ok: false, text: "Something went wrong. Nothing was charged." });
     } finally {
@@ -104,6 +120,9 @@ export function BidTicket({
             onChange={(e) => {
               setAmountInput(e.target.value);
               setResult(null);
+              // A code approves one exact amount: a new amount starts over.
+              setCodeSentTo(null);
+              setCode("");
             }}
             aria-invalid={belowFloor || aboveMax || amount === null}
             aria-describedby="bid-amount-hint"
@@ -168,6 +187,16 @@ export function BidTicket({
         />
       </div>
 
+      {codeSentTo && (
+        <SecurityCodeField
+          id="bid-code"
+          sentTo={codeSentTo}
+          value={code}
+          onChange={setCode}
+          reason="At most $500 can leave your wallet in any 24 hours without your approval."
+        />
+      )}
+
       {biddingAs && (
         <p className="text-xs text-text-secondary">
           Bidding as <span className="text-text-primary">{biddingAs}</span>
@@ -188,10 +217,14 @@ export function BidTicket({
 
       <button
         type="submit"
-        disabled={!valid || submitting || !!disabledReason}
+        disabled={!valid || submitting || !!disabledReason || (!!codeSentTo && !isSecurityCode(code))}
         className="focus-ring h-12 rounded-lg bg-arc-gold font-display text-[15px] font-bold text-arc-bg-0 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
       >
-        {submitting ? "Submitting…" : valid && amount !== null ? `Place bid · ${formatUsd(amount)}` : "Enter an amount"}
+        {submitting
+          ? "Submitting…"
+          : valid && amount !== null
+            ? `${codeSentTo ? "Approve & place bid" : "Place bid"} · ${formatUsd(amount)}`
+            : "Enter an amount"}
       </button>
 
       {disabledReason && <p className="text-xs text-text-secondary">{disabledReason}</p>}

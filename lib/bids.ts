@@ -46,6 +46,7 @@ import {
 } from "./bid-rules";
 import { inngest } from "./inngest";
 import { PAUSED_MESSAGE, bidsPaused } from "./app-settings";
+import { assertWithinAllowance, lockAllowance } from "./withdrawals";
 
 export type BidRow = typeof bids.$inferSelect;
 export type SettlementAction = "accept" | "reject" | "refund";
@@ -77,6 +78,11 @@ export interface BidIntentInput {
    * instead of their main wallet (bids they place themselves).
    */
   fromAgentWallet?: boolean;
+  /**
+   * The user approved going over the shared 24-hour allowance with an emailed code
+   * (lib/withdrawals.ts). Only for bids placed by hand from the main wallet.
+   */
+  overAllowanceApproved?: boolean;
 }
 
 /**
@@ -158,7 +164,16 @@ export async function createBidIntent(input: BidIntentInput): Promise<BidRow> {
   };
   const replacesBidId = input.replacesBidId;
   let existed = false;
-  const [row] = replacesBidId
+  const manual = !input.fromAgentWallet && !replacesBidId;
+  const [row] = manual
+    ? // A bid placed by hand from the main wallet counts against the shared 24-hour
+      // allowance (D4), checked and recorded under the same per-user lock as sends.
+      await db.transaction(async (tx) => {
+        await lockAllowance(tx, input.bidderUserId);
+        await assertWithinAllowance(tx, input.bidderUserId, amount, { approved: input.overAllowanceApproved, canConfirm: true });
+        return tx.insert(bids).values(values).returning();
+      })
+    : replacesBidId
     ? // A re-bid locks the countered original and only goes ahead while it is still
       // countered with no settlement on its way. submitSettlement takes the same lock
       // before reserving an accept, so the creator can't accept the original while the

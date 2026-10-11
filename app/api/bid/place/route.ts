@@ -1,5 +1,7 @@
 import { handleIs } from "@/lib/profiles";
 import { NextRequest, NextResponse } from "next/server";
+import { formatUsd, parseAtomicUsdc } from "@/lib/bid-rules";
+import { AllowanceExceeded, WithdrawalError, codeSubject, consumeSecurityCode, requestSecurityCode } from "@/lib/withdrawals";
 import { sameOrigin } from "@/lib/http-guard";
 import { LIMITS, limitOrNull } from "@/lib/rate-limit";
 import { auth } from "@/lib/auth";
@@ -19,7 +21,7 @@ export async function POST(req: NextRequest) {
     if (blocked) return blocked;
 
     const body = await req.json().catch(() => null);
-    const { creatorHandle, amountUsdc, message, isPrivate } = (body ?? {}) as Record<string, unknown>;
+    const { creatorHandle, amountUsdc, message, isPrivate, code } = (body ?? {}) as Record<string, unknown>;
     if (typeof creatorHandle !== "string" || !creatorHandle) {
       return NextResponse.json({ error: "creatorHandle is required" }, { status: 400 });
     }
@@ -30,20 +32,41 @@ export async function POST(req: NextRequest) {
     const creatorProfile = await db.query.profiles.findFirst({ where: handleIs(creatorHandle) });
     if (!creatorProfile) return NextResponse.json({ error: "Creator not found" }, { status: 404 });
 
-    const bid = await createBidIntent({
-      bidderUserId: session.user.id,
-      creatorUserId: creatorProfile.userId,
-      amountUsdc: typeof amountUsdc === "number" ? String(amountUsdc) : (amountUsdc as string),
-      message: (message as string | undefined) ?? null,
-      isPrivate: isPrivate === true,
-    });
+    // Bids count against the shared 24-hour allowance (D4). Over it, the route emails a
+    // code (202 { needsCode }); the same bid sent again with that code goes ahead.
+    const amount = parseAtomicUsdc(typeof amountUsdc === "number" ? String(amountUsdc) : amountUsdc);
+    const subject = codeSubject.bid(creatorProfile.userId, amount ?? BigInt(0));
+    const givenCode = typeof code === "string" ? code.trim() : "";
+    if (givenCode) await consumeSecurityCode(session.user.id, subject, givenCode);
+
+    let bid;
+    try {
+      bid = await createBidIntent({
+        bidderUserId: session.user.id,
+        creatorUserId: creatorProfile.userId,
+        amountUsdc: typeof amountUsdc === "number" ? String(amountUsdc) : (amountUsdc as string),
+        message: (message as string | undefined) ?? null,
+        isPrivate: isPrivate === true,
+        overAllowanceApproved: !!givenCode,
+      });
+    } catch (err) {
+      if (!(err instanceof AllowanceExceeded) || amount === null) throw err;
+      const blockedCode = await limitOrNull(LIMITS.withdrawalCode, session.user.id);
+      if (blockedCode) return blockedCode;
+      const { sentTo } = await requestSecurityCode(
+        session.user.id,
+        subject,
+        `approve a ${formatUsd(amount)} bid to @${creatorProfile.handle} (over your 24-hour allowance)`,
+      );
+      return NextResponse.json({ needsCode: true, sentTo, error: err.message }, { status: 202 });
+    }
 
     return NextResponse.json(
       { success: true, status: "placing", bid: { id: bid.id, status: bid.status, amountUsdc: bid.amountUsdc } },
       { status: 202 },
     );
   } catch (err) {
-    if (err instanceof BidError) return NextResponse.json({ error: err.message }, { status: err.status });
+    if (err instanceof BidError || err instanceof WithdrawalError) return NextResponse.json({ error: err.message }, { status: err.status });
     console.error("bid/place:", err);
     return NextResponse.json({ error: "Could not place bid" }, { status: 500 });
   }

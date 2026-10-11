@@ -10,3 +10,4 @@ export { PriceChart } from "./price-chart";
 export { PlatformStats, LiveFills } from "./platform";
 export type { PlatformStatsData, FillTick } from "./platform";
 export { FieldHint } from "./field-hint";
+export { SecurityCodeField, isSecurityCode } from "./security-code-field";

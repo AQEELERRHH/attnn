@@ -47,7 +47,7 @@ here runs automatically; contract deploys and database changes need the owner's 
       final `contracts/src/` and fix what's real. Straight after: ask Circle and Encode about audit
       credits and book a human audit. The protections that limit what's at risk meanwhile: the
       escrow pause (D5), the hourly/daily money checks, the $1,000 per-bid maximum, agents bidding
-      only each creator's floor (D3) and the $500 / 24 h withdrawal limit (D4).
+      only each creator's floor (D3) and the shared $500 / 24 h allowance for money leaving a wallet (D4).
 
 ## 2. Dependencies
 - [x] `@circle-fin/developer-controlled-wallets` 10.3.0 → 10.8.1 (its `Blockchain` type has `ARC`;
@@ -86,8 +86,8 @@ Level Security is on everywhere. It prints no secrets and changes nothing.
       `Paused(address)`, `Unpaused(address)` (ignored by the app; the health check reports them).
 - [ ] New `DATABASE_URL` (see Data) and fresh Inngest keys if using a separate Inngest app
 - [ ] `ALERT_EMAIL` = who gets the money health-check alerts
-- [ ] `RESEND_API_KEY` (already set) and `AUTH_SECRET`: also required for withdrawal codes (D4).
-      Without email, nobody can send USDC to a new address.
+- [ ] `RESEND_API_KEY` (already set) and `AUTH_SECRET`: also required for security codes (D4).
+      Without email, nothing over the daily allowance and no sends to new addresses.
 
 ## 4. Data
 - [ ] Apply every migration in `drizzle/` (0000–0011) to the new database, as the same user the

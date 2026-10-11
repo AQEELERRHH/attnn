@@ -1,5 +1,5 @@
 {
-  "id": "b9434ca1-cde7-4c39-bfeb-5813cb9d217e",
+  "id": "9d1e15a9-3b62-40b6-80c3-13c15100b75f",
   "prevId": "b6d47750-74a6-46cb-bc10-636519fe19c1",
   "version": "7",
   "dialect": "postgresql",
@@ -1303,8 +1303,8 @@
           "primaryKey": false,
           "notNull": true
         },
-        "address": {
-          "name": "address",
+        "subject": {
+          "name": "subject",
           "type": "text",
           "primaryKey": false,
           "notNull": true
@@ -1337,8 +1337,8 @@
         }
       },
       "indexes": {
-        "withdrawal_codes_user_address_uq": {
-          "name": "withdrawal_codes_user_address_uq",
+        "withdrawal_codes_user_subject_uq": {
+          "name": "withdrawal_codes_user_subject_uq",
           "columns": [
             {
               "expression": "user_id",
@@ -1347,7 +1347,7 @@
               "nulls": "last"
             },
             {
-              "expression": "address",
+              "expression": "subject",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -1396,6 +1396,13 @@
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'send'"
         },
         "request_key": {
           "name": "request_key",

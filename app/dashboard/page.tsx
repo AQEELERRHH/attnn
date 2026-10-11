@@ -114,7 +114,8 @@ export default async function DashboardPage() {
     message: b.message,
     status: b.status,
     score: b.score,
-    reply: b.reply,
+    // A bidder sees the reply only once it's paid on-chain; the creator sees their own.
+    reply: b.creatorUserId === userId || b.status === "accepted" ? b.reply : null,
     // The AI draft is for the creator's eyes only, and only while they can still send it.
     suggestedReply: b.creatorUserId === userId && b.status === "pending" ? (b.suggestedReply ?? null) : null,
     replySource: b.replySource ?? null,

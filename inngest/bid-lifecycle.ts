@@ -112,6 +112,19 @@ export const placeBid = inngest.createFunction(
     }
 
     if (!bid.alreadySubmitted) {
+      // Paused (app switch or the escrow contract) while this bid waited in the queue:
+      // don't send it. Its own step, run once before anything is sent, and it asks Circle
+      // first, so a placeBid sent by an earlier run is never marked "failed".
+      const pausedOut = await step.run("check-paused", async () => {
+        if (await recordIfPlaceSent(bidId, bid.walletId, bid.createdAt)) return false;
+        if (!(await bidsPaused())) return false;
+        await failPlacement(bidId, "New bids were paused before this bid was placed. No USDC moved.");
+        return true;
+      });
+      if (pausedOut) return { failed: "paused" };
+    }
+
+    if (!bid.alreadySubmitted) {
       // Another bid from this wallet can use up our approval while this run sleeps
       // (Inngest's per-bidder limit doesn't count sleeping runs). So the allowance is
       // re-checked right before placing, and approved again if it was spent: up to
@@ -187,11 +200,6 @@ export const placeBid = inngest.createFunction(
           // The sweep may have given up on this bid while it waited in the queue.
           const current = await db.query.bids.findFirst({ where: eq(bids.id, bidId), columns: { status: true } });
           if (current?.status !== "placing") return { skipped: true as const };
-          // Paused (app switch or the escrow contract) while this bid waited: don't send it.
-          if (await bidsPaused()) {
-            await failPlacement(bidId, "New bids were paused before this bid was placed. No USDC moved.");
-            return { skipped: true as const };
-          }
           // Re-check: another placement from this wallet may have used our approval.
           const allowance = await publicClient.readContract({
             address: USDC_ADDRESS,

@@ -84,4 +84,23 @@ describe("circle-events webhook on a v2 escrow", () => {
     assert.match(JSON.stringify(await res.json()), /not the current escrow/);
     assert.equal((await row(bid.id)).status, "pending");
   });
+
+  test("N2: the log arrives while our stale reservation is released: the bid is still recorded accepted", async () => {
+    const bid = await seedEscrowedBid();
+    // Our accept was reserved 6 minutes ago and Circle's list doesn't show it.
+    await db
+      .update(bids)
+      .set({
+        settlementTxHash: `reserved:${Date.now() - 6 * 60_000}`,
+        settlementAction: "accept",
+        reply: REPLY,
+        replySalt: SALT,
+        replyCandidates: [{ reply: REPLY, salt: SALT, source: "creator" }],
+      })
+      .where(eq(bids.id, bid.id));
+    await eventLog(bidAcceptedLog(ESCROW, BigInt(bid.onChainBidId!), addr.creatorMain, fingerprint(SALT, REPLY)));
+    const r = await row(bid.id);
+    assert.equal(r.status, "accepted", "the on-chain log wins over our released reservation");
+    assert.equal(r.reply, REPLY);
+  });
 });

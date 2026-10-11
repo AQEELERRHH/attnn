@@ -88,7 +88,7 @@ describe("placeBid job", () => {
     const { clearEscrowCache } = await import("../../lib/escrow.ts");
     // Paused while queued: the job sees it and never sends placeBid.
     const queued = await createBidIntent({ bidderUserId: ids.bidder, creatorUserId: ids.creator, amountUsdc: "10000000" });
-    const step = makeStep({ "submit-place-bid": () => { world.escrowPaused = true; clearEscrowCache(); } });
+    const step = makeStep({ "check-paused": () => { world.escrowPaused = true; clearEscrowCache(); } });
     await job.__fn[2]({ event: { data: { bidId: queued.id } }, step });
     let r = await row(queued.id);
     assert.equal(r.status, "failed");
@@ -151,6 +151,23 @@ describe("placeBid job", () => {
     assert.equal(r.status, "failed");
     assert.match(r.failReason ?? "", /No USDC moved/);
     assert.equal(world.calls("placeBid").length, 0);
+  });
+
+  test("N1: a retried step whose placeBid already reached Circle is never failed by a pause", async () => {
+    const bid = await createBidIntent({ bidderUserId: ids.bidder, creatorUserId: ids.creator, amountUsdc: "10000000" });
+    // An earlier run sent placeBid (Circle knows it), then the bids were paused.
+    const { executeContractCallOnce } = await import("../../lib/circle.ts");
+    const { escrowAbi } = await import("../../lib/arc.ts");
+    world.allowance.set(`${addr.bidderMain}:${ESCROW}`, BigInt(10_000_000));
+    await executeContractCallOnce({ walletId: "w-bidder-main", contractAddress: ESCROW, abi: escrowAbi, functionName: "placeBid", args: [addr.creatorMain, "10000000", `0x${"0".repeat(64)}`], opKey: `place:${bid.id}` });
+    await db.insert((await import("../../lib/db/schema.ts")).appSettings).values({ key: "bids_paused", value: true });
+    const { clearSettingsCache } = await import("../../lib/app-settings.ts");
+    clearSettingsCache();
+    const out = (await job.__fn[2]({ event: { data: { bidId: bid.id } }, step: makeStep() })) as { escrowed?: boolean };
+    assert.equal(out.escrowed, true, "tracked to escrow, not failed");
+    assert.equal(world.calls("placeBid").length, 1);
+    assert.equal((await row(bid.id)).status, "pending");
+    clearSettingsCache();
   });
 
   test("onFailure never fails a bid whose placeBid reached Circle", async () => {

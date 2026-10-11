@@ -624,6 +624,13 @@ export async function submitSettlement(params: {
     // way, and the 5-minute stale path in finalizeSettlement resolves it by op key.
     const sent = await findTransactionByRefId(actorWallet.circleWalletId, opKey, bid.createdAt).catch(() => "unknown" as const);
     if (sent === "unknown") throw err;
+    if (!sent && !rejectedByCircle(err)) {
+      // A timeout or network error: the request may have reached Circle even though its
+      // list doesn't show it yet. Keep the reservation; finalizeSettlement's stale path
+      // resolves it by op key after 5 minutes. Releasing now would let another
+      // settlement (or a re-bid at a counter price) race a transaction that may land.
+      throw new BidError("Couldn't confirm this with Circle yet. It may still go through: check again in a few minutes.", 503);
+    }
     if (!sent) {
       // A new attempt number gives the next try a new op key: if this request did reach
       // Circle after all, a retry can never silently get this transaction back with a
@@ -654,6 +661,16 @@ export async function submitSettlement(params: {
     console.warn("submitSettlement: could not queue confirmation; the sweep will pick it up", err);
   }
   return { txId };
+}
+
+/**
+ * True only when Circle answered and refused the request (a 4xx other than a timeout),
+ * so it can't have been accepted. Timeouts, network errors and 5xx are unknown.
+ */
+function rejectedByCircle(err: unknown): boolean {
+  const e = err as { status?: unknown; response?: { status?: unknown } } | null;
+  const status = typeof e?.status === "number" ? e.status : typeof e?.response?.status === "number" ? e.response.status : null;
+  return status !== null && status >= 400 && status < 500 && status !== 408;
 }
 
 export type SettlementOutcome = "settled" | "failed" | "in_flight" | "noop";
@@ -700,7 +717,9 @@ export async function finalizeSettlement(bidId: string): Promise<SettlementOutco
         })
         .where(and(eq(bids.id, bid.id), eq(bids.settlementTxHash, circleTxId)))
         .returning({ id: bids.id });
-      return released.length ? "failed" : "noop";
+      if (!released.length) return "noop";
+      // Another transaction may still have settled it (e.g. ours, if Circle's list lags).
+      return (await reconcileFromEscrow(bid).catch(() => false)) ? "settled" : "failed";
     }
     await db
       .update(bids)

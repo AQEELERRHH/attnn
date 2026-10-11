@@ -145,7 +145,9 @@ async function handle(body: {
   // If we sent the settlement, confirm it through Circle (also bumps retries correctly).
   if (bid.settlementTxHash) {
     const outcome = await finalizeSettlement(bid.id);
-    if (outcome !== "in_flight") return { event: decoded.eventName, outcome };
+    // "failed" here means OUR transaction failed or was released, but this log is an
+    // on-chain fact that the bid settled, so fall through and record it.
+    if (outcome === "settled" || outcome === "noop") return { event: decoded.eventName, outcome };
   }
 
   // Otherwise (or Circle not caught up yet) the log itself is the on-chain fact.

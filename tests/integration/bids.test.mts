@@ -141,15 +141,36 @@ describe("bids: placement, settlement and the races around them", () => {
     assert.equal(world.calls("acceptBid").length + world.calls("rejectBid").length, 1);
   });
 
-  test("a Circle outage releases the reservation and leaves no reply behind", async () => {
+  test("a Circle outage keeps the reservation until the 5-minute check proves nothing was sent", async () => {
     const bid = await seedEscrowedBid();
     world.failNextSubmit = new Error("circle down");
-    await assert.rejects(submitSettlement({ bidId: bid.id, action: "accept", actorUserId: ids.creator, reply: REPLY }), /circle down/);
-    const r = await row(bid.id);
+    await assert.rejects(
+      submitSettlement({ bidId: bid.id, action: "accept", actorUserId: ids.creator, reply: REPLY }),
+      (e: unknown) => e instanceof BidError && e.status === 503 && /Couldn't confirm/.test(e.message),
+    );
+    let r = await row(bid.id);
+    assert.match(r.settlementTxHash ?? "", /^reserved:/, "kept: the request may have reached Circle");
+    // Nothing else can settle it meanwhile.
+    await assert.rejects(submitSettlement({ bidId: bid.id, action: "reject", actorUserId: ids.creator }), /already confirming/);
+    // 5 minutes later Circle has no transaction for it: released, with no reply left behind.
+    await db.update(bids).set({ settlementTxHash: `reserved:${Date.now() - 6 * 60_000}` }).where(eq(bids.id, bid.id));
+    assert.equal(await finalizeSettlement(bid.id), "failed");
+    r = await row(bid.id);
     assert.equal(r.settlementTxHash, null);
     assert.equal(r.settlementAction, null);
     assert.equal(r.reply, null);
     // ...and a retry goes through
+    await submitSettlement({ bidId: bid.id, action: "accept", actorUserId: ids.creator, reply: REPLY });
+    assert.equal(world.calls("acceptBid").length, 1);
+  });
+
+  test("a request Circle refused outright (4xx) is released at once", async () => {
+    const bid = await seedEscrowedBid();
+    world.failNextSubmit = Object.assign(new Error("invalid request"), { status: 400 });
+    await assert.rejects(submitSettlement({ bidId: bid.id, action: "accept", actorUserId: ids.creator, reply: REPLY }), /invalid request/);
+    const r = await row(bid.id);
+    assert.equal(r.settlementTxHash, null);
+    assert.equal(r.reply, null);
     await submitSettlement({ bidId: bid.id, action: "accept", actorUserId: ids.creator, reply: REPLY });
     assert.equal(world.calls("acceptBid").length, 1);
   });
@@ -328,7 +349,11 @@ describe("bids: placement, settlement and the races around them", () => {
     const bid = await seedEscrowedBid();
     // 1st accept reaches Circle, but the call times out and Circle's list doesn't show it yet.
     world.timeoutNextSubmit = true;
-    await assert.rejects(submitSettlement({ bidId: bid.id, action: "accept", actorUserId: ids.creator, reply: REPLY }), /timeout/);
+    await assert.rejects(submitSettlement({ bidId: bid.id, action: "accept", actorUserId: ids.creator, reply: REPLY }), /Couldn't confirm/);
+    assert.match((await row(bid.id)).settlementTxHash ?? "", /^reserved:/, "kept while unknown");
+    // 5 minutes on, Circle's list STILL doesn't show it (worst case): the stale path releases it.
+    await db.update(bids).set({ settlementTxHash: `reserved:${Date.now() - 6 * 60_000}` }).where(eq(bids.id, bid.id));
+    assert.equal(await finalizeSettlement(bid.id), "failed");
     let r = await row(bid.id);
     assert.equal(r.settlementTxHash, null, "released: Circle had no record of it");
     assert.equal(r.reply, null, "a pending bid shows no reply");

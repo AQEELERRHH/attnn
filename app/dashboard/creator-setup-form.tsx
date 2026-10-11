@@ -1,8 +1,10 @@
 "use client";
 
 import * as React from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { FieldHint, Panel } from "@/components/market";
+import { AvatarEditor } from "@/components/market/avatar-editor";
 import { glossary } from "@/lib/glossary";
 import { toast } from "@/hooks/use-toast";
 import { ESCROW_MAX_BID, ESCROW_MIN_BID, formatUsd } from "@/lib/bid-rules";
@@ -29,6 +31,7 @@ export function CreatorSetupForm({
   onComplete: () => void;
   onCancel?: () => void;
 }) {
+  const router = useRouter();
   const isEdit = !!existingProfile;
   // The handle is stored in the AttnnRegistry on Arc and can't change once registered.
   const handleLocked = existingProfile?.registration === "active" || existingProfile?.registration === "registering";
@@ -145,6 +148,11 @@ export function CreatorSetupForm({
           : "Bidders escrow USDC to reach you. You earn it by replying; no reply in 3 days refunds them."
       }
     >
+      {existingProfile && (
+        <div className="mb-5 rounded-lg border border-border bg-arc-bg-0 p-4">
+          <AvatarEditor handle={existingProfile.handle} initialUrl={existingProfile.avatarUrl} onChange={() => router.refresh()} />
+        </div>
+      )}
       <form onSubmit={handleSubmit} className="grid gap-4 sm:grid-cols-2">
         <div>
           <label htmlFor="cs-handle" className={labelClass}>

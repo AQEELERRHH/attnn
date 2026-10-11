@@ -166,6 +166,7 @@ export const creatorAgentTriage = inngest.createFunction(
 
     const triageResult = await step.run("triage-bid", async () => {
       const { triageBidForCreator } = await import("@/lib/ai");
+      const { autoAcceptCutoff } = await import("@/lib/creator-agent-rules");
       return triageBidForCreator(
         { amountUsdc: bid.amountUsdc, message: bid.message ?? "", bidderAddress: bid.bidderAddress },
         {
@@ -173,7 +174,7 @@ export const creatorAgentTriage = inngest.createFunction(
           bio: profile.bio ?? undefined,
           tags: profile.tags,
           minBid: profile.minBid,
-          autoAcceptThreshold: profile.autoAcceptThreshold ?? 0,
+          autoAcceptCutoff: autoAcceptCutoff(profile.autoAcceptThreshold),
           autoReplyTemplate: profile.autoReplyTemplate,
           queueDepth,
         },

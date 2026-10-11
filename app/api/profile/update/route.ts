@@ -6,6 +6,7 @@ import { eq } from "drizzle-orm";
 import { validateCreatorFloor } from "@/lib/bid-rules";
 import { validateReplyTemplate } from "@/lib/reply-rules";
 import { normalizeTags } from "@/lib/profile-rules";
+import { validateAutoAcceptSetting } from "@/lib/creator-agent-rules";
 import { registrationState, syncRegistryProfile, type RegistrySync } from "@/lib/registration";
 
 export async function POST(req: NextRequest) {
@@ -30,7 +31,11 @@ export async function POST(req: NextRequest) {
     }
     if (updates.bio !== undefined) profileUpdates.bio = updates.bio;
     if (updates.profileURI !== undefined) profileUpdates.profileURI = updates.profileURI;
-    if (updates.autoAcceptThreshold !== undefined) profileUpdates.autoAcceptThreshold = updates.autoAcceptThreshold;
+    if (updates.autoAcceptThreshold !== undefined) {
+      const setting = validateAutoAcceptSetting(updates.autoAcceptThreshold);
+      if (!setting.ok) return NextResponse.json({ error: setting.error }, { status: 400 });
+      profileUpdates.autoAcceptThreshold = setting.value;
+    }
     if (updates.autoReplyTemplate !== undefined) {
       const template = validateReplyTemplate(updates.autoReplyTemplate);
       if (!template.ok) return NextResponse.json({ error: template.error }, { status: 400 });

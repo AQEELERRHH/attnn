@@ -82,6 +82,8 @@ export function DashboardClient({
   const [welcomeOpen, setWelcomeOpen] = React.useState(onboarding.showWelcome);
   const [welcomeFirstVisit, setWelcomeFirstVisit] = React.useState(onboarding.showWelcome);
   const [checklistDismissed, setChecklistDismissed] = React.useState(onboarding.checklistDismissed);
+  // Bumped to ask the Creator tab to open its photo uploader.
+  const [photoRequest, setPhotoRequest] = React.useState(0);
   const saveChecklist = (action: "dismiss-checklist" | "show-checklist") =>
     fetch("/api/onboarding", {
       method: "POST",
@@ -248,6 +250,10 @@ export function DashboardClient({
             handle={profile?.handle ?? null}
             isTestnet={onboarding.isTestnet}
             onOpenView={setView}
+            onOpenPhoto={() => {
+              setView("creator");
+              setPhotoRequest((n) => n + 1);
+            }}
             onDismiss={() => {
               setChecklistDismissed(true);
               void saveChecklist("dismiss-checklist");
@@ -277,7 +283,7 @@ export function DashboardClient({
             <BidderView bids={placed} summary={summary} bidderConfig={bidderConfig} now={now} onOpenAgent={() => setView("agent")} />
           )}
           {view === "creator" && (
-            <CreatorView profile={profile} wallet={wallet} bids={received} summary={summary} now={now} isTestnet={onboarding.isTestnet} />
+            <CreatorView profile={profile} wallet={wallet} bids={received} summary={summary} now={now} isTestnet={onboarding.isTestnet} photoRequest={photoRequest} />
           )}
           {view === "agent" && <AgentConsole config={bidderConfig} bids={placed} logs={logs} summary={summary} now={now} policy={policy} />}
         </div>

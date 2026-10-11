@@ -3,11 +3,11 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ExternalLink, ThumbsDown, ThumbsUp } from "lucide-react";
+import { Bot, Camera, ExternalLink, ThumbsDown, ThumbsUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Slider } from "@/components/ui/slider";
-import { CreatorAvatar, Money, Num, Panel, StatStrip, StatusChip, Tag } from "@/components/market";
+import { CreatorAvatar, FieldHint, Money, Num, Panel, StatStrip, StatusChip, Tag } from "@/components/market";
+import { AUTO_ACCEPT_CHOICES, AUTO_ACCEPT_OFF, autoAcceptCutoff, autoAcceptLabel } from "@/lib/creator-agent-rules";
 import { AvatarEditor } from "@/components/market/avatar-editor";
 import { toast } from "@/hooks/use-toast";
 import { bidDisplay } from "@/lib/bid-display";
@@ -42,6 +42,7 @@ export function CreatorView({
   summary,
   now,
   isTestnet,
+  photoRequest = 0,
 }: {
   profile: ProfileData | null;
   wallet: WalletData | null;
@@ -50,6 +51,8 @@ export function CreatorView({
   summary: PortfolioSummary;
   now: number;
   isTestnet: boolean;
+  /** Bumped by the checklist's "Add photo" to open the photo dialog. */
+  photoRequest?: number;
 }) {
   const router = useRouter();
   const [editing, setEditing] = React.useState(false);
@@ -91,7 +94,16 @@ export function CreatorView({
     );
   }
 
-  return <CreatorMarketDesk profile={profile} bids={bids} summary={summary} now={now} onEdit={() => setEditing(true)} />;
+  return (
+    <CreatorMarketDesk
+      profile={profile}
+      bids={bids}
+      summary={summary}
+      now={now}
+      photoRequest={photoRequest}
+      onEdit={() => setEditing(true)}
+    />
+  );
 }
 
 function CreatorMarketDesk({
@@ -99,18 +111,23 @@ function CreatorMarketDesk({
   bids,
   summary,
   now,
+  photoRequest,
   onEdit,
 }: {
   profile: ProfileData;
   bids: BidData[];
   summary: PortfolioSummary;
   now: number;
+  photoRequest: number;
   onEdit: () => void;
 }) {
   const router = useRouter();
+  const [photoOpen, setPhotoOpen] = React.useState(false);
+  React.useEffect(() => {
+    if (photoRequest > 0) setPhotoOpen(true);
+  }, [photoRequest]);
   const [activating, setActivating] = React.useState(false);
   const [toggling, setToggling] = React.useState(false);
-  const [threshold, setThreshold] = React.useState(profile.autoAcceptThreshold ?? 0);
   const c = summary.creator;
 
   const inbox = bids
@@ -174,7 +191,21 @@ function CreatorMarketDesk({
       <Panel>
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex min-w-0 items-center gap-3.5">
-            <CreatorAvatar handle={profile.handle} src={profile.avatarUrl} size={48} />
+            <button
+              type="button"
+              onClick={() => setPhotoOpen(true)}
+              className="focus-ring group relative flex-none rounded-full"
+              title={profile.avatarUrl ? "Change market photo" : "Add a market photo"}
+            >
+              <CreatorAvatar handle={profile.handle} src={profile.avatarUrl} size={56} />
+              <span
+                aria-hidden
+                className="absolute -bottom-0.5 -right-0.5 flex h-6 w-6 items-center justify-center rounded-full border-2 border-arc-bg-1 bg-arc-gold text-arc-bg-0 transition group-hover:brightness-110"
+              >
+                <Camera className="h-3 w-3" />
+              </span>
+              <span className="sr-only">{profile.avatarUrl ? "Change market photo" : "Add a market photo"}</span>
+            </button>
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2.5">
                 <h2 className="font-display text-xl font-bold tracking-tight">@{profile.handle}</h2>
@@ -223,7 +254,18 @@ function CreatorMarketDesk({
             Not live yet. Add at least $1 USDC to your wallet, then press Activate on Arc. It covers the small network fees for registering and replying.
           </p>
         )}
+        <AutoAcceptSetting stored={profile.autoAcceptThreshold} hasTemplate={!!profile.autoReplyTemplate} />
       </Panel>
+
+      <Dialog open={photoOpen} onOpenChange={setPhotoOpen}>
+        <DialogContent className="w-[calc(100%-2rem)] max-w-md">
+          <DialogHeader>
+            <DialogTitle>Market photo</DialogTitle>
+            <DialogDescription>Shown on your market page and in the markets list. Markets with a face get noticed.</DialogDescription>
+          </DialogHeader>
+          <AvatarEditor handle={profile.handle} initialUrl={profile.avatarUrl} onChange={() => router.refresh()} compact />
+        </DialogContent>
+      </Dialog>
 
       <StatStrip
         items={[
@@ -316,33 +358,102 @@ function CreatorMarketDesk({
         </Panel>
       )}
 
-      <div className="grid gap-5 md:grid-cols-2">
-        <Panel>
-          <AvatarEditor handle={profile.handle} initialUrl={profile.avatarUrl} />
-        </Panel>
-        <Panel
-          title="Your agent's standards"
-          description="How picky your creator agent should be when it scores incoming bids. Bids it scores 8 or higher are accepted for you with your reply template, or a reply its AI writes for that bid. Bidders see these labelled as auto-replies."
+    </div>
+  );
+}
+
+/**
+ * One line in the market card: when the creator agent replies without the creator.
+ * "Change" opens the four choices in place; each saves straight away. The rule
+ * itself lives in lib/creator-agent-rules.ts (used by creatorAgentTriage).
+ */
+function AutoAcceptSetting({ stored, hasTemplate }: { stored: number | null; hasTemplate: boolean }) {
+  const router = useRouter();
+  const [value, setValue] = React.useState<number | null>(stored);
+  const [open, setOpen] = React.useState(false);
+  const [saving, setSaving] = React.useState(false);
+  const current = autoAcceptCutoff(value) ?? AUTO_ACCEPT_OFF;
+  const off = current === AUTO_ACCEPT_OFF;
+
+  async function choose(next: number) {
+    if (next === current) return;
+    const previous = value;
+    setValue(next);
+    setSaving(true);
+    const { ok, data } = await postJson("/api/profile/update", { autoAcceptThreshold: next }).catch(() => ({ ok: false, data: {} }));
+    setSaving(false);
+    if (ok) {
+      toast({
+        title: next === AUTO_ACCEPT_OFF ? "Auto-accept off" : "Auto-accept updated",
+        description: next === AUTO_ACCEPT_OFF ? "Your agent won't accept or reply to bids for you." : autoAcceptLabel(next) + " are accepted for you.",
+        variant: "success",
+      });
+      router.refresh();
+    } else {
+      setValue(previous);
+      toast({ title: "Couldn't save", description: data.error ?? "Try again", variant: "destructive" });
+    }
+  }
+
+  const label = (v: number) => (v === AUTO_ACCEPT_OFF ? "Off" : v === 10 ? "10 only" : `${v}+`);
+
+  return (
+    <div className="mt-4 border-t border-border pt-3.5">
+      <div className="flex items-start justify-between gap-4">
+        <p className="flex min-w-0 items-start gap-2 text-[13px]">
+          <Bot aria-hidden className={cn("mt-0.5 h-4 w-4 flex-none", off ? "text-text-secondary" : "text-arc-gold")} />
+          <span className="min-w-0">
+            <span className="block text-text-secondary sm:inline">Creator agent auto-accepts: </span>
+            <span className="font-medium text-text-primary">{autoAcceptLabel(value)}</span>
+          </span>
+        </p>
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
+          aria-controls="auto-accept-choices"
+          className="focus-ring -my-2 flex-none rounded px-1 py-2 text-[13px] text-arc-lavender hover:underline"
         >
-          <div className="flex items-center gap-4">
-            <Slider
-              aria-label="Agent standards"
-              defaultValue={[threshold]}
-              max={10}
-              step={1}
-              onValueChange={(v) => setThreshold(v[0] ?? 0)}
-              onValueCommit={async (v) => {
-                const value = v[0] ?? 0;
-                setThreshold(value);
-                const { ok } = await postJson("/api/profile/update", { autoAcceptThreshold: value }).catch(() => ({ ok: false }));
-                if (!ok) toast({ title: "Couldn't save", variant: "destructive" });
-              }}
-              className="flex-1"
-            />
-            <Num className="w-10 text-right text-2xl text-arc-gold">{threshold}</Num>
-          </div>
-        </Panel>
+          {open ? "Done" : "Change"}
+        </button>
       </div>
+      {open && (
+        <div id="auto-accept-choices" className="mt-3">
+          <div role="radiogroup" aria-label="Auto-accept bids the agent scores" className="flex flex-wrap gap-1.5">
+            {AUTO_ACCEPT_CHOICES.map((v) => {
+              const on = v === current;
+              return (
+                <button
+                  key={v}
+                  type="button"
+                  role="radio"
+                  aria-checked={on}
+                  disabled={saving}
+                  onClick={() => choose(v)}
+                  className={cn(
+                    "focus-ring h-10 min-w-[64px] rounded-lg border px-3 text-[13px] font-medium disabled:opacity-60",
+                    on ? "border-arc-gold bg-arc-bg-3 text-arc-gold" : "border-border-bright text-text-secondary hover:bg-arc-bg-2 hover:text-text-primary",
+                  )}
+                >
+                  {label(v)}
+                </button>
+              );
+            })}
+          </div>
+          <FieldHint
+            more={
+              <>
+                Your agent scores every new bid from 0 to 10 on the amount and the message. Bids at or above your setting are accepted for
+                you: it sends {hasTemplate ? "your reply template" : "a reply its AI writes for that bid"} and the USDC is yours. Bids it
+                scores 5 to 7 may get a counter-offer, and below 5 are declined (the bidder is refunded), whatever this is set to.
+                Everything else waits in your inbox. Bidders see these replies labelled as auto-replies.
+              </>
+            }
+          >
+            Higher means fewer replies sent without you. Off means it never accepts a bid for you.
+          </FieldHint>
+        </div>
+      )}
     </div>
   );
 }

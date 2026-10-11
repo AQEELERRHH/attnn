@@ -25,6 +25,7 @@ export function GettingStarted({
   handle,
   isTestnet,
   onOpenView,
+  onOpenPhoto,
   onDismiss,
 }: {
   steps: ChecklistStep[];
@@ -34,6 +35,8 @@ export function GettingStarted({
   handle: string | null;
   isTestnet: boolean;
   onOpenView: (v: View) => void;
+  /** Opens the market photo uploader (on the Creator tab). */
+  onOpenPhoto: () => void;
   onDismiss: () => void;
 }) {
   const remaining = steps.filter((s) => !s.done);
@@ -94,7 +97,7 @@ export function GettingStarted({
         );
       case "photo":
         return (
-          <Button size="sm" variant={variant} onClick={() => onOpenView("creator")}>
+          <Button size="sm" variant={variant} onClick={onOpenPhoto}>
             Add photo
           </Button>
         );

@@ -1,3 +1,4 @@
+import { triageDecision } from "./creator-agent-rules";
 import { ESCROW_MAX_BID, creatorFloor } from "./bid-rules";
 import { REPLY_MIN_CHARS, replyError } from "./reply-rules";
 import { z } from "zod";
@@ -218,23 +219,28 @@ export function counterAmountFor(bidAmountUsdc: string, highestBidAmount: string
 }
 export async function triageBidForCreator(
   bid: BidData & { message: string },
-  creatorProfile: CreatorProfile & { autoAcceptThreshold: number; autoReplyTemplate: string | null; queueDepth: number },
+  creatorProfile: CreatorProfile & {
+    /** Score needed to auto-accept, or null when the creator turned auto-accept off (lib/creator-agent-rules.ts). */
+    autoAcceptCutoff: number | null;
+    autoReplyTemplate: string | null;
+    queueDepth: number;
+  },
   highestBidAmount?: string,
 ): Promise<TriageResult> {
+  const counter = () => counterAmountFor(bid.amountUsdc, highestBidAmount, creatorProfile.minBid);
   const systemPrompt = `You are a creator-side AI agent on an attention marketplace.
 Triage an incoming bid on a scale of 0-10 based on:
 1. Bid amount vs creator minimum (40 points max)
 2. Message quality and topic relevance to creator tags (30 points max)
 3. Queue depth adjustment — if many bids pending, raise the bar (up to -15)
 4. Overall engagement potential (30 points max)
-Decision rules: score >= 8 = accept, score 5-7 = surface (show to creator), score < 5 = reject.
-Return JSON: { "score": number, "decision": "accept"|"surface"|"reject", "reason": string }`;
+Score the bid only; the decision is made from your score by fixed rules.
+Return JSON: { "score": number, "reason": string }`;
 
   const prompt = JSON.stringify({
     bid: { amount: bid.amountUsdc, message: bid.message },
     creator: { handle: creatorProfile.handle, bio: creatorProfile.bio, tags: creatorProfile.tags, minBid: creatorProfile.minBid },
     queueDepth: creatorProfile.queueDepth,
-    autoAcceptThreshold: creatorProfile.autoAcceptThreshold,
   });
 
   try {
@@ -243,18 +249,7 @@ Return JSON: { "score": number, "decision": "accept"|"surface"|"reject", "reason
     const score = typeof parsed.score === "number" ? Math.min(10, Math.max(0, parsed.score)) : 5;
     const reason = typeof parsed.reason === "string" ? parsed.reason : "AI triage completed.";
 
-    // Counter-offer logic — mid-range score + higher bid exists in queue
-    let decision: "accept" | "surface" | "reject" | "counter_offer";
-    let counterOfferAmount: string | undefined;
-
-    if (score >= 8) {
-      decision = "accept";
-    } else if (score >= 5) {
-      counterOfferAmount = counterAmountFor(bid.amountUsdc, highestBidAmount, creatorProfile.minBid);
-      decision = counterOfferAmount ? "counter_offer" : "surface";
-    } else {
-      decision = "reject";
-    }
+    const { decision, counterOfferAmount } = triageDecision(score, creatorProfile.autoAcceptCutoff, counter);
 
     let draftedReply: string | undefined;
     let replySource: "template" | "ai" | undefined;
@@ -275,16 +270,11 @@ Return JSON: { "score": number, "decision": "accept"|"surface"|"reject", "reason
     const bidAmount = BigInt(bid.amountUsdc);
     const minBid = BigInt(creatorProfile.minBid);
     const score = bidAmount >= minBid * BigInt(2) ? 8 : bidAmount >= minBid ? 5 : 3;
-    let decisionFallback: "accept" | "surface" | "reject" | "counter_offer";
-    let counterOfferAmountFallback: string | undefined;
-    if (score >= 8) {
-      decisionFallback = "accept";
-    } else if (score >= 5) {
-      counterOfferAmountFallback = counterAmountFor(bid.amountUsdc, highestBidAmount, creatorProfile.minBid);
-      decisionFallback = counterOfferAmountFallback ? "counter_offer" : "surface";
-    } else {
-      decisionFallback = "reject";
-    }
+    const { decision: decisionFallback, counterOfferAmount: counterOfferAmountFallback } = triageDecision(
+      score,
+      creatorProfile.autoAcceptCutoff,
+      counter,
+    );
     return {
       decision: decisionFallback,
       score,

@@ -29,9 +29,15 @@ async function resizeToSquare(file: File): Promise<Blob> {
 export function AvatarEditor({
   handle,
   initialUrl,
+  onChange,
+  compact = false,
 }: {
   handle: string;
   initialUrl: string | null;
+  /** Called with the new URL (null when removed) after a successful change. */
+  onChange?: (url: string | null) => void;
+  /** Hide the built-in title and description (when a dialog already has them). */
+  compact?: boolean;
 }) {
   const [url, setUrl] = React.useState(initialUrl);
   const [busy, setBusy] = React.useState<null | "upload" | "remove">(null);
@@ -46,6 +52,7 @@ export function AvatarEditor({
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error ?? "Something went wrong");
       setUrl(data.avatarUrl ?? null);
+      onChange?.(data.avatarUrl ?? null);
       setMessage({ ok: true, text: kind === "remove" ? "Photo removed." : "Photo updated. It shows on your market now." });
     } catch (err) {
       setMessage({ ok: false, text: err instanceof Error ? err.message : "Something went wrong" });
@@ -83,8 +90,14 @@ export function AvatarEditor({
     <div className="flex flex-wrap items-center gap-4">
       <CreatorAvatar handle={handle} src={url} size={56} />
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium">Market photo</p>
-        <p className="text-xs text-text-secondary">Shown on your market and in the markets table. Square crop, 256×256.</p>
+        {compact ? (
+          <p className="text-xs text-text-secondary">JPG, PNG or WebP. Cropped to a square.</p>
+        ) : (
+          <>
+            <p className="text-sm font-medium">Market photo</p>
+            <p className="text-xs text-text-secondary">Shown on your market and in the markets table. Square crop, 256×256.</p>
+          </>
+        )}
         <div className="mt-2 flex flex-wrap gap-2">
           <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" onChange={onFile} aria-label="Upload a market photo" />
           <button type="button" className={btn} disabled={!!busy} onClick={() => inputRef.current?.click()}>

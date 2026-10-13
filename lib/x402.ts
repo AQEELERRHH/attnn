@@ -201,7 +201,7 @@ export async function gate(
     return {
       ok: false,
       response: NextResponse.json(
-        { error: "payment processing error", message: err instanceof Error ? err.message : String(err) },
+        { error: "payment processing error" },
         { status: 500 },
       ),
     };

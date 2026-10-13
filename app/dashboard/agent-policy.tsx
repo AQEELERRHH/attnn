@@ -1,6 +1,7 @@
 import { Check, ExternalLink, Lock, X } from "lucide-react";
 import { Money, Num, Panel } from "@/components/market";
 import { shortAddress } from "@/lib/format";
+import { glossary } from "@/lib/glossary";
 import type { AgentPolicyInfo, BidderConfigData } from "./types";
 
 /**
@@ -18,7 +19,7 @@ export function AgentPolicy({ config, spent, policy }: { config: BidderConfigDat
   return (
     <Panel
       title="Spending policy"
-      description="What your agent can and can't do with your USDC. These limits apply to every bid, whatever the AI suggests."
+      description="What your agent can and can't do with your USDC. These limits apply to every bid. The AI only ranks creators; it never sets an amount."
     >
       <div className="grid gap-5 md:grid-cols-2">
         <section aria-labelledby="policy-limits">
@@ -40,7 +41,7 @@ export function AgentPolicy({ config, spent, policy }: { config: BidderConfigDat
               Daily budget <Money atomic={budget} />, <Money atomic={left} /> left today
             </Rule>
             <Rule kind="limit">
-              Each bid between the creator&apos;s floor and <Money atomic={cap} />, counter-offers included
+              Bids each creator&apos;s floor, and skips creators whose floor is above <Money atomic={cap} />. A re-bid at a counter-offer is also capped at <Money atomic={cap} />
             </Rule>
             <Rule kind="limit">One bid per creator per day, plus one re-bid if they counter</Rule>
             <Rule kind="limit">Paused means paused: no new bids, no counter-offers accepted</Rule>
@@ -63,6 +64,8 @@ export function AgentPolicy({ config, spent, policy }: { config: BidderConfigDat
             <Rule kind="locked">Only the creator can release your USDC, by replying within {policy.refundDays} days</Rule>
             <Rule kind="locked">No reply in {policy.refundDays} days: the refund can only go back to your wallet</Rule>
             <Rule kind="locked">A declined bid is refunded to you straight away</Rule>
+            {policy.escrowV2 && <Rule kind="locked">{glossary.escrowPause}</Rule>}
+            {policy.escrowV2 && <Rule kind="locked">{glossary.escrowPrivacy}</Rule>}
           </ul>
         </section>
       </div>

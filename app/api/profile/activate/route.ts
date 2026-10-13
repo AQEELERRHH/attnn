@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { sameOrigin, serverError } from "@/lib/http-guard";
+import { LIMITS, limitOrNull } from "@/lib/rate-limit";
 import { mainWallet } from "@/lib/wallets";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db/client";
@@ -15,10 +17,12 @@ import { RegistrationError, submitRegistration } from "@/lib/registration";
  * "active" if the creator is already registered. The market is never marked live
  * before Arc confirms it.
  */
-export async function POST(_req: NextRequest) {
+export async function POST(req: NextRequest) {
   try {
     const session = await auth();
     if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const blocked = sameOrigin(req) ?? (await limitOrNull(LIMITS.profileWrite, session.user.id));
+    if (blocked) return blocked;
     const userId = session.user.id;
 
     const profile = await db.query.profiles.findFirst({ where: eq(profiles.userId, userId) });
@@ -48,6 +52,6 @@ export async function POST(_req: NextRequest) {
     if (err instanceof RegistrationError) {
       return NextResponse.json({ error: err.message }, { status: err.status });
     }
-    return NextResponse.json({ error: err instanceof Error ? err.message : "Failed" }, { status: 500 });
+    return serverError("profile/activate", err, "Couldn't start registration on Arc. Please try again.");
   }
 }

@@ -1,16 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
+import { sameOrigin, serverError } from "@/lib/http-guard";
+import { LIMITS, limitOrNull } from "@/lib/rate-limit";
 import { mainWallet } from "@/lib/wallets";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db/client";
 import { wallets } from "@/lib/db/schema";
 import { provisionUserWallet } from "@/lib/circle";
 
-export async function POST(_req: NextRequest) {
+export async function POST(req: NextRequest) {
   try {
     const session = await auth();
     if (!session?.user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+    const blocked = sameOrigin(req) ?? (await limitOrNull(LIMITS.profileWrite, session.user.id));
+    if (blocked) return blocked;
 
     const userId = session.user.id;
     const userName = session.user.name ?? "Attnn User";
@@ -65,10 +69,6 @@ export async function POST(_req: NextRequest) {
       success: true,
     });
   } catch (err) {
-    console.error("Wallet provision error:", err);
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Failed to provision wallet" },
-      { status: 500 },
-    );
+    return serverError("wallet/provision", err, "Couldn't create your wallet. Please try again.");
   }
 }

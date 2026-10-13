@@ -1,10 +1,13 @@
 "use client";
 
 import * as React from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Panel } from "@/components/market";
+import { FieldHint, Panel } from "@/components/market";
+import { AvatarEditor } from "@/components/market/avatar-editor";
+import { glossary } from "@/lib/glossary";
 import { toast } from "@/hooks/use-toast";
-import { ESCROW_MAX_BID, ESCROW_MIN_BID } from "@/lib/bid-rules";
+import { ESCROW_MAX_BID, ESCROW_MIN_BID, formatUsd } from "@/lib/bid-rules";
 import { atomicToDollarInput, dollarsToAtomic } from "@/lib/format";
 import { validateReplyTemplate } from "@/lib/reply-rules";
 import type { ProfileData } from "./types";
@@ -28,7 +31,10 @@ export function CreatorSetupForm({
   onComplete: () => void;
   onCancel?: () => void;
 }) {
+  const router = useRouter();
   const isEdit = !!existingProfile;
+  // The handle is stored in the AttnnRegistry on Arc and can't change once registered.
+  const handleLocked = existingProfile?.registration === "active" || existingProfile?.registration === "registering";
   const [handle, setHandle] = React.useState(existingProfile?.handle ?? "");
   const [minBid, setMinBid] = React.useState(
     existingProfile ? atomicToDollarInput(BigInt(existingProfile.minBid || "0")) : "5.00",
@@ -46,7 +52,7 @@ export function CreatorSetupForm({
     floor === null
       ? "Enter an amount like 5 or 12.50."
       : floor < ESCROW_MIN_BID
-        ? "The lowest floor is $5.00."
+        ? `The lowest floor is ${formatUsd(ESCROW_MIN_BID)}.`
         : floor > ESCROW_MAX_BID
           ? "The highest floor is $1,000.00."
           : null;
@@ -70,7 +76,8 @@ export function CreatorSetupForm({
     };
     try {
       if (isEdit) {
-        // Profile edits are DB-only; no on-chain re-registration needed.
+        // Saved to the DB; for a registered creator the server also copies the floor
+        // and tags to the registry on Arc (where the registry supports updates).
         const res = await fetch("/api/profile/update", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -78,7 +85,14 @@ export function CreatorSetupForm({
         });
         const data = await res.json().catch(() => ({}));
         if (data.success) {
-          toast({ title: "Market updated", variant: "success" });
+          toast(
+            data.registrySync === "failed"
+              ? {
+                  title: "Market updated",
+                  description: "Saved on Attnn. Your listing on Arc wasn't updated this time; bidding on Attnn. isn't affected.",
+                }
+              : { title: "Market updated", variant: "success" },
+          );
           onComplete();
         } else {
           setError(data.error ?? "Failed to update profile");
@@ -134,12 +148,31 @@ export function CreatorSetupForm({
           : "Bidders escrow USDC to reach you. You earn it by replying; no reply in 3 days refunds them."
       }
     >
+      {existingProfile && (
+        <div className="mb-5 rounded-lg border border-border bg-arc-bg-0 p-4">
+          <AvatarEditor handle={existingProfile.handle} initialUrl={existingProfile.avatarUrl} onChange={() => router.refresh()} />
+        </div>
+      )}
       <form onSubmit={handleSubmit} className="grid gap-4 sm:grid-cols-2">
         <div>
           <label htmlFor="cs-handle" className={labelClass}>
             Handle
           </label>
-          <input id="cs-handle" className={fieldClass} placeholder="your-handle" value={handle} onChange={(e) => setHandle(e.target.value)} required />
+          <input
+            id="cs-handle"
+            className={fieldClass}
+            placeholder="your-handle"
+            value={handle}
+            onChange={(e) => setHandle(e.target.value)}
+            readOnly={handleLocked}
+            aria-describedby={handleLocked ? "cs-handle-hint" : undefined}
+            required
+          />
+          {handleLocked && (
+            <p id="cs-handle-hint" className="mt-1 text-xs text-text-secondary">
+              Registered on Arc, so it can&apos;t change.
+            </p>
+          )}
         </div>
         <div>
           <label htmlFor="cs-floor" className={labelClass}>
@@ -153,20 +186,32 @@ export function CreatorSetupForm({
             value={minBid}
             onChange={(e) => setMinBid(e.target.value)}
             aria-invalid={!!floorError}
+            aria-describedby="cs-floor-hint"
             required
           />
           {floorError ? (
-            <p className="mt-1 text-xs text-arc-coral">{floorError}</p>
+            <p id="cs-floor-hint" className="mt-1 text-xs text-arc-coral">{floorError}</p>
           ) : (
-            <p className="mt-1 text-xs text-text-secondary">The lowest bid you&apos;ll accept. $5.00 to $1,000.00.</p>
+            <FieldHint id="cs-floor-hint" more={glossary.creatorFloor}>
+              The lowest bid you&apos;ll accept, in USDC (1 USDC = $1). {formatUsd(ESCROW_MIN_BID)} to $1,000.00.
+            </FieldHint>
           )}
         </div>
         <div>
           <label htmlFor="cs-tags" className={labelClass}>
             Tags (comma-separated)
           </label>
-          <input id="cs-tags" className={fieldClass} placeholder="ai, crypto, design" value={tags} onChange={(e) => setTags(e.target.value)} />
-          <p className="mt-1 text-xs text-text-secondary">Bidder agents discover you by these.</p>
+          <input
+            id="cs-tags"
+            className={fieldClass}
+            placeholder="ai, crypto, design"
+            value={tags}
+            onChange={(e) => setTags(e.target.value)}
+            aria-describedby="cs-tags-hint"
+          />
+          <FieldHint id="cs-tags-hint" more={glossary.creatorTags}>
+            Up to 10. Bidder agents discover you by these.
+          </FieldHint>
         </div>
         <div>
           <label htmlFor="cs-avail" className={labelClass}>
@@ -177,6 +222,7 @@ export function CreatorSetupForm({
             <option value="limited">Limited availability</option>
             <option value="not_accepting">Not accepting bids (market paused)</option>
           </select>
+          <FieldHint more={glossary.availability}>You can pause your market any time.</FieldHint>
         </div>
         <div className="sm:col-span-2">
           <label htmlFor="cs-bio" className={labelClass}>
@@ -208,14 +254,14 @@ export function CreatorSetupForm({
             value={autoReplyTemplate}
             onChange={(e) => setAutoReplyTemplate(e.target.value)}
             aria-invalid={!!templateError}
+            aria-describedby="cs-template-hint"
           />
           {templateError ? (
-            <p className="mt-1 text-xs text-arc-coral">{templateError}</p>
+            <p id="cs-template-hint" className="mt-1 text-xs text-arc-coral">{templateError}</p>
           ) : (
-            <p className="mt-1 text-xs text-text-secondary">
-              Sent on your behalf when your agent accepts a bid, and offered as a starting point when you reply yourself. At least 100
-              characters. Bidders see replies sent from it labelled as auto-replies.
-            </p>
+            <FieldHint id="cs-template-hint" more={glossary.replyTemplate}>
+              Your agent&apos;s reply when it accepts a bid for you, and a starting point when you reply yourself. At least 100 characters.
+            </FieldHint>
           )}
         </div>
         {error && (

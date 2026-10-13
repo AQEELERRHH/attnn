@@ -64,9 +64,7 @@ export async function provisionUserWallet(
   const { data } = await client.createWallets({
     idempotencyKey,
     walletSetId: wsId,
-    // SDK 10.3.0's Blockchain type predates Arc mainnet ("ARC"); the API accepts it.
-    // Upgrade @circle-fin/developer-controlled-wallets before the mainnet move and drop this cast.
-    blockchains: [arc.circleBlockchain as "ARC-TESTNET"],
+    blockchains: [arc.circleBlockchain],
     count: 1,
   });
 
@@ -78,28 +76,6 @@ export async function provisionUserWallet(
     address: wallet.address!,
     blockchain: wallet.blockchain!,
   };
-}
-
-export interface WalletBalance {
-  amount: string;
-  usdc: string;
-}
-
-export async function getWalletBalance(walletId: string): Promise<WalletBalance> {
-  const client = getSDK();
-
-  const { data } = await client.getWalletTokenBalance({ id: walletId });
-  const wallet = data?.tokenBalances;
-  if (!wallet) throw new Error("Wallet not found");
-
-  const usdcBalance = Array.isArray(wallet)
-    ? wallet.find(
-        (b: { currency?: string; token?: { symbol?: string } }) =>
-          b.currency === "USD" || b.token?.symbol === "USDC",
-      )
-    : undefined;
-
-  return { amount: usdcBalance?.amount ?? "0", usdc: usdcBalance?.amount ?? "0" };
 }
 
 export interface ExecuteContractResult {
@@ -162,15 +138,42 @@ function isIdempotencyReuse(err: unknown): boolean {
   return typeof e?.message === "string" && /idempotency key/i.test(e.message);
 }
 
-/** Finds a recent transaction from this wallet by the refId we gave it. */
+/** Pages of 50 searched before giving up (2,500 transactions). */
+const REF_LOOKUP_MAX_PAGES = 50;
+
+/**
+ * Finds a transaction from this wallet by the refId we gave it.
+ *
+ * Circle can't filter by refId, so this pages back through the wallet's
+ * transactions, newest first. Pass `since` (e.g. the bid's creation time) to stop
+ * early; without it the search goes back up to 2,500 transactions. Paging moves the
+ * time window's end back to the oldest item seen, so it doesn't depend on the
+ * direction of Circle's page cursors. A busy agent wallet makes two transactions
+ * per bid, so the latest 50 alone was not enough (a missed transaction could mark
+ * an escrowed bid "failed").
+ */
 export async function findTransactionByRefId(
   walletId: string,
   refId: string,
+  since?: Date,
 ): Promise<ExecuteContractResult | null> {
   const client = getSDK();
-  const { data } = await client.listTransactions({ walletIds: [walletId], pageSize: 50 });
-  const tx = data?.transactions?.find((t) => t.refId === refId);
-  return tx ? { txId: tx.id, state: tx.state } : null;
+  const from = since ? new Date(since.getTime() - 5 * 60 * 1000).toISOString() : undefined;
+  let to: string | undefined;
+  const seen = new Set<string>();
+  for (let page = 0; page < REF_LOOKUP_MAX_PAGES; page++) {
+    const { data } = await client.listTransactions({ walletIds: [walletId], pageSize: 50, order: "DESC", from, to });
+    const txs = data?.transactions ?? [];
+    const match = txs.find((t) => t.refId === refId);
+    if (match) return { txId: match.id, state: match.state };
+    const fresh = txs.filter((t) => !seen.has(t.id));
+    if (fresh.length === 0 || txs.length < 50) return null; // reached the start of the window
+    for (const t of fresh) seen.add(t.id);
+    // Next window ends at the oldest item on this page (inclusive, so repeats are skipped above).
+    to = txs[txs.length - 1]!.createDate;
+  }
+  console.warn(`findTransactionByRefId: gave up on ${refId} after ${REF_LOOKUP_MAX_PAGES} pages`);
+  return null;
 }
 
 /**
@@ -197,18 +200,41 @@ export async function executeContractCallOnce(
   }
 }
 
+/**
+ * Sends USDC at most once per `opKey`. Callers build the key from a request id the
+ * browser generates once per send, so a double click or a retried request returns
+ * the original transfer instead of paying twice.
+ */
 export async function transferUSDC(
   walletId: string,
   to: string,
   amount: string,
+  opKey: string,
 ): Promise<ExecuteContractResult> {
-  return executeContractCall({
+  return executeContractCallOnce({
     walletId,
     contractAddress: USDC_ADDRESS,
     abi: usdcAbi as unknown as Abi,
     functionName: "transfer",
     args: [to, amount],
+    opKey,
   });
+}
+
+/**
+ * True only when Circle answered and refused the request (a 4xx other than a timeout),
+ * so it can't have been accepted. Timeouts, network errors and 5xx are unknown: the
+ * request may have gone through.
+ */
+export function rejectedByCircle(err: unknown): boolean {
+  const e = err as { status?: unknown; response?: { status?: unknown } } | null;
+  const status = typeof e?.status === "number" ? e.status : typeof e?.response?.status === "number" ? e.response.status : null;
+  return status !== null && status >= 400 && status < 500 && status !== 408;
+}
+
+/** A browser-generated request id (UUID), or null if missing or malformed. */
+export function parseRequestId(v: unknown): string | null {
+  return typeof v === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v) ? v.toLowerCase() : null;
 }
 
 export interface TransactionStatus {

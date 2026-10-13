@@ -14,6 +14,14 @@ import { and, eq } from "drizzle-orm";
 import { db } from "./db/client";
 import { wallets } from "./db/schema";
 import { provisionUserWallet } from "./circle";
+import { arc } from "./chain";
+
+/**
+ * Only wallets on the network this deployment runs on. A testnet wallet's key lives
+ * in Circle's TEST environment: shown on mainnet, real USDC sent to it would be stuck.
+ * Mainnet starts with a fresh database; this makes a mix-up fail safe anyway.
+ */
+const onThisNetwork = () => eq(wallets.blockchain, arc.circleBlockchain);
 
 export type WalletPurpose = "main" | "agent";
 export type WalletRow = typeof wallets.$inferSelect;
@@ -25,7 +33,7 @@ export type WalletRow = typeof wallets.$inferSelect;
 export const AGENT_WALLET_GAS_RESERVE = BigInt(50_000);
 
 export async function walletOf(userId: string, purpose: WalletPurpose): Promise<WalletRow | undefined> {
-  return db.query.wallets.findFirst({ where: and(eq(wallets.userId, userId), eq(wallets.purpose, purpose)) });
+  return db.query.wallets.findFirst({ where: and(eq(wallets.userId, userId), eq(wallets.purpose, purpose), onThisNetwork()) });
 }
 
 export const mainWallet = (userId: string) => walletOf(userId, "main");
@@ -33,7 +41,7 @@ export const agentWallet = (userId: string) => walletOf(userId, "agent");
 
 /** The user's wallet with this address (main or agent), if they own it. */
 export async function walletByAddress(userId: string, address: string): Promise<WalletRow | undefined> {
-  const rows = await db.query.wallets.findMany({ where: eq(wallets.userId, userId) });
+  const rows = await db.query.wallets.findMany({ where: and(eq(wallets.userId, userId), onThisNetwork()) });
   return rows.find((w) => w.address.toLowerCase() === address.toLowerCase());
 }
 

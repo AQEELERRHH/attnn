@@ -220,6 +220,7 @@ export function DesignPreview() {
             minBid: "5000000",
             maxBid: "1000000000",
             refundDays: 3,
+            escrowV2: true,
             agentWallet: { address: "0x00000000000000000000000000000000000000a1", href: "https://testnet.arcscan.app/address/0x00000000000000000000000000000000000000a1", usdc: "40000000" },
             mainWalletUsdc: "120000000",
           }}
@@ -245,6 +246,7 @@ export function DesignPreview() {
             minBid: "5000000",
             maxBid: "1000000000",
             refundDays: 3,
+            escrowV2: true,
             agentWallet: { address: "0x00000000000000000000000000000000000000a1", href: "https://testnet.arcscan.app/address/0x00000000000000000000000000000000000000a1", usdc: "40000000" },
             mainWalletUsdc: "120000000",
           }}

@@ -4,11 +4,12 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Money, Num, Panel } from "@/components/market";
+import { Money, Num, Panel, SecurityCodeField, isSecurityCode } from "@/components/market";
 import { toast } from "@/hooks/use-toast";
 import { atomicToDollarInput, dollarsToAtomic, formatMoney, shortAddress } from "@/lib/format";
 import { fieldClass } from "./creator-setup-form";
 import type { AgentPolicyInfo } from "./types";
+import { useRequestId } from "./use-request-id";
 
 /** Kept back for the transfer's own network fee (matches AGENT_WALLET_GAS_RESERVE). */
 const GAS_RESERVE = BigInt(50_000);
@@ -20,6 +21,8 @@ async function post(body: unknown) {
     body: JSON.stringify(body),
   });
   const data = await res.json().catch(() => ({}));
+  if (data.needsCode) return { needsCode: String(data.sentTo ?? "your email"), error: data.error as string | undefined };
+  if (data.restart) throw Object.assign(new Error(data.error ?? "Please start again"), { restart: true });
   if (!res.ok || !data.success) throw new Error(data.error ?? "Something went wrong");
   return data;
 }
@@ -32,7 +35,11 @@ export function AgentWalletCard({ policy }: { policy: AgentPolicyInfo }) {
   const router = useRouter();
   const [busy, setBusy] = React.useState<null | "create" | "fund" | "withdraw">(null);
   const [amount, setAmount] = React.useState("");
+  /** Set when a top-up is over the 24-hour allowance and an emailed code was sent for it. */
+  const [codeSentTo, setCodeSentTo] = React.useState<string | null>(null);
+  const [code, setCode] = React.useState("");
   const agent = policy.agentWallet;
+  const requestId = useRequestId();
 
   async function create() {
     setBusy("create");
@@ -48,9 +55,23 @@ export function AgentWalletCard({ policy }: { policy: AgentPolicyInfo }) {
   }
 
   async function move(action: "fund" | "withdraw") {
+    if (action === "fund" && codeSentTo && !isSecurityCode(code)) return;
     setBusy(action);
     try {
-      await post({ action, amount });
+      const res = await post({
+        action,
+        amount,
+        requestId: requestId.idFor(`${action}:${amount.trim()}`),
+        ...(action === "fund" && codeSentTo ? { code: code.trim() } : {}),
+      });
+      if ("needsCode" in res && res.needsCode) {
+        setCodeSentTo(res.needsCode);
+        toast({ title: "Check your email", description: res.error ?? "This is over your 24-hour allowance. Enter the code we emailed you to approve it." });
+        return;
+      }
+      requestId.done();
+      setCodeSentTo(null);
+      setCode("");
       toast({
         title: action === "fund" ? `Moving ${formatMoney(dollarsToAtomic(amount) ?? BigInt(0))} to your agent` : "Moving USDC back to your wallet",
         description: "Balances update in a few seconds.",
@@ -59,6 +80,7 @@ export function AgentWalletCard({ policy }: { policy: AgentPolicyInfo }) {
       setAmount("");
       setTimeout(() => router.refresh(), 5000);
     } catch (err) {
+      if ((err as { restart?: boolean }).restart) requestId.done();
       toast({ title: "Couldn't move USDC", description: err instanceof Error ? err.message : "Try again", variant: "destructive" });
     } finally {
       setBusy(null);
@@ -118,12 +140,16 @@ export function AgentWalletCard({ policy }: { policy: AgentPolicyInfo }) {
             inputMode="decimal"
             placeholder="25.00"
             value={amount}
-            onChange={(e) => setAmount(e.target.value)}
+            onChange={(e) => {
+              setAmount(e.target.value);
+              setCodeSentTo(null); // a code approves one exact amount
+              setCode("");
+            }}
             className={`${fieldClass} num pl-7`}
           />
         </span>
-        <Button onClick={() => move("fund")} disabled={!valid || !!busy}>
-          {busy === "fund" ? "Moving…" : "Move to agent"}
+        <Button onClick={() => move("fund")} disabled={!valid || !!busy || (!!codeSentTo && !isSecurityCode(code))}>
+          {busy === "fund" ? "Moving…" : codeSentTo ? "Approve & move" : "Move to agent"}
         </Button>
         <Button variant="outline" onClick={() => move("withdraw")} disabled={!valid || !!busy}>
           {busy === "withdraw" ? "Moving…" : "Move back"}
@@ -138,6 +164,16 @@ export function AgentWalletCard({ policy }: { policy: AgentPolicyInfo }) {
         </button>
         <span className="text-text-secondary">A few cents stay behind to pay the network fee.</span>
       </div>
+      {codeSentTo && (
+        <SecurityCodeField
+          id="agent-fund-code"
+          className="mt-3"
+          sentTo={codeSentTo}
+          value={code}
+          onChange={setCode}
+          reason="Moving USDC to your agent counts toward the $500 that can leave your wallet in any 24 hours without your approval."
+        />
+      )}
     </Panel>
   );
 }

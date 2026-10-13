@@ -11,9 +11,20 @@ interface IERC20 {
 }
 
 /// @title AttnnEscrow
-/// @notice Escrow contract for bids on creator attention
+/// @notice Holds USDC bids for a creator's reply. A bid's USDC can only go to the
+///         creator (when they reply in time) or back to the bidder (decline, or no
+///         reply within REFUND_PERIOD). Nobody else can move it.
+///
+///         Privacy: bid messages and replies are never stored on-chain. Only their
+///         fingerprints are: fingerprint(salt, text) = keccak256(salt ‖ text), with a
+///         random 32-byte salt kept off-chain with the text. Anyone given the salt and
+///         the text can check them against the stored fingerprint.
+///
+///         Admin: one `owner` address can pause NEW bids (placeBid) in an emergency,
+///         and hand the role to another address in two steps. It has no other power:
+///         accept, decline and refund keep working while paused, and the owner can
+///         never move, freeze or redirect anyone's USDC.
 contract AttnnEscrow is IAttnnEscrow {
-    // Bid status enum
     enum BidStatus {
         Pending,
         Accepted,
@@ -25,8 +36,8 @@ contract AttnnEscrow is IAttnnEscrow {
         address bidder;
         address creator;
         uint256 amount;
-        string message;
-        string reply;
+        bytes32 messageHash;
+        bytes32 replyHash;
         BidStatus status;
         uint256 createdAt;
         uint256 updatedAt;
@@ -37,59 +48,67 @@ contract AttnnEscrow is IAttnnEscrow {
     // AttnnRegistry address
     address public immutable registry;
 
-    // Bid ID counter
+    /// @notice The admin: may pause/unpause new bids and hand the role over. Nothing else.
+    address public owner;
+    /// @notice Address that may call acceptOwnership(), or zero when no handover is open.
+    address public pendingOwner;
+    /// @notice True while new bids are refused. Settlements are never paused.
+    bool public paused;
+
     uint256 private _bidCounter;
-    // Mapping from bid ID to Bid struct
     mapping(uint256 => Bid) private _bids;
-    // Mapping from creator to list of bid IDs
     mapping(address => uint256[]) private _creatorBids;
-    // Mapping from bidder to list of bid IDs
     mapping(address => uint256[]) private _bidderBids;
 
-    // Minimum bid amount (5 USDC, 6 decimals)
-    uint256 public constant MIN_BID = 5 * 10**6;
+    // Minimum bid amount (1 USDC, 6 decimals)
+    uint256 public constant MIN_BID = 1 * 10**6;
     // Maximum bid amount (1000 USDC, 6 decimals)
     uint256 public constant MAX_BID = 1000 * 10**6;
     // Refund period (3 days in seconds)
     uint256 public constant REFUND_PERIOD = 3 days;
 
-    constructor(address _usdc, address _registry) {
-        require(_usdc != address(0), "AttnnEscrow: zero USDC address");
-        require(_registry != address(0), "AttnnEscrow: zero registry address");
-        usdc = _usdc;
-        registry = _registry;
+    modifier onlyOwner() {
+        require(msg.sender == owner, "AttnnEscrow: not the owner");
+        _;
     }
 
+    constructor(address _usdc, address _registry, address _owner) {
+        require(_usdc != address(0), "AttnnEscrow: zero USDC address");
+        require(_registry != address(0), "AttnnEscrow: zero registry address");
+        require(_owner != address(0), "AttnnEscrow: zero owner address");
+        usdc = _usdc;
+        registry = _registry;
+        owner = _owner;
+        emit OwnershipTransferred(address(0), _owner);
+    }
+
+    // ─── Bids ────────────────────────────────────────────────────────────────
+
     /// @inheritdoc IAttnnEscrow
-    function placeBid(
-        address creator,
-        uint256 amount,
-        string calldata message,
-        bool isPrivate
-    ) external override returns (uint256 bidId) {
+    function placeBid(address creator, uint256 amount, bytes32 messageHash)
+        external
+        override
+        returns (uint256 bidId)
+    {
+        require(!paused, "AttnnEscrow: new bids are paused");
         require(creator != address(0), "AttnnEscrow: zero creator address");
         require(creator != msg.sender, "AttnnEscrow: cannot bid on yourself");
         require(amount >= MIN_BID, "AttnnEscrow: amount below minimum");
         require(amount <= MAX_BID, "AttnnEscrow: amount above maximum");
-        
+
         // Check creator is registered and active via registry
         (bool success, bytes memory data) = registry.staticcall(
             abi.encodeWithSignature("isActiveCreator(address)", creator)
         );
-        require(success && abi.decode(data, (bool)), "AttnnEscrow: creator not active");
+        require(success && data.length == 32 && abi.decode(data, (bool)), "AttnnEscrow: creator not active");
 
-        // Transfer USDC from bidder to escrow
-        require(
-            IERC20(usdc).transferFrom(msg.sender, address(this), amount),
-            "AttnnEscrow: USDC transfer failed"
-        );
-
+        // Record the bid before pulling the USDC (checks-effects-interactions).
         bidId = ++_bidCounter;
         Bid storage newBid = _bids[bidId];
         newBid.bidder = msg.sender;
         newBid.creator = creator;
         newBid.amount = amount;
-        newBid.message = isPrivate ? "" : message;
+        newBid.messageHash = messageHash;
         newBid.status = BidStatus.Pending;
         newBid.createdAt = block.timestamp;
         newBid.updatedAt = block.timestamp;
@@ -97,28 +116,34 @@ contract AttnnEscrow is IAttnnEscrow {
         _creatorBids[creator].push(bidId);
         _bidderBids[msg.sender].push(bidId);
 
+        require(
+            IERC20(usdc).transferFrom(msg.sender, address(this), amount),
+            "AttnnEscrow: USDC transfer failed"
+        );
+
         emit BidPlaced(bidId, msg.sender, creator, amount);
-        return bidId;
     }
 
     /// @inheritdoc IAttnnEscrow
-    function acceptBid(uint256 bidId, string calldata reply) external override {
+    function acceptBid(uint256 bidId, bytes32 replyHash) external override {
         Bid storage bid = _bids[bidId];
         require(bid.creator == msg.sender, "AttnnEscrow: not the creator");
         require(bid.status == BidStatus.Pending, "AttnnEscrow: bid not pending");
         require(bid.createdAt + REFUND_PERIOD > block.timestamp, "AttnnEscrow: bid expired");
+        require(replyHash != bytes32(0), "AttnnEscrow: empty reply");
 
-        // Transfer USDC to creator
+        // Settle first, pay second (checks-effects-interactions): the bid can't be
+        // settled twice even if the token ever called back into this contract.
+        bid.status = BidStatus.Accepted;
+        bid.replyHash = replyHash;
+        bid.updatedAt = block.timestamp;
+
         require(
             IERC20(usdc).transfer(bid.creator, bid.amount),
             "AttnnEscrow: USDC transfer to creator failed"
         );
 
-        bid.status = BidStatus.Accepted;
-        bid.reply = reply;
-        bid.updatedAt = block.timestamp;
-
-        emit BidAccepted(bidId, msg.sender, reply);
+        emit BidAccepted(bidId, msg.sender, replyHash);
     }
 
     /// @inheritdoc IAttnnEscrow
@@ -127,14 +152,13 @@ contract AttnnEscrow is IAttnnEscrow {
         require(bid.creator == msg.sender, "AttnnEscrow: not the creator");
         require(bid.status == BidStatus.Pending, "AttnnEscrow: bid not pending");
 
-        // Refund USDC to bidder
+        bid.status = BidStatus.Rejected;
+        bid.updatedAt = block.timestamp;
+
         require(
             IERC20(usdc).transfer(bid.bidder, bid.amount),
             "AttnnEscrow: USDC refund failed"
         );
-
-        bid.status = BidStatus.Rejected;
-        bid.updatedAt = block.timestamp;
 
         emit BidRejected(bidId, msg.sender);
     }
@@ -146,16 +170,53 @@ contract AttnnEscrow is IAttnnEscrow {
         require(bid.status == BidStatus.Pending, "AttnnEscrow: bid not pending");
         require(bid.createdAt + REFUND_PERIOD <= block.timestamp, "AttnnEscrow: refund period not passed");
 
-        // Refund USDC to bidder
+        bid.status = BidStatus.Refunded;
+        bid.updatedAt = block.timestamp;
+
         require(
             IERC20(usdc).transfer(bid.bidder, bid.amount),
             "AttnnEscrow: USDC refund failed"
         );
 
-        bid.status = BidStatus.Refunded;
-        bid.updatedAt = block.timestamp;
-
         emit BidRefunded(bidId, msg.sender);
+    }
+
+    // ─── Admin (pause new bids only) ─────────────────────────────────────────
+
+    /// @inheritdoc IAttnnEscrow
+    function pause() external override onlyOwner {
+        require(!paused, "AttnnEscrow: already paused");
+        paused = true;
+        emit Paused(msg.sender);
+    }
+
+    /// @inheritdoc IAttnnEscrow
+    function unpause() external override onlyOwner {
+        require(paused, "AttnnEscrow: not paused");
+        paused = false;
+        emit Unpaused(msg.sender);
+    }
+
+    /// @inheritdoc IAttnnEscrow
+    function transferOwnership(address newOwner) external override onlyOwner {
+        pendingOwner = newOwner; // zero cancels an open handover
+        emit OwnershipTransferStarted(msg.sender, newOwner);
+    }
+
+    /// @inheritdoc IAttnnEscrow
+    function acceptOwnership() external override {
+        require(msg.sender == pendingOwner, "AttnnEscrow: not the pending owner");
+        address previous = owner;
+        owner = msg.sender;
+        pendingOwner = address(0);
+        emit OwnershipTransferred(previous, msg.sender);
+    }
+
+    // ─── Views ───────────────────────────────────────────────────────────────
+
+    /// @inheritdoc IAttnnEscrow
+    function fingerprint(bytes32 salt, string calldata text) external pure override returns (bytes32) {
+        return keccak256(abi.encodePacked(salt, text));
     }
 
     /// @inheritdoc IAttnnEscrow
@@ -163,8 +224,8 @@ contract AttnnEscrow is IAttnnEscrow {
         address bidder,
         address creator,
         uint256 amount,
-        string memory message,
-        string memory reply,
+        bytes32 messageHash,
+        bytes32 replyHash,
         uint8 status,
         uint256 createdAt
     ) {
@@ -173,8 +234,8 @@ contract AttnnEscrow is IAttnnEscrow {
             bid.bidder,
             bid.creator,
             bid.amount,
-            bid.message,
-            bid.reply,
+            bid.messageHash,
+            bid.replyHash,
             uint8(bid.status),
             bid.createdAt
         );

@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useRequestId } from "@/app/dashboard/use-request-id";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Lock, ThumbsDown, ThumbsUp } from "lucide-react";
@@ -81,6 +82,7 @@ export function CreatorMarket(props: CreatorMarketProps) {
   const router = useRouter();
   const [now] = React.useState(() => props.now ?? Date.now());
   const [tab, setTab] = React.useState<"book" | "fills">("book");
+  const bidRequest = useRequestId();
 
   const disabledReason = !viewer.signedIn
     ? null // handled below with a sign-in link
@@ -90,14 +92,25 @@ export function CreatorMarket(props: CreatorMarketProps) {
         ? "This creator isn't accepting bids right now."
         : null;
 
-  async function placeBid(amountUsdc: string, message: string) {
+  async function placeBid(amountUsdc: string, message: string, code?: string) {
     const res = await fetch("/api/bid/place", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ creatorHandle: handle, amountUsdc, message, isPrivate: false }),
+      body: JSON.stringify({
+        creatorHandle: handle,
+        amountUsdc,
+        message,
+        isPrivate: false,
+        // Same bid retried → same id → the server returns the bid it already recorded.
+        requestId: bidRequest.idFor(`bid:${amountUsdc}:${message}`),
+        ...(code ? { code } : {}),
+      }),
     });
     const data = await res.json().catch(() => ({}));
+    if (data.needsCode) return { ok: false, needsCode: String(data.sentTo ?? "your email"), error: data.error as string | undefined };
+    if (data.restart) bidRequest.done();
     if (res.ok && data.success) {
+      bidRequest.done();
       router.refresh();
       return { ok: true };
     }

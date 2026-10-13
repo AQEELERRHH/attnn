@@ -1,8 +1,15 @@
 import { NextResponse } from "next/server";
+import { formatUnits } from "viem";
+import { serverError } from "@/lib/http-guard";
 import { mainWallet } from "@/lib/wallets";
 import { auth } from "@/lib/auth";
-import { CircleDeveloperControlledWalletsClient } from "@circle-fin/developer-controlled-wallets";
+import { getUsdcBalance } from "@/lib/activation";
 
+/**
+ * The signed-in user's main-wallet USDC balance, read from the USDC contract on Arc.
+ * (It used to pick a token by name from Circle's list, which a fake "USDC" airdropped
+ * to the wallet could have matched.) `balance` is a decimal string, e.g. "12.5".
+ */
 export async function GET() {
   try {
     const session = await auth();
@@ -11,23 +18,9 @@ export async function GET() {
     const wallet = await mainWallet(session.user.id);
     if (!wallet) return NextResponse.json({ error: "Wallet not found" }, { status: 404 });
 
-    const client = new CircleDeveloperControlledWalletsClient({
-      apiKey: process.env.CIRCLE_API_KEY!,
-      entitySecret: process.env.CIRCLE_ENTITY_SECRET!,
-    });
-
-    const res = await client.getWalletTokenBalance({ id: wallet.circleWalletId });
-    const tokenBalances = res?.data?.tokenBalances ?? [];
-    const usdcBalance = tokenBalances.find(
-      (t) => t.token?.symbol === "USDC" || t.token?.name?.includes("USD")
-    );
-
-    return NextResponse.json({
-      success: true,
-      balance: usdcBalance?.amount ?? "0",
-      symbol: "USDC",
-    });
+    const atomic = await getUsdcBalance(wallet.address);
+    return NextResponse.json({ success: true, balance: formatUnits(atomic, 6), symbol: "USDC" });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : "Failed" }, { status: 500 });
+    return serverError("wallet/balance", err, "Couldn't read your balance right now.");
   }
 }

@@ -3,12 +3,14 @@
  * x402 proof: an AI agent pays $0.001 USDC through Circle Gateway (gas-free,
  * batched "nanopayments") and receives a creator's Attnn. profile in return.
  *
- *   BUYER_PRIVATE_KEY=0x… node scripts/x402-demo.mjs <handle> [--deposit 0.10] [--base https://attnn.xyz]
+ *   BUYER_PRIVATE_KEY=0x… node scripts/x402-demo.mjs <handle> [--deposit 0.10] [--base https://attnn.xyz] [--mainnet]
  *
- * BUYER_PRIVATE_KEY is a throwaway testnet key for the agent (NOT a Circle wallet,
- * never a real-funds key). Fund its address with testnet USDC from
- * https://faucet.circle.com (Arc Testnet), then run once with --deposit to move
- * some of it into the agent's Gateway balance. Later runs pay from that balance.
+ * BUYER_PRIVATE_KEY is a throwaway key for the agent (NOT a Circle wallet). On
+ * testnet (the default), fund its address with testnet USDC from
+ * https://faucet.circle.com (Arc Testnet). With --mainnet it pays real USDC on Arc
+ * mainnet: use a fresh key holding only a few dollars, and only against a site
+ * running ARC_NETWORK=mainnet. Run once with --deposit to move some USDC into the
+ * agent's Gateway balance. Later runs pay from that balance.
  *
  * Prints: the agent's balances, the 402 price it was quoted, the profile it got
  * back and the Gateway settlement receipt. Never prints the key.
@@ -16,7 +18,8 @@
 import { GatewayClient } from "@circle-fin/x402-batching/client";
 
 const args = process.argv.slice(2);
-const handle = args.find((a) => !a.startsWith("--"));
+const valueFlags = new Set(["--deposit", "--base"]);
+const handle = args.find((a, i) => !a.startsWith("--") && !valueFlags.has(args[i - 1] ?? ""));
 const flag = (name) => {
   const i = args.indexOf(`--${name}`);
   return i >= 0 ? args[i + 1] : undefined;
@@ -24,16 +27,18 @@ const flag = (name) => {
 const base = (flag("base") ?? "https://attnn.xyz").replace(/\/$/, "");
 const deposit = flag("deposit");
 const key = process.env.BUYER_PRIVATE_KEY?.trim();
+const mainnet = args.includes("--mainnet");
 
 if (!handle || !key) {
-  console.error("Usage: BUYER_PRIVATE_KEY=0x… node scripts/x402-demo.mjs <handle> [--deposit 0.10] [--base https://attnn.xyz]");
+  console.error("Usage: BUYER_PRIVATE_KEY=0x… node scripts/x402-demo.mjs <handle> [--deposit 0.10] [--base https://attnn.xyz] [--mainnet]");
   process.exit(1);
 }
 
-const client = new GatewayClient({ chain: "arcTestnet", privateKey: key });
+const client = new GatewayClient({ chain: mainnet ? "arc" : "arcTestnet", privateKey: key });
 const url = `${base}/api/c/${encodeURIComponent(handle)}`;
 const line = (label, value) => console.log(`${label.padEnd(18)} ${value}`);
 
+line("Chain", mainnet ? "Arc mainnet (real USDC)" : "Arc Testnet");
 line("Agent wallet", client.address);
 const before = await client.getBalances();
 line("Wallet USDC", before.wallet.formatted);

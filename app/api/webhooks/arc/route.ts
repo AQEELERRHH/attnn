@@ -76,6 +76,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ received: true });
   } catch (err) {
     console.error("Arc webhook error:", err);
-    return NextResponse.json({ error: err instanceof Error ? err.message : undefined }, { status: 500 });
+    return NextResponse.json({ error: "Processing failed" }, { status: 500 });
   }
 }

@@ -1,11 +1,21 @@
 import { createHash } from "crypto";
 
 /**
- * Bid rules that mirror contracts/src/AttnnEscrow.sol. If the contract constants
- * change, change them here too — the app checks them before sending a transaction
- * so users get a clear error instead of a reverted (and gas-burning) transaction.
+ * Bid rules that mirror contracts/src/AttnnEscrow.sol. The app checks them before
+ * sending a transaction so users get a clear error instead of a reverted (and
+ * gas-burning) transaction.
+ *
+ * The minimum depends on the DEPLOYED contract: the testnet escrow live since
+ * October 2026 was built with MIN_BID = $5; the source (and mainnet) uses $1.
+ * NEXT_PUBLIC_ESCROW_MIN_BID_USDC (atomic USDC) must equal the deployed
+ * contract's MIN_BID. Unset = $5, matching the current testnet contract.
  */
-export const ESCROW_MIN_BID = BigInt(5_000_000); // $5.00
+function minBidFromEnv(): bigint {
+  const raw = process.env.NEXT_PUBLIC_ESCROW_MIN_BID_USDC?.trim();
+  if (raw && /^\d{1,15}$/.test(raw) && BigInt(raw) > BigInt(0)) return BigInt(raw);
+  return BigInt(5_000_000);
+}
+export const ESCROW_MIN_BID = minBidFromEnv();
 export const ESCROW_MAX_BID = BigInt(1_000_000_000); // $1,000.00
 export const REFUND_PERIOD_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
 
@@ -52,24 +62,19 @@ export function validateBidAmount(rawAmount: unknown, creatorMinBid: string | nu
 }
 
 /**
- * Picks the amount a bidder agent should bid. The AI suggestion is only a hint:
- * it is clamped into [creator floor, min(bidder's per-creator cap, escrow max)].
- * Returns null when the creator's floor is above what the bidder allows.
+ * The amount a bidder agent bids: always the creator's floor (decision D3). The AI
+ * only ranks creators; it never picks an amount, so text in a creator's profile
+ * can't talk agents into bidding more. Returns null (skip this creator) when the
+ * floor is above the bidder's per-creator cap or the escrow maximum.
  */
 export function resolveAgentBidAmount(params: {
-  suggested: unknown;
   creatorMinBid: string | null | undefined;
   maxBidPerCreator: string | null | undefined;
 }): bigint | null {
   const floor = creatorFloor(params.creatorMinBid);
   const cap = parseAtomicUsdc(params.maxBidPerCreator ?? "") ?? ESCROW_MAX_BID;
   const ceiling = cap < ESCROW_MAX_BID ? cap : ESCROW_MAX_BID;
-  if (floor > ceiling) return null;
-  const suggested = parseAtomicUsdc(params.suggested);
-  if (suggested === null) return floor;
-  if (suggested < floor) return floor;
-  if (suggested > ceiling) return ceiling;
-  return suggested;
+  return floor > ceiling ? null : floor;
 }
 
 /**

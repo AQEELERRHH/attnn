@@ -205,7 +205,8 @@ export function BidderView({
       label: "Reply / reason",
       className: "whitespace-normal min-w-[220px] max-w-[360px]",
       render: (b) => {
-        const text = b.status === "failed" ? bidDisplay(b, "bidder").note : b.reply;
+        // A reply shows only once the accept has settled on-chain (not while confirming).
+        const text = b.status === "failed" ? bidDisplay(b, "bidder").note : b.status === "accepted" ? b.reply : null;
         if (!text) return <span className="text-text-secondary">—</span>;
         return (
           <span className="flex flex-col gap-1.5">
@@ -353,7 +354,7 @@ export function BidderView({
             minWidth={900}
             mobileCard={(b) => {
               const d = bidDisplay(b, "bidder");
-              const text = b.status === "failed" ? d.note : b.reply;
+              const text = b.status === "failed" ? d.note : b.status === "accepted" ? b.reply : null;
               return (
                 <div className="flex flex-col gap-1.5">
                   <div className="flex items-center gap-3">

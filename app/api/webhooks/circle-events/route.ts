@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { and, eq, inArray } from "drizzle-orm";
-import { decodeEventLog, type DecodeEventLogReturnType } from "viem";
+import { decodeEventLog, type Hex } from "viem";
 import { db } from "@/lib/db/client";
 import { bids, webhookEvents } from "@/lib/db/schema";
-import { escrowAbi } from "@/lib/arc";
+import { escrowAbiFor, escrowVersion } from "@/lib/escrow";
 import { arc, escrowAddress } from "@/lib/chain";
 import { verifyCircleSignature } from "@/lib/circle-webhook";
-import { finalizePlacement, finalizeSettlement, notifyBidEscrowed } from "@/lib/bids";
+import { finalizePlacement, finalizeSettlement, notifyBidEscrowed, pickReply } from "@/lib/bids";
 
 /**
  * Circle Smart Contract Platform event monitor → AttnnEscrow logs.
@@ -97,19 +97,23 @@ async function handle(body: {
     return { ignored: `contract ${contractAddress} is not the current escrow` };
   }
 
-  let decoded: DecodeEventLogReturnType<typeof escrowAbi>;
+  const version = await escrowVersion(escrow);
+  let decoded: { eventName: string; args: Record<string, unknown> };
   try {
     decoded = decodeEventLog({
-      abi: escrowAbi,
-      data: (data ?? "0x") as `0x${string}`,
-      topics: (topics ?? []) as [`0x${string}`, ...`0x${string}`[]],
-    });
+      abi: escrowAbiFor(version),
+      data: (data ?? "0x") as Hex,
+      topics: (topics ?? []) as [Hex, ...Hex[]],
+    }) as unknown as { eventName: string; args: Record<string, unknown> };
   } catch {
     return { ignored: "not an escrow event" };
   }
+  if (!["BidPlaced", "BidAccepted", "BidRejected", "BidRefunded"].includes(decoded.eventName)) {
+    return { ignored: `event ${decoded.eventName}` }; // Paused / Unpaused: the health check reports those
+  }
 
   if (decoded.eventName === "BidPlaced") {
-    const bidder = decoded.args.bidder.toLowerCase();
+    const bidder = String(decoded.args.bidder).toLowerCase();
     // Placing bids from this bidder in this escrow that have a submitted transaction.
     const candidates = await db
       .select({ id: bids.id, bidderAddress: bids.bidderAddress })
@@ -126,7 +130,7 @@ async function handle(body: {
     return { event: "BidPlaced", escrowed };
   }
 
-  const onChainBidId = decoded.args.bidId.toString();
+  const onChainBidId = String(decoded.args.bidId);
   const bid = await db.query.bids.findFirst({
     where: and(
       eq(bids.onChainBidId, onChainBidId),
@@ -141,7 +145,9 @@ async function handle(body: {
   // If we sent the settlement, confirm it through Circle (also bumps retries correctly).
   if (bid.settlementTxHash) {
     const outcome = await finalizeSettlement(bid.id);
-    if (outcome !== "in_flight") return { event: decoded.eventName, outcome };
+    // "failed" here means OUR transaction failed or was released, but this log is an
+    // on-chain fact that the bid settled, so fall through and record it.
+    if (outcome === "settled" || outcome === "noop") return { event: decoded.eventName, outcome };
   }
 
   // Otherwise (or Circle not caught up yet) the log itself is the on-chain fact.
@@ -149,8 +155,28 @@ async function handle(body: {
     decoded.eventName === "BidAccepted" ? "accepted" : decoded.eventName === "BidRejected" ? "rejected" : "refunded";
   const updated = await db
     .update(bids)
-    .set({ status: finalStatus, settlementOnChainTxHash: txHash ?? null, settledAt: new Date() })
+    .set({
+      status: finalStatus,
+      settlementOnChainTxHash: txHash ?? null,
+      settledAt: new Date(),
+      settlementTxHash: null,
+      settlementSubmittedAt: null,
+      settlementAction: null,
+      failReason: null,
+      replyCandidates: null,
+      ...(decoded.eventName === "BidAccepted" ? acceptedReply(version, decoded.args, bid) : {}),
+    })
     .where(and(eq(bids.id, bid.id), inArray(bids.status, [...SETTLEABLE])))
     .returning({ id: bids.id });
   return { event: decoded.eventName, updated: updated.length };
+}
+
+/**
+ * Reply fields for a bid accepted outside our own settlement flow. v1 logs carry the
+ * text the bidder paid for. v2 logs carry only its fingerprint: keep the saved reply
+ * (or an earlier attempt's) that matches, otherwise none.
+ */
+function acceptedReply(version: 1 | 2, args: Record<string, unknown>, bid: Parameters<typeof pickReply>[1]) {
+  if (version === 1) return { reply: (args.reply as string) || null };
+  return pickReply(args.replyHash as string, bid);
 }

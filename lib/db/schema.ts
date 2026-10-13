@@ -63,6 +63,10 @@ export const users = pgTable("users", {
   emailVerified: timestamp("email_verified", { withTimezone: true }),
   image: text("image"),
   role: roleEnum("role").default("bidder").notNull(),
+  /** First-run welcome closed (finished or skipped). Null = show it. Migration 0007. */
+  onboardingSeenAt: timestamp("onboarding_seen_at", { withTimezone: true }),
+  /** "Get started" checklist hidden by the user. Help → reopen clears it. */
+  checklistDismissedAt: timestamp("checklist_dismissed_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
@@ -119,7 +123,7 @@ export const profiles = pgTable("profiles", {
     .references(() => users.id, { onDelete: "cascade" })
     .unique(),
   handle: text("handle").notNull().unique(),
-  // Atomic USDC (6 decimals). Never below the escrow's MIN_BID ($5).
+  // Atomic USDC (6 decimals). Never below the escrow's MIN_BID (ESCROW_MIN_BID).
   minBid: text("min_bid").default("5000000").notNull(),
   // Public market photo. Null → show the handle's initial.
   avatarUrl: text("avatar_url"),
@@ -168,6 +172,11 @@ export const bidderConfigs = pgTable("bidder_configs", {
   searchTags: text("search_tags").array().default([]).notNull(),
   defaultMessage: text("default_message"),
   isActive: boolean("is_active").default(false).notNull(),
+  /**
+   * Lock for the bidder agent: a run (or a counter re-bid) holds it until this time,
+   * so two at once can't both spend the daily budget. Migration 0008.
+   */
+  runLeaseUntil: timestamp("run_lease_until", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
@@ -199,10 +208,26 @@ export const bids = pgTable("bids", {
   creatorAddress: text("creator_address").notNull(),
   amountUsdc: text("amount_usdc").notNull(),
   message: text("message"),
+  // Random 32-byte hex salt for the message's on-chain fingerprint (v2 escrow, lib/escrow.ts).
+  // Set with the message; null when there is no message or on rows from before migration 0010.
+  messageSalt: text("message_salt"),
+  // Legacy: v1 escrows stored public messages unless this was set. Not used on v2.
   isPrivate: boolean("is_private").default(false).notNull(),
   status: bidStatusEnum("status").default("pending").notNull(),
   score: integer("score"),
   reply: text("reply"),
+  // Salt for the reply's on-chain fingerprint (v2). Saved and cleared together with reply.
+  replySalt: text("reply_salt"),
+  // Every reply + salt an accept was reserved with, kept until the bid settles, so the
+  // reply the escrow shows was accepted with can always be matched back to its text,
+  // even if that attempt was released or failed in the database (lib/bids.ts pickReply).
+  // Bids placed by hand: the browser's request id (as an op key), so a retried request
+  // returns the same bid instead of placing a second one. Null for agent bids.
+  requestKey: text("request_key").unique(),
+  // A reply the creator agent's AI drafted (decision D2): never sent on its own. It
+  // waits in the creator's inbox; sending it unchanged records replySource "ai".
+  suggestedReply: text("suggested_reply"),
+  replyCandidates: jsonb("reply_candidates").$type<{ reply: string; salt: string; source: string | null }[]>(),
   // Who wrote the reply: "creator" (typed it), "template" (their saved template,
   // sent by them or their agent) or "ai" (drafted by the creator agent). Null on
   // rows from before this column. See lib/reply-rules.ts.
@@ -216,6 +241,8 @@ export const bids = pgTable("bids", {
     .defaultNow()
     .notNull(),
   settledAt: timestamp("settled_at", { withTimezone: true }),
+  /** When the current settlement was reserved/sent (null when none is in flight). Migration 0008. */
+  settlementSubmittedAt: timestamp("settlement_submitted_at", { withTimezone: true }),
   counterOfferAmount: text("counter_offer_amount"),
   onChainTxHash: text("on_chain_tx_hash"),
   settlementOnChainTxHash: text("settlement_on_chain_tx_hash"),
@@ -371,3 +398,80 @@ export const verificationTokens = pgTable("verification_tokens", {
     .defaultNow()
     .notNull(),
 });
+
+// ─── Rate limits ─────────────────────────────────────────────────────────────
+// Fixed-window counters (lib/rate-limit.ts). Serverless functions share no memory,
+// so the count lives here. Migration 0008.
+
+export const rateLimits = pgTable("rate_limits", {
+  key: text("key").primaryKey(),
+  windowStart: timestamp("window_start", { withTimezone: true }).notNull(),
+  count: integer("count").notNull(),
+});
+
+// ─── App settings ────────────────────────────────────────────────────────────
+// Switches the team can flip in Supabase without a redeploy, e.g. pausing new bids
+// (lib/app-settings.ts). Migration 0008.
+
+export const appSettings = pgTable("app_settings", {
+  key: text("key").primaryKey(),
+  value: jsonb("value").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+// ─── Withdrawals (decision D4, migration 0011) ──────────────────────────────
+// Every USDC send out of a main wallet, so the 24-hour limit can be enforced and a
+// retried request finds its own row (lib/withdrawals.ts). Sends between a user's own
+// main and agent wallets are not withdrawals.
+
+export const withdrawals = pgTable(
+  "withdrawals",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** send = to another address; agent_fund = main → agent wallet. Hand-placed bids are read from bids. */
+    kind: text("kind").$type<"send" | "agent_fund">().notNull().default("send"),
+    /** The transfer's op key (send:/move:<stable uuid of user + browser request id>). */
+    requestKey: text("request_key").notNull().unique(),
+    toAddress: text("to_address").notNull(),
+    amountUsdc: text("amount_usdc").notNull(),
+    /** sending = reserved against the limit, not yet accepted by Circle; submitted; failed (refused, doesn't count). */
+    status: text("status").$type<"sending" | "submitted" | "failed">().notNull().default("sending"),
+    circleTxId: text("circle_tx_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index("withdrawals_user_created_idx").on(t.userId, t.createdAt)],
+);
+
+/** Addresses a user confirmed with an emailed code. Lower-case. */
+export const withdrawalAddresses = pgTable(
+  "withdrawal_addresses",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    address: text("address").notNull(),
+    verifiedAt: timestamp("verified_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("withdrawal_addresses_user_address_uq").on(t.userId, t.address)],
+);
+
+/** The one live security code per user + subject (sha256 of the action it confirms; HMAC of the code, never the code). */
+export const withdrawalCodes = pgTable(
+  "withdrawal_codes",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    subject: text("subject").notNull(),
+    codeHash: text("code_hash").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    attempts: integer("attempts").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("withdrawal_codes_user_subject_uq").on(t.userId, t.subject)],
+);

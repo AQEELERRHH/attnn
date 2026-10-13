@@ -18,6 +18,7 @@ import type { Hex } from "viem";
 import { db } from "./db/client";
 import { bids } from "./db/schema";
 import { escrowAbi, publicClient } from "./arc";
+import { readEscrowBid } from "./escrow";
 import { knownEscrowAddresses } from "./chain";
 
 const lower = (a: string) => a.toLowerCase();
@@ -40,9 +41,9 @@ export async function indexOnChainBids(): Promise<Record<string, OnChainEntry[]>
   for (const escrow of knownEscrowAddresses()) {
     const count = (await publicClient.readContract({ address: escrow as Hex, abi: escrowAbi, functionName: "getBidCount" })) as bigint;
     for (let i = BigInt(1); i <= count; i++) {
-      const b = await publicClient.readContract({ address: escrow as Hex, abi: escrowAbi, functionName: "getBid", args: [i] });
-      const bidder = lower(b[0]);
-      (index[bidder] ??= []).push({ escrow, id: i.toString(), creator: lower(b[1]), amount: b[2].toString(), status: Number(b[5]) });
+      const b = await readEscrowBid(escrow, i);
+      const bidder = lower(b.bidder);
+      (index[bidder] ??= []).push({ escrow, id: i.toString(), creator: lower(b.creator), amount: b.amount.toString(), status: b.status });
     }
   }
   return index;
@@ -206,12 +207,18 @@ export function findOrphans(index: Record<string, OnChainEntry[]>, claimed: Set<
   return report;
 }
 
-/** Closed rows without a settlement transaction, for these bidders. */
+const RECOVERABLE_CLOSED: (typeof bids.$inferSelect)["status"][] = ["accepted", "rejected", "refunded", "failed"];
+
+/**
+ * Closed rows without a settlement transaction, for these bidders. "failed" is
+ * included: a placement wrongly marked failed may still have escrowed USDC, and
+ * autoRefund never claims failed rows, so recovery has to find them here.
+ */
 export async function loadClosedRows(bidders: string[]): Promise<ClosedRow[]> {
   if (!bidders.length) return [];
   const rows = await db.query.bids.findMany({
     where: and(
-      inArray(bids.status, ["accepted", "rejected", "refunded"]),
+      inArray(bids.status, RECOVERABLE_CLOSED),
       isNull(bids.settlementOnChainTxHash),
       inArray(sql`lower(${bids.bidderAddress})`, bidders.map(lower)),
     ),
@@ -235,10 +242,11 @@ export async function reopenOrphan(r: OrphanReport["reopen"][number]): Promise<"
         onChainBidId: r.onChainBidId,
         settledAt: null,
         settlementTxHash: null,
+        settlementSubmittedAt: null,
         settlementAction: null,
         failReason: null,
       })
-      .where(and(eq(bids.id, r.rowId), inArray(bids.status, ["accepted", "rejected", "refunded"]), isNull(bids.settlementOnChainTxHash)))
+      .where(and(eq(bids.id, r.rowId), inArray(bids.status, RECOVERABLE_CLOSED), isNull(bids.settlementOnChainTxHash)))
       .returning({ id: bids.id });
     return res.length ? "updated" : "skipped";
   } catch {

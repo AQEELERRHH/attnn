@@ -1,10 +1,12 @@
 import { inngest } from "@/lib/inngest";
 import { db } from "@/lib/db/client";
 import { bids } from "@/lib/db/schema";
-import { eq, and, lt, gt, isNull, isNotNull, inArray, ne, sql, gte } from "drizzle-orm";
+import { eq, and, lt, gt, isNull, isNotNull, inArray } from "drizzle-orm";
 import { BidError, createBidIntent, declineReplacedBid, submitSettlement } from "@/lib/bids";
 import { applyVerdict, classifyOpenRows, findOrphans, indexOnChainBids, loadClosedRows, loadOpenRows, reopenOrphan } from "@/lib/reconcile";
 import { REFUND_PERIOD_MS } from "@/lib/bid-rules";
+import { acquireAgentLease, releaseAgentLease } from "@/lib/agent-lease";
+import { spentToday } from "@/lib/agent";
 import { escrowAddress } from "@/lib/chain";
 import { confirmRegistration, confirmSettlement, listUnsyncedPendingBids, placeBid, sweepInFlightBids } from "./bid-lifecycle";
 
@@ -166,6 +168,7 @@ export const creatorAgentTriage = inngest.createFunction(
 
     const triageResult = await step.run("triage-bid", async () => {
       const { triageBidForCreator } = await import("@/lib/ai");
+      const { autoAcceptCutoff } = await import("@/lib/creator-agent-rules");
       return triageBidForCreator(
         { amountUsdc: bid.amountUsdc, message: bid.message ?? "", bidderAddress: bid.bidderAddress },
         {
@@ -173,7 +176,7 @@ export const creatorAgentTriage = inngest.createFunction(
           bio: profile.bio ?? undefined,
           tags: profile.tags,
           minBid: profile.minBid,
-          autoAcceptThreshold: profile.autoAcceptThreshold ?? 0,
+          autoAcceptCutoff: autoAcceptCutoff(profile.autoAcceptThreshold),
           autoReplyTemplate: profile.autoReplyTemplate,
           queueDepth,
         },
@@ -209,7 +212,8 @@ export const creatorAgentTriage = inngest.createFunction(
           data: { bidId, bidderUserId: bid.bidderUserId, counterOfferAmount: counterAmount },
         });
       }
-    } else if (triageResult.decision === "accept" && triageResult.draftedReply) {
+    } else if (triageResult.decision === "accept" && triageResult.draftedReply && triageResult.replySource === "template") {
+      // Only the creator's own saved template is ever sent automatically (D2).
       action = await step.run("auto-accept-bid", async () => {
         try {
           const { txId } = await submitSettlement({
@@ -217,7 +221,7 @@ export const creatorAgentTriage = inngest.createFunction(
             action: "accept",
             actorUserId: creatorUserId,
             reply: triageResult.draftedReply,
-            replySource: triageResult.replySource ?? "template",
+            replySource: "template",
           });
           return { submitted: true, txId };
         } catch (err) {
@@ -235,6 +239,15 @@ export const creatorAgentTriage = inngest.createFunction(
           throw err;
         }
       });
+    } else if (triageResult.decision === "surface" && triageResult.suggestedReply) {
+      // An AI draft for the creator to approve in their inbox (D2). Never sent from here.
+      const suggestedReply = triageResult.suggestedReply;
+      await step.run("save-suggested-reply", () =>
+        db
+          .update(bids)
+          .set({ suggestedReply })
+          .where(and(eq(bids.id, bidId), eq(bids.status, "pending"), isNull(bids.settlementTxHash))),
+      );
     }
     // "surface": score recorded above, left pending for the creator.
 
@@ -348,7 +361,9 @@ export const handleCounterOffer = inngest.createFunction(
       counterOfferAmount: string;
     };
 
-    const result = await step.run("place-counter-bid", async () => {
+    // The agent lease may be held by a run in progress: wait and try again (up to ~15
+    // minutes) instead of using up Inngest's retries. Unanswered counters still refund.
+    const answer = (attempt: number) => step.run(attempt === 0 ? "place-counter-bid" : `place-counter-bid-${attempt}`, async () => {
       const { bidderConfigs } = await import("@/lib/db/schema");
       const bid = await db.query.bids.findFirst({ where: eq(bids.id, bidId) });
       const config = await db.query.bidderConfigs.findFirst({ where: eq(bidderConfigs.userId, bidderUserId) });
@@ -356,6 +371,16 @@ export const handleCounterOffer = inngest.createFunction(
       // The creator may have accepted or declined the original in the meantime.
       if (bid.status !== "counter_offered" || bid.settlementTxHash) {
         return { decision: "skip", reason: `Original bid is ${bid.settlementTxHash ? "settling" : bid.status}` };
+      }
+      // A re-bid already met one counter: never climb again (the counter route refuses
+      // this too), or a creator could ratchet the price up to the bidder's cap.
+      if (bid.replacesBidId) return { decision: "skip", reason: "Counter on a re-bid; not answered" };
+      // Only the agent's own bids are answered from the agent wallet. A bid the user
+      // placed by hand is theirs to answer.
+      const { agentWallet } = await import("@/lib/wallets");
+      const agentW = await agentWallet(bidderUserId);
+      if (!agentW || agentW.address.toLowerCase() !== bid.bidderAddress.toLowerCase()) {
+        return { decision: "skip", reason: "Bid wasn't placed by the agent" };
       }
 
       // Same policy as the agent's own bids: a paused agent doesn't bid, and a counter
@@ -365,16 +390,14 @@ export const handleCounterOffer = inngest.createFunction(
       if (counterAmount > BigInt(config.maxBidPerCreator)) {
         return { decision: "reject", reason: "Counter offer is above your max bid per creator" };
       }
-      const today = new Date();
-      today.setUTCHours(0, 0, 0, 0);
-      const [spentRow] = await db
-        .select({ total: sql<string>`COALESCE(SUM(CAST(${bids.amountUsdc} AS BIGINT)), 0)` })
-        .from(bids)
-        .where(and(eq(bids.bidderUserId, bidderUserId), gte(bids.createdAt, today), ne(bids.status, "failed")));
-      const remaining = BigInt(config.dailyBudget) - BigInt(spentRow?.total ?? "0");
-      if (counterAmount > remaining) return { decision: "reject", reason: "Counter offer exceeds remaining daily budget" };
-
+      // Same lock as an agent run: the budget read and the re-bid must not interleave
+      // with another spend. Busy → throw, and Inngest retries in a moment.
+      const lease = await acquireAgentLease(bidderUserId);
+      if (!lease) return { decision: "busy", reason: "An agent run is in progress" };
       try {
+        const spent = await spentToday(bidderUserId);
+        const remaining = BigInt(config.dailyBudget) - spent;
+        if (counterAmount > remaining) return { decision: "reject", reason: "Counter offer exceeds remaining daily budget" };
         const intent = await createBidIntent({
           bidderUserId,
           creatorUserId: bid.creatorUserId,
@@ -387,14 +410,85 @@ export const handleCounterOffer = inngest.createFunction(
       } catch (err) {
         if (err instanceof BidError) return { decision: "reject", reason: err.message };
         throw err;
+      } finally {
+        await releaseAgentLease(bidderUserId, lease).catch(() => {});
       }
     });
 
+    let result = await answer(0);
+    for (let attempt = 1; result.decision === "busy" && attempt <= 15; attempt++) {
+      await step.sleep(`wait-for-agent-${attempt}`, "1m");
+      result = await answer(attempt);
+    }
     return result;
   },
 );
 
+// ─── Money health check ──────────────────────────────────────────────────────
+// Hourly quick checks; the full escrow check (reads every bid on Arc) once a day at
+// 06:40 UTC. Read-only. Emails ALERT_EMAIL when anything needs a person (lib/health.ts,
+// docs/RUNBOOK.md). Run it by hand: send "attnn/admin.health-check" with { "full": true }.
+export const moneyHealthCheck = inngest.createFunction(
+  {
+    id: "money-health-check",
+    name: "Money Health Check",
+    concurrency: 1,
+    retries: 2,
+    // A check that can't run is itself a problem: say so instead of going quiet.
+    onFailure: async ({ error }) => {
+      const { sendAlert } = await import("@/lib/alerts");
+      await sendAlert("Money health check failed to run", [
+        `The health check stopped with: ${error.message}`,
+        "Until it runs again, problems with escrowed USDC won't be reported. See docs/RUNBOOK.md.",
+      ]);
+    },
+  },
+  [{ cron: "40 * * * *" }, { event: "attnn/admin.health-check" }],
+  async ({ event, step }) => {
+    const health = await import("@/lib/health");
+    const { sendAlert } = await import("@/lib/alerts");
+    const manualFull = (event?.data as { full?: boolean } | undefined)?.full === true;
+    const full = manualFull || new Date().getUTCHours() === 6;
+
+    const quick = await step.run("quick", () => health.quickHealthCheck());
+    await step.run("prune-rate-limits", () => health.pruneRateLimits());
+
+    let daily: { problems: string[]; notes: string[] } = { problems: [], notes: [] };
+    if (full) {
+      // Every on-chain read is pinned to one block and split into small steps, so the
+      // check stays consistent and within time limits as the escrow grows.
+      const snap = await step.run("snapshot", () => health.snapshotBlock());
+      const counts = await step.run("bid-counts", () => health.escrowBidCounts(snap));
+      const chainBids: Awaited<ReturnType<typeof health.readEscrowBids>> = [];
+      for (const { escrow, count } of counts) {
+        for (let from = 1; from <= count; from += health.BIDS_PER_STEP) {
+          const to = Math.min(count, from + health.BIDS_PER_STEP - 1);
+          chainBids.push(...(await step.run(`read-${escrow.slice(2, 10)}-${from}`, () => health.readEscrowBids(escrow, from, to, snap))));
+        }
+      }
+      daily = await step.run("evaluate", () => health.evaluateFullHealth(chainBids, snap));
+    }
+    const problems = [...quick.problems, ...daily.problems];
+    const notes = [...quick.notes, ...daily.notes];
+
+    if (problems.length) {
+      await step.run("alert", () =>
+        sendAlert(`${problems.length} money problem(s) need attention`, [
+          ...problems.map((p) => `PROBLEM: ${p}`),
+          ...notes.map((n) => `note: ${n}`),
+          "",
+          "What to do: docs/RUNBOOK.md in the attnn repo.",
+        ]),
+      );
+    } else if (manualFull) {
+      await step.run("all-clear", () => sendAlert("Health check passed", notes.length ? notes : ["No problems found."]));
+    }
+    return { full, problems, notes };
+  },
+);
+
 export const functions = [
+  moneyHealthCheck,
   autoRefund,
   activityFeed,
   bidExpiryNotification,

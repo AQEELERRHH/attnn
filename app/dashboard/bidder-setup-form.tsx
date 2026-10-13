@@ -2,9 +2,10 @@
 
 import * as React from "react";
 import { Button } from "@/components/ui/button";
-import { Panel } from "@/components/market";
+import { FieldHint, Panel, SecurityCodeField, isSecurityCode } from "@/components/market";
+import { glossary } from "@/lib/glossary";
 import { toast } from "@/hooks/use-toast";
-import { ESCROW_MAX_BID, ESCROW_MIN_BID } from "@/lib/bid-rules";
+import { ESCROW_MAX_BID, ESCROW_MIN_BID, formatUsd } from "@/lib/bid-rules";
 import { atomicToDollarInput, dollarsToAtomic } from "@/lib/format";
 import { fieldClass, labelClass } from "./creator-setup-form";
 import type { BidderConfigData } from "./types";
@@ -32,19 +33,28 @@ export function BidderSetupForm({
   const [defaultMessage, setDefaultMessage] = React.useState(existingConfig?.defaultMessage ?? "");
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState("");
+  /** Raising the budget or cap needs the emailed code (D4). */
+  const [codeSentTo, setCodeSentTo] = React.useState<string | null>(null);
+  const [code, setCode] = React.useState("");
+  // A code approves one exact pair of limits: changing them starts over.
+  React.useEffect(() => {
+    setCodeSentTo(null);
+    setCode("");
+  }, [dailyBudget, maxBid, searchTags, minFitScore, goal]);
 
   const budget = dollarsToAtomic(dailyBudget);
   const cap = dollarsToAtomic(maxBid);
   const score = Number(minFitScore);
-  const budgetError = budget === null ? "Enter an amount like 50." : budget < ESCROW_MIN_BID ? "At least $5.00." : null;
+  const budgetError = budget === null ? "Enter an amount like 50." : budget < ESCROW_MIN_BID ? `At least ${formatUsd(ESCROW_MIN_BID)}.` : null;
   const capError =
-    cap === null ? "Enter an amount like 20." : cap < ESCROW_MIN_BID || cap > ESCROW_MAX_BID ? "Between $5.00 and $1,000.00." : null;
+    cap === null ? "Enter an amount like 20." : cap < ESCROW_MIN_BID || cap > ESCROW_MAX_BID ? `Between ${formatUsd(ESCROW_MIN_BID)} and $1,000.00.` : null;
   const scoreError = !Number.isInteger(score) || score < 0 || score > 10 ? "A whole number from 0 to 10." : null;
   const invalid = !!(budgetError || capError || scoreError);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (invalid || budget === null || cap === null) return;
+    if (codeSentTo && !isSecurityCode(code)) return;
     setLoading(true);
     setError("");
     try {
@@ -59,10 +69,14 @@ export function BidderSetupForm({
           maxBidPerCreator: cap.toString(),
           agentName: agentName || null,
           defaultMessage: defaultMessage || null,
+          ...(codeSentTo ? { code: code.trim() } : {}),
         }),
       });
       const data = await res.json().catch(() => ({}));
-      if (data.success) {
+      if (data.needsCode) {
+        setCodeSentTo(String(data.sentTo ?? "your email"));
+        setError("");
+      } else if (data.success) {
         toast({ title: existingConfig ? "Strategy saved" : "Bidder agent created", variant: "success" });
         onComplete();
       } else {
@@ -93,7 +107,17 @@ export function BidderSetupForm({
           <label htmlFor="bs-tags" className={labelClass}>
             Search tags (comma-separated)
           </label>
-          <input id="bs-tags" className={fieldClass} placeholder="ai, crypto, defi" value={searchTags} onChange={(e) => setSearchTags(e.target.value)} />
+          <input
+            id="bs-tags"
+            className={fieldClass}
+            placeholder="ai, crypto, defi"
+            value={searchTags}
+            onChange={(e) => setSearchTags(e.target.value)}
+            aria-describedby="bs-tags-hint"
+          />
+          <FieldHint id="bs-tags-hint" more={glossary.searchTags}>
+            Topics your agent looks for.
+          </FieldHint>
         </div>
         <div className="sm:col-span-2">
           <label htmlFor="bs-goal" className={labelClass}>
@@ -111,18 +135,46 @@ export function BidderSetupForm({
           <label htmlFor="bs-budget" className={labelClass}>
             Daily budget (USDC)
           </label>
-          <input id="bs-budget" inputMode="decimal" className={`${fieldClass} num`} value={dailyBudget} onChange={(e) => setDailyBudget(e.target.value)} />
-          {budgetError ? <p className="mt-1 text-xs text-arc-coral">{budgetError}</p> : <p className="mt-1 text-xs text-text-secondary">Resets at 00:00 UTC.</p>}
+          <input
+            id="bs-budget"
+            inputMode="decimal"
+            className={`${fieldClass} num`}
+            value={dailyBudget}
+            onChange={(e) => setDailyBudget(e.target.value)}
+            aria-invalid={!!budgetError}
+            aria-describedby="bs-budget-hint"
+          />
+          {budgetError ? (
+            <p id="bs-budget-hint" className="mt-1 text-xs text-arc-coral">
+              {budgetError}
+            </p>
+          ) : (
+            <FieldHint id="bs-budget-hint" more={glossary.dailyBudget}>
+              The most your agent spends in a day. Resets at 00:00 UTC.
+            </FieldHint>
+          )}
         </div>
         <div>
           <label htmlFor="bs-cap" className={labelClass}>
             Max bid per creator (USDC)
           </label>
-          <input id="bs-cap" inputMode="decimal" className={`${fieldClass} num`} value={maxBid} onChange={(e) => setMaxBid(e.target.value)} />
+          <input
+            id="bs-cap"
+            inputMode="decimal"
+            className={`${fieldClass} num`}
+            value={maxBid}
+            onChange={(e) => setMaxBid(e.target.value)}
+            aria-invalid={!!capError}
+            aria-describedby="bs-cap-hint"
+          />
           {capError ? (
-            <p className="mt-1 text-xs text-arc-coral">{capError}</p>
+            <p id="bs-cap-hint" className="mt-1 text-xs text-arc-coral">
+              {capError}
+            </p>
           ) : (
-            <p className="mt-1 text-xs text-text-secondary">Creators whose floor is above this are skipped.</p>
+            <FieldHint id="bs-cap-hint" more={glossary.maxBidPerCreator}>
+              The most it offers any one creator.
+            </FieldHint>
           )}
         </div>
         <div>
@@ -138,8 +190,18 @@ export function BidderSetupForm({
             className={`${fieldClass} num`}
             value={minFitScore}
             onChange={(e) => setMinFitScore(e.target.value)}
+            aria-invalid={!!scoreError}
+            aria-describedby="bs-score-hint"
           />
-          {scoreError && <p className="mt-1 text-xs text-arc-coral">{scoreError}</p>}
+          {scoreError ? (
+            <p id="bs-score-hint" className="mt-1 text-xs text-arc-coral">
+              {scoreError}
+            </p>
+          ) : (
+            <FieldHint id="bs-score-hint" more={glossary.fitScore}>
+              Higher means pickier. 5 is a good start.
+            </FieldHint>
+          )}
         </div>
         <div>
           <label htmlFor="bs-msg" className={labelClass}>
@@ -153,6 +215,16 @@ export function BidderSetupForm({
             onChange={(e) => setDefaultMessage(e.target.value)}
           />
         </div>
+        {codeSentTo && (
+          <SecurityCodeField
+            id="bs-code"
+            className="sm:col-span-2"
+            sentTo={codeSentTo}
+            value={code}
+            onChange={setCode}
+            reason="Raising your agent's budget or per-creator maximum, or changing which creators it bids on, needs your approval."
+          />
+        )}
         {error && (
           <p role="alert" className="text-sm text-arc-coral sm:col-span-2">
             {error}
@@ -165,7 +237,7 @@ export function BidderSetupForm({
             </Button>
           )}
           <Button type="submit" className="flex-1" disabled={loading || invalid}>
-            {loading ? "Saving…" : existingConfig ? "Save strategy" : "Create agent"}
+            {loading ? "Saving…" : codeSentTo ? "Approve & save" : existingConfig ? "Save strategy" : "Create agent"}
           </Button>
         </div>
         {!existingConfig && (

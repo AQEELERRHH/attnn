@@ -18,7 +18,7 @@ import type { Hex } from "viem";
 import { db } from "./db/client";
 import { bids } from "./db/schema";
 import { escrowAbi, publicClient } from "./arc";
-import { readEscrowBid } from "./escrow";
+import { messageFingerprint, readEscrowBid } from "./escrow";
 import { knownEscrowAddresses } from "./chain";
 
 const lower = (a: string) => a.toLowerCase();
@@ -30,7 +30,22 @@ export interface OnChainEntry {
   amount: string;
   /** Escrow status: 0 Pending, 1 Accepted, 2 Rejected, 3 Refunded. */
   status: number;
+  /** v2: the bid's message fingerprint (null on v1). */
+  messageHash?: string | null;
 }
+
+/**
+ * Whether a row's expected message fingerprint (lib/escrow.ts messageFingerprint) is
+ * consistent with an on-chain bid. Decides only when both are known, so bids with the
+ * same bidder, creator and amount are told apart on v2 escrows (CertiK finding 2).
+ */
+const hashAgrees = (rowHash: string | null | undefined, e: OnChainEntry) =>
+  !rowHash || !e.messageHash || lower(rowHash) === lower(e.messageHash);
+
+const withExpectedHash = <T extends { message: string | null; messageSalt: string | null; createdAt: Date }>(r: T) => {
+  const { message, messageSalt, createdAt, ...rest } = r;
+  return { ...rest, createdAt: createdAt.toISOString(), messageHash: messageFingerprint({ message, messageSalt }) };
+};
 
 /**
  * Every bid in every known escrow (ids run 1..getBidCount()), grouped by bidder.
@@ -43,7 +58,14 @@ export async function indexOnChainBids(): Promise<Record<string, OnChainEntry[]>
     for (let i = BigInt(1); i <= count; i++) {
       const b = await readEscrowBid(escrow, i);
       const bidder = lower(b.bidder);
-      (index[bidder] ??= []).push({ escrow, id: i.toString(), creator: lower(b.creator), amount: b.amount.toString(), status: b.status });
+      (index[bidder] ??= []).push({
+        escrow,
+        id: i.toString(),
+        creator: lower(b.creator),
+        amount: b.amount.toString(),
+        status: b.status,
+        messageHash: b.messageHash,
+      });
     }
   }
   return index;
@@ -57,6 +79,8 @@ export interface OpenRow {
   escrowAddress: string | null;
   onChainBidId: string | null;
   createdAt: string;
+  /** The message fingerprint this row's bid was placed with, when it has a salt. */
+  messageHash?: string | null;
 }
 
 export type Verdict =
@@ -72,7 +96,8 @@ export function classifyOpenRows(rows: OpenRow[], index: Record<string, OnChainE
   const key = (escrow: string, id: string) => `${lower(escrow)}:${id}`;
   const out = new Map<string, Verdict>();
   const claimed = new Set<string>();
-  const matches = (row: OpenRow, e: OnChainEntry) => e.creator === lower(row.creatorAddress) && e.amount === row.amountUsdc;
+  const matches = (row: OpenRow, e: OnChainEntry) =>
+    e.creator === lower(row.creatorAddress) && e.amount === row.amountUsdc && hashAgrees(row.messageHash, e);
 
   // 1. Rows whose recorded (escrow, id) — or, for NULL escrow, (any escrow, id) — is really their bid.
   const unresolved: OpenRow[] = [];
@@ -121,9 +146,9 @@ export const PHANTOM_REASON = "Never escrowed on-chain (recorded before the sett
 export async function loadOpenRows(): Promise<OpenRow[]> {
   const rows = await db.query.bids.findMany({
     where: and(inArray(bids.status, ["pending", "counter_offered"]), isNull(bids.settlementTxHash)),
-    columns: { id: true, bidderAddress: true, creatorAddress: true, amountUsdc: true, escrowAddress: true, onChainBidId: true, createdAt: true },
+    columns: { id: true, bidderAddress: true, creatorAddress: true, amountUsdc: true, escrowAddress: true, onChainBidId: true, createdAt: true, message: true, messageSalt: true },
   });
-  return rows.map((r) => ({ ...r, createdAt: r.createdAt.toISOString() }));
+  return rows.map(withExpectedHash);
 }
 
 /** Writes one verdict. Each update re-checks the row is still open and untouched. */
@@ -164,6 +189,8 @@ export interface ClosedRow {
   escrowAddress: string | null;
   onChainBidId: string | null;
   createdAt: string;
+  /** The message fingerprint this row's bid was placed with, when it has a salt. */
+  messageHash?: string | null;
 }
 
 export interface OrphanReport {
@@ -192,6 +219,7 @@ export function findOrphans(index: Record<string, OnChainEntry[]>, claimed: Set<
             lower(r.bidderAddress) === bidder &&
             lower(r.creatorAddress) === e.creator &&
             r.amountUsdc === e.amount &&
+            hashAgrees(r.messageHash, e) &&
             (!r.escrowAddress || lower(r.escrowAddress) === lower(e.escrow)),
         )
         .sort((a, b) => Number(b.onChainBidId === e.id) - Number(a.onChainBidId === e.id) || a.createdAt.localeCompare(b.createdAt));
@@ -222,9 +250,9 @@ export async function loadClosedRows(bidders: string[]): Promise<ClosedRow[]> {
       isNull(bids.settlementOnChainTxHash),
       inArray(sql`lower(${bids.bidderAddress})`, bidders.map(lower)),
     ),
-    columns: { id: true, status: true, bidderAddress: true, creatorAddress: true, amountUsdc: true, escrowAddress: true, onChainBidId: true, createdAt: true },
+    columns: { id: true, status: true, bidderAddress: true, creatorAddress: true, amountUsdc: true, escrowAddress: true, onChainBidId: true, createdAt: true, message: true, messageSalt: true },
   });
-  return rows.map((r) => ({ ...r, createdAt: r.createdAt.toISOString() }));
+  return rows.map(withExpectedHash);
 }
 
 /**

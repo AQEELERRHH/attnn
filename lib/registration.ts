@@ -180,27 +180,62 @@ export async function loadRegisteringUserIds(): Promise<string[]> {
   return rows.map((r) => r.userId);
 }
 
+const registryHas = new Map<string, Promise<boolean>>();
+
+/** Tests only: forget what the registry's bytecode was found to support. */
+export function clearRegistryFeatureCache(): void {
+  registryHas.clear();
+}
+
+/** Whether the deployed registry's bytecode contains this function. Cached per signature; a failed read is retried next time. */
+function registrySupports(signature: string): Promise<boolean> {
+  const registry = registryAddress();
+  if (!registry) return Promise.resolve(false);
+  const cached = registryHas.get(signature);
+  if (cached) return cached;
+  const check = publicClient
+    .getCode({ address: registry })
+    .then((code) => {
+      const selector = toFunctionSelector(signature).slice(2).toLowerCase();
+      return !!code && code.toLowerCase().includes(selector);
+    })
+    .catch((err) => {
+      registryHas.delete(signature); // try again next time
+      console.warn("registry: could not read bytecode", err instanceof Error ? err.message : err);
+      return false;
+    });
+  registryHas.set(signature, check);
+  return check;
+}
+
 /**
  * Whether the deployed registry has updateProfile(). The original testnet registry
  * doesn't (tags and floor were fixed at registration); registries deployed from the
  * current source do. Detected from the bytecode, so no extra setting is needed.
  */
-let updatesSupported: Promise<boolean> | null = null;
 export function registrySupportsUpdates(): Promise<boolean> {
-  const registry = registryAddress();
-  if (!registry) return Promise.resolve(false);
-  updatesSupported ??= publicClient
-    .getCode({ address: registry })
-    .then((code) => {
-      const selector = toFunctionSelector("updateProfile(uint256,string[],string)").slice(2).toLowerCase();
-      return !!code && code.toLowerCase().includes(selector);
-    })
-    .catch((err) => {
-      updatesSupported = null; // try again next time
-      console.warn("registry: could not read bytecode", err instanceof Error ? err.message : err);
-      return false;
+  return registrySupports("updateProfile(uint256,string[],string)");
+}
+
+/**
+ * The creator's minimum bid as the registry has it, which the escrow enforces on
+ * registries deployed from current source (mainnet). null when the registry predates
+ * minBidOf (original testnet) or can't be read right now: the contract still refuses
+ * a bid below it, so a failed read only loses the friendly early message.
+ */
+export async function registryMinBid(creatorAddress: string): Promise<bigint | null> {
+  try {
+    if (!(await registrySupports("minBidOf(address)"))) return null;
+    return await publicClient.readContract({
+      address: registryAddress()!,
+      abi: registryAbi,
+      functionName: "minBidOf",
+      args: [creatorAddress as `0x${string}`],
     });
-  return updatesSupported;
+  } catch (err) {
+    console.warn("registry: could not read the creator's minimum", err instanceof Error ? err.message : err);
+    return null;
+  }
 }
 
 export type RegistrySync = "sent" | "unsupported" | "not_registered" | "failed";

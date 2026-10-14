@@ -218,4 +218,35 @@ contract AttnnRegistryTest is Test {
     }
 
     event CreatorUpdated(address indexed creator, uint256 minBid);
+
+    // ─── minBidOf and bounded tag reads (CertiK findings 1 and 4) ───────────
+
+    function test_MinBidOf_TracksTheProfile() public {
+        string[] memory tags = new string[](1);
+        tags[0] = "ai";
+        assertEq(registry.minBidOf(address(this)), 0, "unregistered");
+        registry.registerCreator("alice", 10 * 10**6, tags, "");
+        assertEq(registry.minBidOf(address(this)), 10 * 10**6);
+        registry.updateProfile(25 * 10**6, tags, "");
+        assertEq(registry.minBidOf(address(this)), 25 * 10**6);
+    }
+
+    function test_CreatorsByTagPage() public {
+        string[] memory tags = new string[](1);
+        tags[0] = "ai";
+        string[3] memory handles = ["a1", "a2", "a3"];
+        address[3] memory who = [makeAddr("c1"), makeAddr("c2"), makeAddr("c3")];
+        for (uint256 i = 0; i < 3; i++) {
+            vm.prank(who[i]);
+            registry.registerCreator(handles[i], 10 * 10**6, tags, "");
+        }
+        assertEq(registry.getTagCreatorCount("ai"), 3);
+        address[] memory p = registry.getCreatorsByTagPage("ai", 1, 5);
+        assertEq(p.length, 2);
+        assertEq(p[0], who[1]);
+        assertEq(p[1], who[2]);
+        assertEq(registry.getCreatorsByTagPage("ai", 3, 5).length, 0);
+        assertEq(registry.getCreatorsByTagPage("ai", 0, type(uint256).max).length, 3);
+        assertEq(registry.getCreatorsByTagPage("none", 0, 5).length, 0);
+    }
 }

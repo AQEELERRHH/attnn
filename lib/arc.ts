@@ -125,6 +125,14 @@ export const registryAbi = [
     stateMutability: "view",
   },
   {
+    // Registries deployed from current source only (mainnet); the escrow refuses bids below it.
+    type: "function",
+    name: "minBidOf",
+    inputs: [{ name: "creator", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "view",
+  },
+  {
     type: "event",
     name: "CreatorRegistered",
     inputs: [

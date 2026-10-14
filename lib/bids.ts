@@ -25,6 +25,7 @@ import {
   escrowAbiFor,
   escrowVersion,
   matchesFingerprint,
+  messageHashAgrees,
   newSalt,
   readEscrowBid,
   type EscrowBidView,
@@ -47,6 +48,7 @@ import {
 import { inngest } from "./inngest";
 import { PAUSED_MESSAGE, bidsPaused } from "./app-settings";
 import { assertWithinAllowance, lockAllowance, type ApproveOverAllowance } from "./withdrawals";
+import { registryMinBid } from "./registration";
 
 export type BidRow = typeof bids.$inferSelect;
 export type SettlementAction = "accept" | "reject" | "refund";
@@ -129,6 +131,14 @@ export async function createBidIntent(input: BidIntentInput): Promise<BidRow> {
   }
   if (!creatorWallet) throw new BidError("Creator has no wallet", 404);
 
+  // The escrow enforces the creator's minimum as the registry has it (CertiK finding 4).
+  // If saving a new, lower floor to Arc hasn't gone through yet, say so now rather
+  // than let the placement revert.
+  const chainFloor = await registryMinBid(creatorWallet.address);
+  if (chainFloor !== null && amount < chainFloor) {
+    throw new BidError(`This creator's minimum on Arc is still ${formatUsd(chainFloor)}. Bid at least that, or try again in a few minutes.`);
+  }
+
   // Fail fast on an underfunded wallet instead of burning a reverted transaction.
   // Arc gas is also paid in USDC, so the wallet needs a little more than the bid.
   try {
@@ -157,7 +167,9 @@ export async function createBidIntent(input: BidIntentInput): Promise<BidRow> {
     amountUsdc: amount.toString(),
     message: input.message || null,
     // The message's on-chain fingerprint is keccak256(salt ‖ message) (lib/escrow.ts).
-    messageSalt: input.message ? newSalt() : null,
+    // Every bid gets a salt, even with no message, so each bid's fingerprint is unique
+    // and identifies it among identical (bidder, creator, amount) bids (CertiK finding 2).
+    messageSalt: newSalt(),
     isPrivate: input.isPrivate ?? false,
     score: input.score ?? null,
     status: "placing" as const,
@@ -365,12 +377,20 @@ const CHAIN_FINAL: Record<number, BidRow["status"]> = {
   [ONCHAIN_STATUS.Refunded]: "refunded",
 };
 
-/** True when the escrow's bid N is this row's bid (ids restart at 1 in every deployment). */
-function sameBid(onChain: EscrowBidView, bid: Pick<BidRow, "bidderAddress" | "creatorAddress" | "amountUsdc">): boolean {
+/**
+ * True when the escrow's bid N is this row's bid (ids restart at 1 in every deployment).
+ * On a v2 escrow the message fingerprint must match too, so a stale or wrong id can't
+ * point at another bid with the same bidder, creator and amount (CertiK finding 2).
+ */
+function sameBid(
+  onChain: EscrowBidView,
+  bid: Pick<BidRow, "bidderAddress" | "creatorAddress" | "amountUsdc" | "message" | "messageSalt">,
+): boolean {
   return (
     lower(onChain.bidder) === lower(bid.bidderAddress) &&
     lower(onChain.creator) === lower(bid.creatorAddress) &&
-    onChain.amount.toString() === bid.amountUsdc
+    onChain.amount.toString() === bid.amountUsdc &&
+    messageHashAgrees(onChain.messageHash, bid)
   );
 }
 

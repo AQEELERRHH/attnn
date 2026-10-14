@@ -161,6 +161,7 @@ export async function readEscrowBids(escrow: string, from: number, to: number, s
           creator: b.creator.toLowerCase(),
           amount: b.amount.toString(),
           status: b.status,
+          messageHash: b.messageHash,
           replyHash: b.replyHash,
         };
       }),
@@ -182,7 +183,7 @@ export async function evaluateFullHealth(chainBids: ChainBid[], snap: HealthSnap
   const asOf = new Date(snap.blockTime);
 
   const index: Record<string, OnChainEntry[]> = {};
-  for (const b of chainBids) (index[b.bidder] ??= []).push({ escrow: b.escrow, id: b.id, creator: b.creator, amount: b.amount, status: b.status });
+  for (const b of chainBids) (index[b.bidder] ??= []).push({ escrow: b.escrow, id: b.id, creator: b.creator, amount: b.amount, status: b.status, messageHash: b.messageHash });
 
   const pendingOnChain = chainBids.filter((e) => e.status === 0 && e.escrow.toLowerCase() === escrow);
   const owed = pendingOnChain.reduce((s, e) => s + BigInt(e.amount), BigInt(0));

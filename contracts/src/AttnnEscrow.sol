@@ -102,6 +102,11 @@ contract AttnnEscrow is IAttnnEscrow {
         );
         require(success && data.length == 32 && abi.decode(data, (bool)), "AttnnEscrow: creator not active");
 
+        // The creator's own minimum, not just the global one
+        (success, data) = registry.staticcall(abi.encodeWithSignature("minBidOf(address)", creator));
+        require(success && data.length == 32, "AttnnEscrow: creator minimum unavailable");
+        require(amount >= abi.decode(data, (uint256)), "AttnnEscrow: amount below creator's minimum");
+
         // Record the bid before pulling the USDC (checks-effects-interactions).
         bidId = ++_bidCounter;
         Bid storage newBid = _bids[bidId];
@@ -249,6 +254,33 @@ contract AttnnEscrow is IAttnnEscrow {
     /// @inheritdoc IAttnnEscrow
     function getBidderBids(address bidder) external view override returns (uint256[] memory) {
         return _bidderBids[bidder];
+    }
+
+    /// @notice Number of bids ever placed to `creator`
+    function getCreatorBidCount(address creator) external view returns (uint256) {
+        return _creatorBids[creator].length;
+    }
+
+    /// @notice Number of bids ever placed by `bidder`
+    function getBidderBidCount(address bidder) external view returns (uint256) {
+        return _bidderBids[bidder].length;
+    }
+
+    /// @notice Up to `limit` of `creator`'s bid ids, oldest first, from `offset`
+    function getCreatorBidsPage(address creator, uint256 offset, uint256 limit) external view returns (uint256[] memory) {
+        return _page(_creatorBids[creator], offset, limit);
+    }
+
+    /// @notice Up to `limit` of `bidder`'s bid ids, oldest first, from `offset`
+    function getBidderBidsPage(address bidder, uint256 offset, uint256 limit) external view returns (uint256[] memory) {
+        return _page(_bidderBids[bidder], offset, limit);
+    }
+
+    function _page(uint256[] storage all, uint256 offset, uint256 limit) private view returns (uint256[] memory page) {
+        if (offset >= all.length) return new uint256[](0);
+        uint256 end = all.length - offset < limit ? all.length : offset + limit;
+        page = new uint256[](end - offset);
+        for (uint256 i = offset; i < end; i++) page[i - offset] = all[i];
     }
 
     /// @inheritdoc IAttnnEscrow

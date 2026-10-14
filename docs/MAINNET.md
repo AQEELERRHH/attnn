@@ -52,8 +52,9 @@ here runs automatically; contract deploys and database changes need the owner's 
       (tx `0x3bb5b731…f4137aa37`), AttnnEscrow `0xFF00aA5414e205367aF5DD29927E23a1CCF3bAD8`
       (tx `0x4102d7e0…c619b8ee1aea`), owner `0xF326854e41AB46366E1b4711C2a8653ea2bfE253`,
       `MIN_BID` 1000000, `REFUND_PERIOD` 259200. The deployer key has no role afterwards.
-- [ ] Verify the source on the explorer (https://explorer.arc.io), so its "Write contract" tab can
-      call `pause()`; record the addresses in README and Vercel.
+- [x] Source verified on https://explorer.arc.io (exact match, Standard JSON input, solc 0.8.30,
+      optimizer 200, via-IR, cancun, MIT) for both contracts, so "Read/Write contract" can call
+      `pause()`. Addresses recorded in README; Vercel still to do (section 3).
 - [ ] From the admin wallet, rehearse once: `scripts/escrow-admin.mjs pause`, check a bid is
       refused, then `unpause`.
 - [ ] **Audit (decision D6): open launch, audited soon after.** Mainnet opens to everyone; the

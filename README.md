@@ -480,6 +480,17 @@ OpenAPI spec: included in this repository as attnn_openapi.json.
 
 ---
 
+## Contract Addresses (Arc mainnet, chain 5042)
+
+Deployed 14 Oct 2026 (block 25927568) from `contracts/src` after the CertiK AI scan. Escrow v2: message/reply fingerprints only, $1 minimum, each creator's own floor enforced, 3-day refund window, pause for new bids only.
+
+| Contract | Address |
+|---|---|
+| AttnnRegistry | `0x024Bd6D6bdD990274Be4e99F919e7D71349782D8` |
+| AttnnEscrow | `0xFF00aA5414e205367aF5DD29927E23a1CCF3bAD8` |
+| Escrow admin (can pause new bids only) | `0xF326854e41AB46366E1b4711C2a8653ea2bfE253` |
+| USDC (Arc) | `0x3600000000000000000000000000000000000000` |
+
 ## Contract Addresses (Arc Testnet)
 
 | Contract | Address |

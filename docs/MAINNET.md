@@ -47,10 +47,11 @@ here runs automatically; contract deploys and database changes need the owner's 
       founder separately from Attnn. and Circle; no key in `.env` or on the server. Keep a little
       USDC in it for gas. Move the role to a hardware wallet or multisig later with the two-step
       handover.
-- [ ] **Deploy** (owner's go-ahead): fund a fresh deployer key with a little USDC for gas, then
-      `ESCROW_ADMIN_ADDRESS=<admin address> ARC_RPC_DEPLOY=https://rpc.mainnet.arc.io npm run deploy:contracts`.
-      The script refuses a zero admin or the deployer's own address. Run once without
-      `--broadcast` first (`forge script … --rpc-url $ARC_RPC_DEPLOY`) to see the simulation.
+- [x] **Deployed 14 Oct 2026** (block 25927568, gas ≈ $0.05; practice run first, 51 Foundry tests
+      green on the deploying machine): AttnnRegistry `0x024Bd6D6bdD990274Be4e99F919e7D71349782D8`
+      (tx `0x3bb5b731…f4137aa37`), AttnnEscrow `0xFF00aA5414e205367aF5DD29927E23a1CCF3bAD8`
+      (tx `0x4102d7e0…c619b8ee1aea`), owner `0xF326854e41AB46366E1b4711C2a8653ea2bfE253`,
+      `MIN_BID` 1000000, `REFUND_PERIOD` 259200. The deployer key has no role afterwards.
 - [ ] Verify the source on the explorer (https://explorer.arc.io), so its "Write contract" tab can
       call `pause()`; record the addresses in README and Vercel.
 - [ ] From the admin wallet, rehearse once: `scripts/escrow-admin.mjs pause`, check a bid is

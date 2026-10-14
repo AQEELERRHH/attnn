@@ -55,8 +55,10 @@ here runs automatically; contract deploys and database changes need the owner's 
 - [x] Source verified on https://explorer.arc.io (exact match, Standard JSON input, solc 0.8.30,
       optimizer 200, via-IR, cancun, MIT) for both contracts, so "Read/Write contract" can call
       `pause()`. Addresses recorded in README; Vercel still to do (section 3).
-- [ ] From the admin wallet, rehearse once: `scripts/escrow-admin.mjs pause`, check a bid is
-      refused, then `unpause`.
+- [x] Pause rehearsed from the admin wallet on 14 Oct 2026 via the explorer's Write contract tab:
+      `pause()` (tx `0x84a7cf11…c0778cfd9`, success) then `unpause()`; `paused` = false, `owner` =
+      the admin wallet, no handover open. (Refusal of a bid while paused is covered by the Foundry
+      tests `test_Pause_BlocksNewBidsOnly` and the fuzz test.)
 - [ ] **Audit (decision D6): open launch, audited soon after.** Mainnet opens to everyone; the
       contracts are not human-audited at launch. Before the deploy: run the CertiK AI scan on the
       final `contracts/src/` and fix what's real. Straight after: ask Circle and Encode about audit

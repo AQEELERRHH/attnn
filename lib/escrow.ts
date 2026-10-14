@@ -81,8 +81,32 @@ export function placeBidArgs(
   bid: { creator: string; amount: string; message: string | null; messageSalt: string | null },
 ): unknown[] {
   if (version === 1) return [bid.creator, bid.amount, "", true];
-  const hash = bid.message && bid.messageSalt ? fingerprint(bid.messageSalt as Hex, bid.message) : zeroHash;
-  return [bid.creator, bid.amount, hash];
+  return [bid.creator, bid.amount, messageFingerprint(bid) ?? zeroHash];
+}
+
+/**
+ * The messageHash a v2 escrow holds for this bid row: keccak256(salt ‖ message), with
+ * an empty message when there is none. Every bid created since CertiK finding 2 has a
+ * salt, so the hash is unique per bid and tells apart bids with the same bidder,
+ * creator and amount. null for older rows without a salt (sent as zero).
+ */
+export function messageFingerprint(bid: { message: string | null; messageSalt: string | null }): Hex | null {
+  if (!bid.messageSalt) return null;
+  return fingerprint(bid.messageSalt as Hex, bid.message ?? "");
+}
+
+/**
+ * Whether an on-chain bid's messageHash is consistent with this row. Only decides when
+ * both sides have one (v2 escrow, salted row); otherwise bidder, creator and amount
+ * have to do, as before.
+ */
+export function messageHashAgrees(
+  onChainMessageHash: string | null | undefined,
+  bid: { message: string | null; messageSalt: string | null },
+): boolean {
+  const expected = messageFingerprint(bid);
+  if (!expected || !onChainMessageHash) return true;
+  return expected.toLowerCase() === onChainMessageHash.toLowerCase();
 }
 
 /** acceptBid arguments: v2 sends only the reply's fingerprint, v1 the text. */
@@ -99,6 +123,8 @@ export interface EscrowBidView {
   /** 0 Pending, 1 Accepted, 2 Rejected, 3 Refunded */
   status: number;
   createdAt: bigint;
+  /** v2: the bid message's fingerprint as placed (zero hash = none was sent); v1: null. */
+  messageHash: Hex | null;
   /** v2: the accepted reply's fingerprint (null if none). */
   replyHash: Hex | null;
   /** v1: the accepted reply's text (null if none). */
@@ -124,6 +150,7 @@ export async function readEscrowBid(escrow: string, onChainBidId: string | bigin
     amount: raw[2],
     status: Number(raw[5]),
     createdAt: raw[6],
+    messageHash: version === 2 ? (raw[3] as Hex) : null,
     replyHash: version === 2 && reply && reply !== zeroHash ? (reply as Hex) : null,
     replyText: version === 1 && reply ? reply : null,
   };

@@ -312,11 +312,12 @@ describe("bids: placement, settlement and the races around them", () => {
     assert.equal(r.reply, null, "never show a reply that isn't the one paid for");
   });
 
-  test("D1: a bid's message gets a salt; a bid without one doesn't", async () => {
+  test("D1: every bid gets its own salt, with or without a message (CertiK finding 2)", async () => {
     const withMsg = await createBidIntent({ bidderUserId: ids.bidder, creatorUserId: ids.creator, amountUsdc: "10000000", message: "hello there" });
     const without = await createBidIntent({ bidderUserId: ids.bidder, creatorUserId: ids.creator, amountUsdc: "10000000" });
     assert.match(withMsg.messageSalt ?? "", /^0x[0-9a-f]{64}$/);
-    assert.equal(without.messageSalt, null);
+    assert.match(without.messageSalt ?? "", /^0x[0-9a-f]{64}$/);
+    assert.notEqual(withMsg.messageSalt, without.messageSalt);
   });
 
   // ── D5: the escrow's own pause ──

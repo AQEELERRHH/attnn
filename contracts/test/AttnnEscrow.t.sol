@@ -483,6 +483,99 @@ contract AttnnEscrowTest is Test {
         assertEq(escrow.getTotalLocked(), 0);
     }
 
+    // ─── The creator's own minimum (CertiK finding 4) ───────────────────────
+
+    function _registerPricey(uint256 floor) internal returns (address pricey) {
+        pricey = makeAddr("pricey");
+        string[] memory tags;
+        vm.prank(pricey);
+        registry.registerCreator("pricey", floor, tags, "");
+    }
+
+    function test_PlaceBid_BelowCreatorMinimumRefused() public {
+        address pricey = _registerPricey(5 * 10**6);
+        vm.prank(bidder);
+        vm.expectRevert("AttnnEscrow: amount below creator's minimum");
+        escrow.placeBid(pricey, 5 * 10**6 - 1, MH);
+        assertEq(escrow.getTotalLocked(), 0);
+
+        vm.prank(bidder);
+        uint256 id = escrow.placeBid(pricey, 5 * 10**6, MH);
+        assertEq(id, 1);
+    }
+
+    function testFuzz_PlaceBid_RespectsCreatorMinimum(uint256 floor, uint256 amount) public {
+        floor = bound(floor, MIN_BID, MAX_BID);
+        amount = bound(amount, MIN_BID, MAX_BID);
+        address pricey = _registerPricey(floor);
+        usdc.mint(bidder, amount);
+        vm.prank(bidder);
+        if (amount < floor) {
+            vm.expectRevert("AttnnEscrow: amount below creator's minimum");
+            escrow.placeBid(pricey, amount, MH);
+        } else {
+            escrow.placeBid(pricey, amount, MH);
+            assertEq(escrow.getTotalLocked(), amount);
+        }
+    }
+
+    function test_RaisedMinimum_AppliesToNewBidsOnly() public {
+        address pricey = _registerPricey(5 * 10**6);
+        vm.prank(bidder);
+        uint256 id = escrow.placeBid(pricey, 5 * 10**6, MH);
+
+        string[] memory tags;
+        vm.prank(pricey);
+        registry.updateProfile(10 * 10**6, tags, "");
+
+        vm.prank(anotherBidder);
+        vm.expectRevert("AttnnEscrow: amount below creator's minimum");
+        escrow.placeBid(pricey, 5 * 10**6, MH);
+
+        // The bid already escrowed can still be accepted (or refunded) as placed.
+        vm.prank(pricey);
+        escrow.acceptBid(id, RH);
+        assertEq(usdc.balanceOf(pricey), 5 * 10**6);
+    }
+
+    function test_PlaceBid_RegistryWithoutMinimumRefused() public {
+        AttnnEscrow e = new AttnnEscrow(address(usdc), address(new ActiveOnlyRegistry()), admin);
+        vm.startPrank(bidder);
+        usdc.approve(address(e), type(uint256).max);
+        vm.expectRevert("AttnnEscrow: creator minimum unavailable");
+        e.placeBid(creator, MIN_BID, MH);
+        vm.stopPrank();
+    }
+
+    // ─── Bounded history reads (CertiK finding 5) ───────────────────────────
+
+    function test_BidHistoryPages() public {
+        vm.startPrank(bidder);
+        for (uint256 i = 0; i < 3; i++) escrow.placeBid(creator, MIN_BID, MH);
+        vm.stopPrank();
+        vm.prank(anotherBidder);
+        escrow.placeBid(creator, MIN_BID, MH);
+
+        assertEq(escrow.getCreatorBidCount(creator), 4);
+        assertEq(escrow.getBidderBidCount(bidder), 3);
+        assertEq(escrow.getBidderBidCount(anotherBidder), 1);
+
+        uint256[] memory p = escrow.getCreatorBidsPage(creator, 0, 2);
+        assertEq(p.length, 2);
+        assertEq(p[0], 1);
+        assertEq(p[1], 2);
+        p = escrow.getCreatorBidsPage(creator, 2, 100);
+        assertEq(p.length, 2);
+        assertEq(p[0], 3);
+        assertEq(p[1], 4);
+        assertEq(escrow.getCreatorBidsPage(creator, 4, 10).length, 0);
+        assertEq(escrow.getCreatorBidsPage(creator, 0, 0).length, 0);
+        assertEq(escrow.getBidderBidsPage(bidder, 1, type(uint256).max).length, 2); // no overflow
+        p = escrow.getBidderBidsPage(anotherBidder, 0, 5);
+        assertEq(p.length, 1);
+        assertEq(p[0], 4);
+    }
+
     function test_ReentrantCreatorIsPaidOnce() public {
         HookUSDC hook = new HookUSDC();
         AttnnEscrow e = new AttnnEscrow(address(hook), address(registry), admin);
@@ -528,5 +621,12 @@ contract GreedyCreator {
         try escrow.acceptBid(_bidId, RH) {
             reentrySucceeded = true;
         } catch {}
+    }
+}
+
+/// A registry from before minBidOf existed: the escrow must refuse rather than skip the check.
+contract ActiveOnlyRegistry {
+    function isActiveCreator(address) external pure returns (bool) {
+        return true;
     }
 }

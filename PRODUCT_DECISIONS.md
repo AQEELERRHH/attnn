@@ -79,7 +79,7 @@ Minimum bid - the floor price they set
 Current highest bid - someone has already bid this amount to reach them right now
 Number of pending bids - how many people are currently competing for their attention 
 
-The bidder's identity and their message are completely private. But the numbers are public.
+The bidder's name and their message are private. But the numbers are public. (On Arc, as with any blockchain payment, the amount and the bidder's wallet address are publicly visible; Attnn. never links a wallet to a name, and the message itself is only stored as a fingerprint.)
 
 Now you have a decision to make, outbid the current highest bidder.
 
@@ -179,7 +179,7 @@ A $100 bid for the wrong service is worth less to the creator than an $8 bid for
 
 On every creator's public profile page, visitors can see:
 - **Minimum bid** the floor price set by the creator
-- **Current highest bid** the highest pending bid at that moment (amount only, bidder identity and message remain private)
+- **Current highest bid** the highest pending bid at that moment (amount only, bidder name and message remain private)
 
 ### Why This Was Added
 
@@ -191,7 +191,7 @@ With public highest bid display they visit the profile and see "Current highest 
 
 **Creates competitive bidding dynamics without a formal auction.** Bids don't expire or get replaced, it's not an auction. But seeing the highest bid gives context that makes the marketplace feel alive. Like seeing how many people are looking at a hotel room on Booking.com.
 
-**Transparent without violating privacy.** The bidder's identity stays private. The message stays private. Only the number is public. Enough information to make a better decision, not enough to expose anyone.
+**Transparent without violating privacy.** The bidder's name stays private. The message stays private. Only the number is public (plus, on Arc itself, the wallet address that paid, as with any blockchain payment). Enough information to make a better decision, not enough to expose anyone.
 
 **Validates creator worth publicly.** When someone visits a creator's profile and sees "Current highest bid: $30 USDC" that tells them this creator is in demand. Their attention is genuinely valuable.
 
@@ -329,7 +329,7 @@ Store settlement transaction IDs after every successful Circle Gateway payment. 
 # Product
 
 Public Highest Bid Display
-Show the current highest pending bid and number of active bids on every creator's public profile visible before unlocking. Bidder identity and message remain private. Only the amount and count are public. Creates competitive bidding dynamics, validates creator demand, and helps serious bidders know what they're competing against.
+Show the current highest pending bid and number of active bids on every creator's public profile visible before unlocking. Bidder name and message remain private. Only the amount and count are public (wallet addresses are visible on Arc, as with any blockchain payment). Creates competitive bidding dynamics, validates creator demand, and helps serious bidders know what they're competing against.
 
 Reply Quality Verification and On-Chain Reputation Scoring 
 

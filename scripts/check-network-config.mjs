@@ -124,6 +124,12 @@ if (isAddr(escrow) && isAddr(registry)) {
         : network === "mainnet"
           ? fail("Registry has no updateProfile: deploy the current contracts/src/AttnnRegistry.sol")
           : warn("Registry has no updateProfile (original testnet registry): tag edits stay DB-only");
+      const floorSelector = toFunctionSelector("minBidOf(address)").slice(2).toLowerCase();
+      regCode.toLowerCase().includes(floorSelector)
+        ? ok("Registry has minBidOf (the escrow enforces each creator's floor)")
+        : network === "mainnet"
+          ? fail("Registry has no minBidOf: the current escrow can't take bids against it. Deploy both current contracts together")
+          : warn("Registry has no minBidOf (original testnet registry): only the global $ minimum is enforced on-chain");
     }
   } catch (err) {
     fail(`Could not read the contracts: ${err.shortMessage ?? err.message}`);

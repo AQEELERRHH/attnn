@@ -236,7 +236,7 @@ function getCreatorCount() external view returns (uint256)
 function isActiveCreator(address creator) external view returns (bool)
 ```
 
-Key design: any agent can query `getCreatorsByTag("web3")` and get matching creator wallet addresses directly from the contract. Attnn.'s own bidder agent matches on creators' current (editable) tags and confirms each one with `isActiveCreator()` on Arc before bidding.
+Key design: any agent can query `getCreatorsByTag("web3")` (or, for big tags, `getCreatorsByTagPage("web3", offset, limit)`) and get matching creator wallet addresses directly from the contract. `minBidOf(creator)` gives a creator's floor, which the escrow enforces. Attnn.'s own bidder agent matches on creators' current (editable) tags and confirms each one with `isActiveCreator()` on Arc before bidding.
 
 ### AttnnEscrow `0x7B43B155aCC2B191C121FB2fC724669a6F7Fbb86`
 

@@ -22,6 +22,10 @@ interface IAttnnRegistry {
     function creatorExists(string calldata handle) external view returns (bool);
 
     /// @notice Check if creator is active
+    /// @notice A creator's minimum bid in atomic USDC (0 if not registered). The escrow
+    ///         refuses bids below it.
+    function minBidOf(address creator) external view returns (uint256);
+
     function isActiveCreator(address creator) external view returns (bool);
 
     /// @notice Replace the caller's floor, tags and profile URI (handle can't change)

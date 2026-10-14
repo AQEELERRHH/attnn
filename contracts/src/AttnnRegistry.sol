@@ -131,6 +131,30 @@ contract AttnnRegistry is IAttnnRegistry {
         return _creators[creator].isActive;
     }
 
+    /// @inheritdoc IAttnnRegistry
+    function minBidOf(address creator) external view override returns (uint256) {
+        return _creators[creator].minBid;
+    }
+
+    /// @notice Number of creators listed under `tag`
+    function getTagCreatorCount(string calldata tag) external view returns (uint256) {
+        return _tagToCreators[tag].length;
+    }
+
+    /// @notice Up to `limit` creators listed under `tag`, starting at `offset`
+    ///         (bounded alternative to getCreatorsByTag for large tags)
+    function getCreatorsByTagPage(string calldata tag, uint256 offset, uint256 limit)
+        external
+        view
+        returns (address[] memory page)
+    {
+        address[] storage all = _tagToCreators[tag];
+        if (offset >= all.length) return new address[](0);
+        uint256 end = all.length - offset < limit ? all.length : offset + limit;
+        page = new address[](end - offset);
+        for (uint256 i = offset; i < end; i++) page[i - offset] = all[i];
+    }
+
     /// @notice Get total number of registered creators
     function getCreatorCount() external view returns (uint256) {
         return _allCreators.length;

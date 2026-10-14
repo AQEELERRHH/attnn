@@ -71,6 +71,11 @@ export const world = {
   timeoutNextSubmit: false,
   /** Transactions Circle's list doesn't show yet (findTransactionByRefId misses them). */
   unlisted: new Set<string>(),
+  /**
+   * Creator minimums as a current-source registry has them (minBidOf). Empty map = a
+   * registry from before minBidOf (the original testnet one): no on-chain floor.
+   */
+  registryFloors: new Map<string, bigint>(),
   /** v2 admin state. */
   escrowPaused: false,
   escrowOwner: "0x00000000000000000000000000000000000000ad",
@@ -92,6 +97,7 @@ export const world = {
     this.refundPeriodSeconds = BigInt(3 * 24 * 3600);
     this.escrowVersion = 2;
     this.escrowVersions.clear();
+    this.registryFloors.clear();
     this.timeoutNextSubmit = false;
     this.unlisted.clear();
     this.escrowPaused = false;
@@ -167,7 +173,13 @@ function mine(tx: FakeTx) {
     const key = `${owner}:${tx.contractAddress}`;
     const allowance = world.allowance.get(key) ?? BigInt(0);
     const balance = world.usdc.get(owner) ?? BigInt(0);
-    if ((versionOf(tx.contractAddress) === 2 && world.escrowPaused) || allowance < BigInt(amount) || balance < BigInt(amount)) {
+    const floor = versionOf(tx.contractAddress) === 2 ? (world.registryFloors.get(lower(creator)) ?? BigInt(0)) : BigInt(0);
+    if (
+      (versionOf(tx.contractAddress) === 2 && world.escrowPaused) ||
+      BigInt(amount) < floor ||
+      allowance < BigInt(amount) ||
+      balance < BigInt(amount)
+    ) {
       ok = false;
     } else {
       world.allowance.set(key, allowance - BigInt(amount));
@@ -274,6 +286,9 @@ const fakePublicClient = {
         return world.refundPeriodSeconds;
       case "isActiveCreator":
         return world.activeCreators.has(lower(String(args![0])));
+      case "minBidOf":
+        if (!world.registryFloors.size) throw new Error("fake chain: this registry has no minBidOf()");
+        return world.registryFloors.get(lower(String(args![0]))) ?? BigInt(0);
       case "paused":
       case "owner":
       case "pendingOwner":
@@ -298,6 +313,10 @@ const fakePublicClient = {
     return { timestamp: BigInt(Math.floor(world.blockTimeMs / 1000)) };
   },
   async getCode({ address }: { address: string }) {
+    if (lower(address) === lower(process.env.ATTN_REGISTRY_CONTRACT ?? "")) {
+      // The registry: has minBidOf only when the test gave it floors.
+      return world.registryFloors.size ? `0x6080604052${toFunctionSelector("minBidOf(address)").slice(2)}` : "0x6080604052";
+    }
     // Enough bytecode for lib/escrow.ts to tell the escrow generation apart.
     const marker = toFunctionSelector(versionOf(address) === 2 ? "acceptBid(uint256,bytes32)" : "acceptBid(uint256,string)").slice(2);
     return `0x6080604052${marker}`;

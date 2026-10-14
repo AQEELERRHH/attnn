@@ -26,14 +26,27 @@ here runs automatically; contract deploys and database changes need the owner's 
       pause. See the RUNBOOK's "contract pause".
 - [x] The app supports both escrow generations (read from the bytecode, `lib/escrow.ts`), so
       testnet's legacy escrows keep settling.
-- [x] Foundry tests: 44 passing (`npm run test:contracts`), including fuzz tests that the
+- [x] Foundry tests: 51 passing (`npm run test:contracts`), including fuzz tests that the
       escrow always holds exactly the open bids (also while paused), the re-entrancy test,
       the admin's limits and a fingerprint vector shared with the app's unit tests.
 - [x] Deploy script refuses non-Arc chains and prints the network, `MIN_BID` and
       `REFUND_PERIOD`. Simulated against a local chain with mainnet's chain id.
-- [ ] **Escrow admin wallet**: create it yourself, separate from Attnn. and Circle: a hardware
-      wallet, or better a multisig if one is available on Arc. Never a key in `.env` or on the
-      server. Put a little USDC in it for gas. Send only its public address.
+- [x] **CertiK AI scan (Ultra, 14 Oct 2026)** on `contracts/src/`: no Critical, High or Medium
+      findings; five Discussion/Info points, all handled:
+      (1) unbounded `getCreatorsByTag` → added `getCreatorsByTagPage` + `getTagCreatorCount`
+      (the app never reads the full list: discovery is from the database);
+      (2) identical (bidder, creator, amount) bids → every bid now gets a unique message
+      fingerprint and the app's id checks and repair tools match on it;
+      (3) bidder wallets are public on-chain → copy now says amounts and wallet addresses are
+      public, names and emails never;
+      (4) bids below a creator's own floor could be placed directly → the escrow now enforces
+      `registry.minBidOf(creator)` (raising a floor doesn't touch bids already escrowed);
+      (5) append-only bid histories → added paginated getters and per-account counts; the
+      daily health check still reads every bid (fine at launch volumes, see section 6).
+- [x] **Escrow admin wallet**: `0xF326854e41AB46366E1b4711C2a8653ea2bfE253`, created by the
+      founder separately from Attnn. and Circle; no key in `.env` or on the server. Keep a little
+      USDC in it for gas. Move the role to a hardware wallet or multisig later with the two-step
+      handover.
 - [ ] **Deploy** (owner's go-ahead): fund a fresh deployer key with a little USDC for gas, then
       `ESCROW_ADMIN_ADDRESS=<admin address> ARC_RPC_DEPLOY=https://rpc.mainnet.arc.io npm run deploy:contracts`.
       The script refuses a zero admin or the deployer's own address. Run once without
@@ -105,7 +118,8 @@ only work on mainnet.
 - [ ] **Index direct bids.** Record any `BidPlaced` in our escrow whose bidder isn't an Attnn
       wallet as a bid from an "External agent" (needs `bids.bidderUserId` nullable or an
       external-bidder table: migration). The message is on-chain (`placeBid(creator, amount,
-      message, isPrivate)`).
+      messageHash)`; only a fingerprint, so an outside bid has no readable message unless
+      the bidder shares it with us).
 - [ ] Show those bids in the creator's inbox; creator agent triages them; accept / reject /
       counter work as usual (the creator's wallet settles).
 - [ ] Refunds: only the outside wallet can `claimRefund`; show "refundable by the bidder
@@ -113,7 +127,8 @@ only work on mainnet.
 - [ ] Public guide page (e.g. `/agents`) with the exact Circle CLI commands:
       `circle wallet limit set` (daily cap + `contract-allowlist` = USDC + escrow),
       `circle wallet execute "approve(address,uint256)" …`,
-      `circle wallet execute "placeBid(address,uint256,string,bool)" …`,
+      `circle wallet execute "placeBid(address,uint256,bytes32)" …` (amount ≥ the creator's
+      `minBidOf`; the last argument is the message fingerprint, or zero for none),
       `circle wallet execute "claimRefund(uint256)" …`, and paying for `/api/c/<handle>` over x402.
 - [ ] Test end to end on mainnet with a few dollars.
 - [ ] Open questions for Circle: do transfer caps count USDC pulled by a contract after
@@ -131,3 +146,6 @@ only work on mainnet.
 - [ ] Run the x402 demo (`scripts/x402-demo.mjs`) against mainnet with a small Gateway deposit.
 - [ ] Place, accept, decline and refund one real bid each; check the dashboard and Arcscan.
 - [ ] Update README, About page and PRODUCT_DECISIONS ("live on Arc mainnet").
+- [ ] Before volume grows (tens of thousands of bids): make the daily full health check and the
+      repair job scan only bids that can still change (e.g. from the oldest open bid's id)
+      instead of 1..getBidCount() every time (CertiK finding 5, off-chain part).

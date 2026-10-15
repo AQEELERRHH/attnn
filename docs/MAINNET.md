@@ -150,6 +150,10 @@ only work on mainnet.
 - [ ] Run the x402 demo (`scripts/x402-demo.mjs`) against mainnet with a small Gateway deposit.
 - [ ] Place, accept, decline and refund one real bid each; check the dashboard and Arcscan.
 - [ ] Update README, About page and PRODUCT_DECISIONS ("live on Arc mainnet").
+- [ ] Switch the Circle mainnet API key from Standard to **Restricted**: Wallets = Read & Write,
+      Webhooks = Read Only, everything else No Permissions (the app uses the key only for
+      developer-controlled wallets and to fetch the webhook signing key). Change it on the
+      same key in the console; re-test a bid and a webhook afterwards.
 - [ ] Before volume grows (tens of thousands of bids): make the daily full health check and the
       repair job scan only bids that can still change (e.g. from the oldest open bid's id)
       instead of 1..getBidCount() every time (CertiK finding 5, off-chain part).

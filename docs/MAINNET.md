@@ -95,7 +95,15 @@ Level Security is on everywhere. It prints no secrets and changes nothing.
 - [ ] `SELLER_ADDRESS` = a mainnet wallet we control; `X402_MOCK` unset
 - [ ] Circle LIVE API key + entity secret for mainnet; `CIRCLE_WALLET_SET_ID` empty or a
       mainnet wallet set
-- [ ] Circle webhooks (wallet notifications + contract event monitoring for the new escrow)
+- [x] Circle webhooks on mainnet (16 Oct 2026): Programmable Wallets → `https://attnn.xyz/api/webhooks/circle`
+      and Smart Contract Platform → `https://attnn.xyz/api/webhooks/circle-events`, both Active (Circle's
+      test notification passed our signature check with the LIVE key).
+- [ ] **Escrow event monitors on mainnet: blocked on Circle.** Importing the escrow into Smart Contract
+      Platform fails ("Something went wrong", ref `4403f16e6aac`); reported to Circle. Not blocking: the
+      wallet webhook plus the placeBid / confirmSettlement jobs and the 10-minute sweep finish every bid
+      without it. When import works: import the escrow (ABI from `forge inspect`), then monitor the four
+      events below.
+- [ ] (Original item) Circle webhooks (wallet notifications + contract event monitoring for the new escrow)
       pointed at the production URL. Monitor these v2 event signatures on the new escrow
       (`BidAccepted` changed, so testnet monitor settings won't match):
       `BidPlaced(uint256,address,address,uint256)`, `BidAccepted(uint256,address,bytes32)`,

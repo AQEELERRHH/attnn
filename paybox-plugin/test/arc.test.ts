@@ -3,7 +3,7 @@
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { decodeFunctionData, encodeAbiParameters, encodeFunctionResult, getAddress, keccak256, pad, toHex, type Hex } from "viem";
-import { ARC, CREATOR_REGISTERED_TOPIC, allCreators, computeMarket, creatorMarket, creatorsByTag, escrowAbi, formatUsdc, registryAbi } from "../src/arc.ts";
+import { ARC, CREATOR_REGISTERED_TOPIC, computeMarket, creatorMarket, listCreators, parseHandles, escrowAbi, formatUsdc, registryAbi } from "../src/arc.ts";
 
 const A = getAddress("0x1111111111111111111111111111111111111111");
 const B = getAddress("0x2222222222222222222222222222222222222222");
@@ -16,6 +16,7 @@ let creators: Map<string, Creator>;
 let bids: { creator: string; amount: bigint; status: number; createdAt: bigint }[];
 let paused: boolean;
 let explorerUp: boolean;
+let siteUp: boolean;
 let calls: number;
 let batchUnsupported: boolean;
 let rpcBusy: boolean;
@@ -39,6 +40,7 @@ beforeEach(() => {
   ];
   paused = false;
   explorerUp = true;
+  siteUp = true;
   calls = 0;
   batchUnsupported = false;
   rpcBusy = false;
@@ -85,6 +87,11 @@ globalThis.fetch = (async (url: string | URL, init?: RequestInit) => {
   calls++;
   const u = String(url);
   const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
+  if (u === `${ARC.site}/creators`) {
+    if (!siteUp) return new Response("down", { status: 503 });
+    const links = [...creators.values()].map((c) => `<a href="/c/${c.handle}">@${c.handle}</a>`).join("");
+    return new Response(`<html><body>${links}<a href="/c/ghost">not on Arc</a><a href="/about">x</a></body></html>`, { status: 200 });
+  }
   if (u.startsWith(`${ARC.explorer}/api?`)) {
     if (!explorerUp) return new Response("down", { status: 502 });
     return json({ status: "1", result: registrationLogs() });
@@ -139,16 +146,28 @@ test("creator_market reports a pause", async () => {
   assert.equal((await creatorMarket("bola"))?.biddingPaused, true);
 });
 
-test("find_creators by tag: active only, busiest first, with handles", async () => {
-  const { creators: list } = await creatorsByTag("AI", 10);
-  assert.deepEqual(list.map((c) => c.handle), ["asmau", "bola"]);
+test("find_creators by tag: active only, busiest first, checked on Arc", async () => {
+  const list = await listCreators("AI", 10);
+  assert.deepEqual(list.map((c) => c.handle), ["asmau", "bola"], "chidi is paused; ghost isn't registered");
   assert.equal(list[1]!.minBidAtomic, BigInt(5_000_000));
+  assert.deepEqual((await listCreators("web3", 10)).map((c) => c.handle), ["asmau"]);
+  assert.deepEqual(await listCreators("cooking", 10), []);
 });
 
-test("find_creators falls back to the RPC for handles when the explorer is down", async () => {
+test("find_creators with no tag lists every active market", async () => {
+  assert.deepEqual((await listCreators(undefined, 10)).map((c) => c.handle), ["asmau", "bola"]);
+  assert.deepEqual((await listCreators(undefined, 1)).map((c) => c.handle), ["asmau"]);
+});
+
+test("if attnn.xyz is down, handles come from the registry's events", async () => {
+  siteUp = false;
+  assert.deepEqual((await listCreators(undefined, 10)).map((c) => c.handle), ["asmau", "bola"]);
   explorerUp = false;
-  const { creators: list } = await allCreators(10);
-  assert.deepEqual(list.map((c) => c.handle), ["asmau", "bola"]);
+  assert.deepEqual((await listCreators("ai", 10)).map((c) => c.handle), ["asmau", "bola"]);
+});
+
+test("parseHandles reads market links from the page and ignores other links", () => {
+  assert.deepEqual(parseHandles('<a href="/c/Emdee002">x</a><a href="/c/emdee002?ref=1">y</a><a href="/about">z</a>\\"/c/bola\\"'), ["emdee002", "bola"]);
 });
 
 test("a market with no bids has no reply rate (not 0%)", () => {

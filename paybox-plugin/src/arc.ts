@@ -172,9 +172,9 @@ async function logsFromExplorer(): Promise<RawLog[]> {
     topic0: CREATOR_REGISTERED_TOPIC,
   });
   const res = await fetch(`${ARC.explorer}/api?${q}`, { signal: AbortSignal.timeout(TIMEOUT_MS) });
-  if (!res.ok) throw new ArcError(`Explorer answered ${res.status}`);
+  if (!res.ok) throw new ArcError(`explorer answered ${res.status}`);
   const json = (await res.json()) as { result?: unknown };
-  if (!Array.isArray(json.result)) throw new ArcError("Explorer returned no logs");
+  if (!Array.isArray(json.result)) throw new ArcError("explorer returned no logs");
   return json.result as RawLog[];
 }
 
@@ -189,21 +189,23 @@ async function logsFromRpc(): Promise<RawLog[]> {
       fromBlock: `0x${ARC.deployBlock.toString(16)}`,
       toBlock: "latest",
     }],
-  })) as { result?: unknown };
-  if (!Array.isArray(json.result)) throw new ArcError("Arc RPC returned no logs");
+  })) as { result?: unknown; error?: { message?: string } };
+  if (!Array.isArray(json.result)) throw new ArcError(`Arc RPC logs: ${json.error?.message ?? "no result"}`.slice(0, 160));
   return json.result as RawLog[];
 }
 
-/** Every registered creator's handle. Best effort: an empty map if neither source answers. */
-export async function loadHandles(): Promise<{ handles: Map<string, string>; ok: boolean }> {
+/** Every registered creator's handle, from the registry's events. Best effort. */
+export async function loadHandles(): Promise<{ handles: Map<string, string>; ok: boolean; reasons: string[] }> {
+  const reasons: string[] = [];
   for (const source of [logsFromExplorer, logsFromRpc]) {
     try {
-      return { handles: decodeRegistrations(await source()), ok: true };
+      return { handles: decodeRegistrations(await source()), ok: true, reasons };
     } catch (err) {
+      reasons.push((err as Error).message);
       console.error(`handle lookup: ${(err as Error).message}`);
     }
   }
-  return { handles: new Map(), ok: false };
+  return { handles: new Map(), ok: false, reasons };
 }
 
 // ── Market maths (pure) ──
@@ -261,52 +263,65 @@ export type CreatorSummary = {
   address: string;
   handle: string | null;
   minBidAtomic: bigint;
+  tags: string[];
   totalBids: bigint;
 };
 
-export async function creatorsByTag(tag: string, limit: number): Promise<{ creators: CreatorSummary[]; handlesOk: boolean }> {
-  const [page] = await readMany([
-    { to: ARC.registry, abi: registryAbi, functionName: "getCreatorsByTagPage", args: [normalizeKey(tag), BigInt(0), BigInt(50)] },
-  ]);
-  const addresses = ((page as readonly string[] | null) ?? []).map((a) => getAddress(a));
-  return summarise(addresses, limit);
+/** Handles linked from attnn.xyz/creators (server-rendered market list). */
+export function parseHandles(html: string): string[] {
+  const seen = new Set<string>();
+  for (const m of html.matchAll(/\/c\/([a-z0-9_]{1,64})(?=["'?#\\/])/gi)) seen.add(m[1]!.toLowerCase());
+  return [...seen];
 }
 
-export async function allCreators(limit: number): Promise<{ creators: CreatorSummary[]; handlesOk: boolean }> {
-  const { handles, ok } = await loadHandles();
-  if (!ok) throw new ArcError("Couldn't list creators right now (explorer and RPC log lookups failed). Try again, or search by tag.");
-  return summarise([...handles.keys()].slice(0, 50), limit, handles);
+async function handlesFromSite(): Promise<string[]> {
+  const res = await fetch(`${ARC.site}/creators`, { signal: AbortSignal.timeout(TIMEOUT_MS) });
+  if (!res.ok) throw new ArcError(`attnn.xyz answered ${res.status}`);
+  const handles = parseHandles(await res.text());
+  if (handles.length === 0) throw new ArcError("attnn.xyz listed no markets");
+  return handles;
 }
 
-async function summarise(
-  addresses: string[],
-  limit: number,
-  knownHandles?: Map<string, string>,
-): Promise<{ creators: CreatorSummary[]; handlesOk: boolean }> {
-  if (addresses.length === 0) return { creators: [], handlesOk: true };
-  const [reads, names] = await Promise.all([
-    readMany(
-      addresses.flatMap((a) => [
-        { to: ARC.registry, abi: registryAbi, functionName: "isActiveCreator", args: [a] },
-        { to: ARC.registry, abi: registryAbi, functionName: "minBidOf", args: [a] },
-        { to: ARC.escrow, abi: escrowAbi, functionName: "getCreatorBidCount", args: [a] },
-      ]),
-    ),
-    knownHandles ? Promise.resolve({ handles: knownHandles, ok: true }) : loadHandles(),
-  ]);
-  const creators: CreatorSummary[] = [];
-  addresses.forEach((address, i) => {
-    const active = reads[i * 3] === true;
-    if (!active) return; // paused or deactivated markets aren't offered
-    creators.push({
-      address,
-      handle: names.handles.get(address) ?? null,
-      minBidAtomic: (reads[i * 3 + 1] as bigint | null) ?? BigInt(0),
-      totalBids: (reads[i * 3 + 2] as bigint | null) ?? BigInt(0),
-    });
+/**
+ * Active creators, optionally with a tag. Handles come from attnn.xyz/creators (or, failing
+ * that, the registry's CreatorRegistered events); price, tags, status and bid count are
+ * always read from the contracts on Arc.
+ */
+export async function listCreators(tag: string | undefined, limit: number): Promise<CreatorSummary[]> {
+  const reasons: string[] = [];
+  let handles: string[] | null = null;
+  try {
+    handles = await handlesFromSite();
+  } catch (err) {
+    reasons.push((err as Error).message);
+    const logs = await loadHandles();
+    if (logs.ok) handles = [...logs.handles.values()];
+    else reasons.push(...logs.reasons);
+  }
+  if (handles === null) {
+    throw new ArcError(`Couldn't list creators right now (${reasons.join("; ")}). Try creator_market with a handle.`);
+  }
+  handles = handles.slice(0, 60);
+  const want = tag ? normalizeKey(tag) : null;
+
+  const profiles = await readMany(
+    handles.map((h) => ({ to: ARC.registry, abi: registryAbi, functionName: "getCreatorProfile", args: [h] })),
+  );
+  const found: Omit<CreatorSummary, "totalBids">[] = [];
+  profiles.forEach((p, i) => {
+    if (!p) return; // not registered on Arc (yet)
+    const [address, minBid, tags, , isActive] = p as readonly [string, bigint, readonly string[], string, boolean];
+    if (!isActive) return; // paused or deactivated markets aren't offered
+    const lower = tags.map((t) => t.toLowerCase());
+    if (want && !lower.includes(want)) return;
+    found.push({ address: getAddress(address), handle: handles![i]!, minBidAtomic: minBid, tags: lower });
   });
+  const counts = await readMany(
+    found.map((c) => ({ to: ARC.escrow, abi: escrowAbi, functionName: "getCreatorBidCount", args: [c.address] })),
+  );
+  const creators = found.map((c, i) => ({ ...c, totalBids: (counts[i] as bigint | null) ?? BigInt(0) }));
   creators.sort((a, b) => (b.totalBids > a.totalBids ? 1 : b.totalBids < a.totalBids ? -1 : 0));
-  return { creators: creators.slice(0, limit), handlesOk: names.ok };
+  return creators.slice(0, limit);
 }
 
 export type CreatorMarket = {

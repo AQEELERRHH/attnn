@@ -8,7 +8,7 @@ existing Attnn. marketplace.
 | Tool | What it does | Network |
 |---|---|---|
 | `how_attnn_works` | The escrow rules (reply = paid, decline = refund, no reply in 3 days = refund), bid range, contract addresses | none |
-| `find_creators` | Active creators, optionally by tag, with their minimum price and bid count | Arc RPC + explorer |
+| `find_creators` | Active creators, optionally by tag, with their minimum price and bid count. Handles come from attnn.xyz/creators (fallback: the registry's events); price, tags, status and bids are read on Arc | attnn.xyz + Arc RPC (+ explorer) |
 | `creator_market` | One creator's market: minimum, open bids and the top one, replied / declined / refunded, reply rate, link to bid | Arc RPC |
 
 Everything is a public on-chain read: no keys, no secrets, no transactions. Reply rate
@@ -39,6 +39,7 @@ developer portal are the real test.
 Upload `dist/plugin.mjs` only. Network hosts to allow (exact names):
 
 - `rpc.mainnet.arc.io`
-- `explorer.arc.io`
+- `attnn.xyz`
+- `explorer.arc.io` (fallback only)
 
 No environment variables or secrets.

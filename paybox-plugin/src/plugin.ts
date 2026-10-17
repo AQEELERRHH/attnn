@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/server";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import * as z from "zod/v4";
-import { ARC, ArcError, allCreators, creatorMarket, creatorsByTag, formatUsdc, marketUrl } from "./arc.js";
+import { ARC, ArcError, creatorMarket, listCreators, formatUsdc, marketUrl } from "./arc.js";
 
 const PROTOCOL_VERSION = "2026-07-28";
 
@@ -113,7 +113,7 @@ function createServer() {
     async ({ tag, limit }) => {
       try {
         const n = limit ?? 10;
-        const { creators } = tag ? await creatorsByTag(tag, n) : await allCreators(n);
+        const creators = await listCreators(tag, n);
         const rows = creators.map((c) => ({
           handle: c.handle,
           address: c.address,

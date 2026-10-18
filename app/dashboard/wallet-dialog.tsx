@@ -9,12 +9,24 @@ import { Money } from "@/components/market";
 import { toast } from "@/hooks/use-toast";
 import { dollarsToAtomic, formatMoney, shortAddress } from "@/lib/format";
 import { useRequestId } from "./use-request-id";
+import { BuyUsdcButton } from "./buy-usdc-button";
 
 const field =
   "focus-ring w-full rounded-lg border border-border-bright bg-arc-bg-0 px-3 py-2.5 text-sm text-text-primary placeholder:text-text-dim";
 
 /** Header wallet button: the main wallet's balance, address, how to add USDC, and Send USDC. */
-export function WalletDialog({ address, balanceUsdc, isTestnet }: { address: string; balanceUsdc: string | null; isTestnet: boolean }) {
+export function WalletDialog({
+  address,
+  balanceUsdc,
+  isTestnet,
+  onrampWidgetUrl = null,
+}: {
+  address: string;
+  balanceUsdc: string | null;
+  isTestnet: boolean;
+  /** Circle Onramp widget origin when card funding is on, else null. */
+  onrampWidgetUrl?: string | null;
+}) {
   const router = useRouter();
   const [open, setOpen] = React.useState(false);
   const [to, setTo] = React.useState("");
@@ -134,6 +146,7 @@ export function WalletDialog({ address, balanceUsdc, isTestnet }: { address: str
               </a>
             )}
           </div>
+          {onrampWidgetUrl && <BuyUsdcButton widgetBaseUrl={onrampWidgetUrl} className="mt-4" />}
           {!isTestnet && (
             <p className="mt-3 text-xs text-arc-coral">
               Only send USDC on the Arc network to this address. USDC sent from another network may be lost.

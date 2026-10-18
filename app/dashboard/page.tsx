@@ -1,4 +1,5 @@
 import { auth } from "@/lib/auth";
+import { onrampEnabled, onrampEnvironment } from "@/lib/onramp";
 import { agentWallet, mainWallet } from "@/lib/wallets";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db/client";
@@ -180,6 +181,7 @@ export default async function DashboardPage() {
         checklistDismissed: !!userRow?.checklistDismissedAt,
         checklist,
         isTestnet,
+        onrampWidgetUrl: onrampEnabled() ? onrampEnvironment().widgetBaseUrl : null,
       }}
       now={now}
       networkLabel={arc.chain.name}

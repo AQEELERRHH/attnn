@@ -27,6 +27,8 @@ export const LIMITS = {
   agentRun: { name: "agent-run", max: 10, windowMs: 60 * 60 * 1000 },
   profileWrite: { name: "profile-write", max: 60, windowMs: 60 * 60 * 1000 },
   upload: { name: "upload", max: 20, windowMs: 60 * 60 * 1000 },
+  // Card-checkout sessions (Onramp Kit): each one costs a Circle API call.
+  onrampSession: { name: "onramp-session", max: 30, windowMs: 60 * 60 * 1000 },
   // Per address: one link a minute. A cooldown, not a daily cap, so nobody can lock
   // someone else out by requesting links for their address (those links go to the owner).
   signInEmail: { name: "sign-in-email", max: 1, windowMs: 60 * 1000 },

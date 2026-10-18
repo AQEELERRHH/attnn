@@ -63,6 +63,8 @@ export function DashboardClient({
     checklistDismissed: boolean;
     checklist: { steps: ChecklistStep[]; done: number; total: number; complete: boolean };
     isTestnet: boolean;
+    /** Circle Onramp widget origin when card funding is configured (ONRAMP_API_KEY), else null. */
+    onrampWidgetUrl: string | null;
   };
 }) {
   const router = useRouter();
@@ -190,7 +192,7 @@ export function DashboardClient({
                 void saveChecklist("show-checklist");
               }}
             />
-            {wallet && <WalletDialog address={wallet.address} balanceUsdc={summary.walletUsdc} isTestnet={onboarding.isTestnet} />}
+            {wallet && <WalletDialog address={wallet.address} balanceUsdc={summary.walletUsdc} isTestnet={onboarding.isTestnet} onrampWidgetUrl={onboarding.onrampWidgetUrl} />}
             <button
               type="button"
               onClick={() => signOut({ callbackUrl: "/" })}
@@ -283,7 +285,7 @@ export function DashboardClient({
             <BidderView bids={placed} summary={summary} bidderConfig={bidderConfig} now={now} onOpenAgent={() => setView("agent")} />
           )}
           {view === "creator" && (
-            <CreatorView profile={profile} wallet={wallet} bids={received} summary={summary} now={now} isTestnet={onboarding.isTestnet} photoRequest={photoRequest} />
+            <CreatorView profile={profile} wallet={wallet} bids={received} summary={summary} now={now} isTestnet={onboarding.isTestnet} onrampWidgetUrl={onboarding.onrampWidgetUrl} photoRequest={photoRequest} />
           )}
           {view === "agent" && <AgentConsole config={bidderConfig} bids={placed} logs={logs} summary={summary} now={now} policy={policy} />}
         </div>

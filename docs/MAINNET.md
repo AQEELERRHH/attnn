@@ -52,10 +52,13 @@ here runs automatically; contract deploys and database changes need the owner's 
       (tx `0x3bb5b731…f4137aa37`), AttnnEscrow `0xFF00aA5414e205367aF5DD29927E23a1CCF3bAD8`
       (tx `0x4102d7e0…c619b8ee1aea`), owner `0xF326854e41AB46366E1b4711C2a8653ea2bfE253`,
       `MIN_BID` 1000000, `REFUND_PERIOD` 259200. The deployer key has no role afterwards.
-- [ ] Verify the source on the explorer (https://explorer.arc.io), so its "Write contract" tab can
-      call `pause()`; record the addresses in README and Vercel.
-- [ ] From the admin wallet, rehearse once: `scripts/escrow-admin.mjs pause`, check a bid is
-      refused, then `unpause`.
+- [x] Source verified on https://explorer.arc.io (exact match, Standard JSON input, solc 0.8.30,
+      optimizer 200, via-IR, cancun, MIT) for both contracts, so "Read/Write contract" can call
+      `pause()`. Addresses recorded in README; Vercel still to do (section 3).
+- [x] Pause rehearsed from the admin wallet on 14 Oct 2026 via the explorer's Write contract tab:
+      `pause()` (tx `0x84a7cf11…c0778cfd9`, success) then `unpause()`; `paused` = false, `owner` =
+      the admin wallet, no handover open. (Refusal of a bid while paused is covered by the Foundry
+      tests `test_Pause_BlocksNewBidsOnly` and the fuzz test.)
 - [ ] **Audit (decision D6): open launch, audited soon after.** Mainnet opens to everyone; the
       contracts are not human-audited at launch. Before the deploy: run the CertiK AI scan on the
       final `contracts/src/` and fix what's real. Straight after: ask Circle and Encode about audit
@@ -92,7 +95,15 @@ Level Security is on everywhere. It prints no secrets and changes nothing.
 - [ ] `SELLER_ADDRESS` = a mainnet wallet we control; `X402_MOCK` unset
 - [ ] Circle LIVE API key + entity secret for mainnet; `CIRCLE_WALLET_SET_ID` empty or a
       mainnet wallet set
-- [ ] Circle webhooks (wallet notifications + contract event monitoring for the new escrow)
+- [x] Circle webhooks on mainnet (16 Oct 2026): Programmable Wallets → `https://attnn.xyz/api/webhooks/circle`
+      and Smart Contract Platform → `https://attnn.xyz/api/webhooks/circle-events`, both Active (Circle's
+      test notification passed our signature check with the LIVE key).
+- [ ] **Escrow event monitors on mainnet: blocked on Circle.** Importing the escrow into Smart Contract
+      Platform fails ("Something went wrong", ref `4403f16e6aac`); reported to Circle. Not blocking: the
+      wallet webhook plus the placeBid / confirmSettlement jobs and the 10-minute sweep finish every bid
+      without it. When import works: import the escrow (ABI from `forge inspect`), then monitor the four
+      events below.
+- [ ] (Original item) Circle webhooks (wallet notifications + contract event monitoring for the new escrow)
       pointed at the production URL. Monitor these v2 event signatures on the new escrow
       (`BidAccepted` changed, so testnet monitor settings won't match):
       `BidPlaced(uint256,address,address,uint256)`, `BidAccepted(uint256,address,bytes32)`,
@@ -147,6 +158,10 @@ only work on mainnet.
 - [ ] Run the x402 demo (`scripts/x402-demo.mjs`) against mainnet with a small Gateway deposit.
 - [ ] Place, accept, decline and refund one real bid each; check the dashboard and Arcscan.
 - [ ] Update README, About page and PRODUCT_DECISIONS ("live on Arc mainnet").
+- [ ] Switch the Circle mainnet API key from Standard to **Restricted**: Wallets = Read & Write,
+      Webhooks = Read Only, everything else No Permissions (the app uses the key only for
+      developer-controlled wallets and to fetch the webhook signing key). Change it on the
+      same key in the console; re-test a bid and a webhook afterwards.
 - [ ] Before volume grows (tens of thousands of bids): make the daily full health check and the
       repair job scan only bids that can still change (e.g. from the oldest open bid's id)
       instead of 1..getBidCount() every time (CertiK finding 5, off-chain part).

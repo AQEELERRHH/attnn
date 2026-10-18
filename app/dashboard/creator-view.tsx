@@ -42,6 +42,7 @@ export function CreatorView({
   summary,
   now,
   isTestnet,
+  onrampWidgetUrl = null,
   photoRequest = 0,
 }: {
   profile: ProfileData | null;
@@ -51,6 +52,8 @@ export function CreatorView({
   summary: PortfolioSummary;
   now: number;
   isTestnet: boolean;
+  /** Circle Onramp widget origin when card funding is on, else null. */
+  onrampWidgetUrl?: string | null;
   /** Bumped by the checklist's "Add photo" to open the photo dialog. */
   photoRequest?: number;
 }) {
@@ -72,6 +75,7 @@ export function CreatorView({
       return (
         <FundWalletCard
           isTestnet={isTestnet}
+          onrampWidgetUrl={onrampWidgetUrl}
           address={wallet.address}
           onFunded={() => {
             try {

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Panel } from "@/components/market";
 import { toast } from "@/hooks/use-toast";
 import { formatMoney } from "@/lib/format";
+import { BuyUsdcButton } from "./buy-usdc-button";
 
 const ONE_USDC = BigInt(1_000_000);
 
@@ -16,7 +17,17 @@ function decimalToAtomic(s: unknown): bigint | null {
   return BigInt(m[1]!) * ONE_USDC + BigInt((m[2] ?? "").slice(0, 6).padEnd(6, "0"));
 }
 
-export function FundWalletCard({ address, onFunded, isTestnet }: { address: string; onFunded: () => void; isTestnet: boolean }) {
+export function FundWalletCard({
+  address,
+  onFunded,
+  isTestnet,
+  onrampWidgetUrl = null,
+}: {
+  address: string;
+  onFunded: () => void;
+  isTestnet: boolean;
+  onrampWidgetUrl?: string | null;
+}) {
   const [copied, setCopied] = useState(false);
   const [checking, setChecking] = useState(false);
 
@@ -94,6 +105,8 @@ export function FundWalletCard({ address, onFunded, isTestnet }: { address: stri
           )}
         </div>
       </div>
+
+      {onrampWidgetUrl && <BuyUsdcButton widgetBaseUrl={onrampWidgetUrl} className="mt-5" />}
 
       {isTestnet ? (
         <ol className="mt-5 list-decimal space-y-1.5 pl-5 text-sm text-text-secondary">

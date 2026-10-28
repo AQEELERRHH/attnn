@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Bot, Camera, ExternalLink, Sparkles, ThumbsDown, ThumbsUp } from "lucide-react";
+import { BadgeCheck, Bot, Camera, ExternalLink, Sparkles, ThumbsDown, ThumbsUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { CreatorAvatar, FieldHint, Money, Num, Panel, StatStrip, StatusChip, Tag } from "@/components/market";
@@ -18,6 +18,7 @@ import { CreatorSetupForm, fieldClass, labelClass } from "./creator-setup-form";
 import { FundWalletCard } from "./fund-wallet-card";
 import { ReplySourceTag } from "./reply-rating";
 import { REPLY_MAX_CHARS, REPLY_MIN_CHARS } from "@/lib/reply-rules";
+import { PROVIDER_LABEL, verificationHref, verificationLabel, type SocialProvider } from "@/lib/social-verify-rules";
 import type { BidData, PortfolioSummary, ProfileData, WalletData } from "./types";
 
 /** Statuses of a re-bid that still stands in for the countered bid it replaces. */
@@ -147,6 +148,8 @@ function CreatorMarketDesk({
 
   const paused = profile.availabilityStatus === "not_accepting";
   const registering = profile.registration === "registering";
+  // A market can go live only with a verified social account, when verification is set up.
+  const needsVerification = profile.verifyProviders.length > 0 && profile.verifications.length === 0;
   const avail = profile.isActive
     ? AVAILABILITY[profile.availabilityStatus] ?? AVAILABILITY.available!
     : registering
@@ -229,7 +232,12 @@ function CreatorMarketDesk({
           </div>
           <div className="flex flex-wrap gap-2">
             {!profile.isActive && !registering && (
-              <Button size="sm" onClick={activate} disabled={activating}>
+              <Button
+                size="sm"
+                onClick={activate}
+                disabled={activating || needsVerification}
+                title={needsVerification ? "Verify your X or LinkedIn first" : undefined}
+              >
                 {activating ? "Registering…" : profile.registration === "failed" ? "Retry registration" : "Activate on Arc"}
               </Button>
             )}
@@ -253,11 +261,12 @@ function CreatorMarketDesk({
             Registration didn&apos;t go through: {profile.registrationError}. Check your wallet has at least $1 USDC, then press Retry registration.
           </p>
         )}
-        {profile.registration === "none" && (
+        {profile.registration === "none" && !needsVerification && (
           <p className="mt-3 text-[13px] text-arc-gold">
             Not live yet. Add at least $1 USDC to your wallet, then press Activate on Arc. It covers the small network fees for registering and replying.
           </p>
         )}
+        <VerifiedAccounts profile={profile} />
         <AutoAcceptSetting stored={profile.autoAcceptThreshold} hasTemplate={!!profile.autoReplyTemplate} />
       </Panel>
 
@@ -362,6 +371,82 @@ function CreatorMarketDesk({
         </Panel>
       )}
 
+    </div>
+  );
+}
+
+/**
+ * The creator's verified social accounts, in the market card. Verifying opens X's or
+ * LinkedIn's own sign-in (a plain link to /api/verify/<provider>/start); Attnn. keeps
+ * only the public id, name and handle. At least one is needed to go live, and a live
+ * market can't unlink its last one.
+ */
+function VerifiedAccounts({ profile }: { profile: ProfileData }) {
+  const router = useRouter();
+  const [busy, setBusy] = React.useState<SocialProvider | null>(null);
+  if (profile.verifyProviders.length === 0) return null;
+  const linked = new Set(profile.verifications.map((v) => v.provider));
+  const missing = profile.verifyProviders.filter((p) => !linked.has(p));
+  const none = profile.verifications.length === 0;
+
+  async function unlink(p: SocialProvider) {
+    setBusy(p);
+    try {
+      const res = await fetch(`/api/verify/${p}`, { method: "DELETE" });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        toast({ title: `${PROVIDER_LABEL[p]} unlinked`, variant: "success" });
+        router.refresh();
+      } else {
+        toast({ title: "Couldn't unlink", description: data.error ?? "Try again", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Couldn't unlink", description: "Network error", variant: "destructive" });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <div className="mt-4 border-t border-border pt-4">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <span className="text-[13px] font-medium text-text-primary">Verified accounts</span>
+        {profile.verifications.map((v) => {
+          const href = verificationHref(v);
+          return (
+            <span key={v.provider} className="inline-flex items-center gap-1.5 rounded-full border border-green/40 bg-green/10 px-2.5 py-1 text-xs text-text-primary">
+              <BadgeCheck aria-hidden className="h-3.5 w-3.5 text-green" />
+              {href ? (
+                <a href={href} target="_blank" rel="noopener noreferrer" className="focus-ring rounded hover:underline">
+                  {verificationLabel(v)}
+                </a>
+              ) : (
+                verificationLabel(v)
+              )}
+              <button
+                type="button"
+                onClick={() => unlink(v.provider)}
+                disabled={busy !== null}
+                className="focus-ring ml-1 rounded text-text-secondary hover:text-arc-coral"
+                aria-label={`Unlink ${PROVIDER_LABEL[v.provider]}`}
+              >
+                {busy === v.provider ? "…" : "×"}
+              </button>
+            </span>
+          );
+        })}
+        {missing.map((p) => (
+          <Button key={p} size="sm" variant={none ? "default" : "outline"} asChild>
+            <a href={`/api/verify/${p}/start`}>Verify with {PROVIDER_LABEL[p]}</a>
+          </Button>
+        ))}
+      </div>
+      <p className={cn("mt-2 text-[13px]", none ? "text-arc-gold" : "text-text-secondary")}>
+        {none
+          ? "Verify at least one account before going live, so bidders know this market is really yours. "
+          : "Shown on your market page. "}
+        You sign in on X or LinkedIn itself. Attnn. only sees your public name and handle; it can&apos;t post or read your messages.
+      </p>
     </div>
   );
 }

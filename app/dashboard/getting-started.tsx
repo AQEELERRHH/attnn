@@ -89,6 +89,12 @@ export function GettingStarted({
             Open my market
           </Button>
         );
+      case "verify":
+        return (
+          <Button size="sm" variant={variant} onClick={() => onOpenView("creator")}>
+            Verify an account
+          </Button>
+        );
       case "registered":
         return step.state === "waiting" ? null : (
           <Button size="sm" variant={variant} onClick={() => onOpenView("creator")}>

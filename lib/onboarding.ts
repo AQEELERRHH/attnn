@@ -9,7 +9,7 @@
  */
 export type OnboardingRole = "bidder" | "creator" | "both";
 
-export type StepId = "wallet" | "fund" | "first-bid" | "market" | "registered" | "photo" | "first-reply";
+export type StepId = "wallet" | "fund" | "first-bid" | "market" | "verify" | "registered" | "photo" | "first-reply";
 
 export interface ChecklistStep {
   id: StepId;
@@ -36,7 +36,12 @@ export interface ChecklistInput {
   placedStatuses: string[];
   /** Bids this user received. */
   received: { status: string }[];
-  profile: { registration: "active" | "registering" | "failed" | "none"; avatarUrl: string | null } | null;
+  profile: {
+    registration: "active" | "registering" | "failed" | "none";
+    avatarUrl: string | null;
+    /** Has a verified social account; null when verification isn't set up (no step then). */
+    verified?: boolean | null;
+  } | null;
   /** Bidder agent strategy saved. */
   hasAgent: boolean;
   isTestnet: boolean;
@@ -105,6 +110,16 @@ export function computeChecklist(i: ChecklistInput): { role: OnboardingRole; ste
     done: reg === "active",
     state: reg === "registering" ? "waiting" : reg === "failed" ? "failed" : undefined,
   };
+  // Only when verification is set up: a market can't go live without it.
+  const verify: ChecklistStep | null =
+    i.profile && i.profile.verified !== null && i.profile.verified !== undefined
+      ? {
+          id: "verify",
+          title: "Verify your X or LinkedIn",
+          detail: "Sign in with one of your accounts so bidders know this market is really yours. Attnn. can't post or read your messages.",
+          done: i.profile.verified,
+        }
+      : null;
   const photo: ChecklistStep = {
     id: "photo",
     title: "Add a photo",
@@ -123,11 +138,12 @@ export function computeChecklist(i: ChecklistInput): { role: OnboardingRole; ste
     waiting,
   };
 
+  const v = verify ? [verify] : [];
   const steps =
     role === "creator"
-      ? [wallet, market, registered, photo, firstReply]
+      ? [wallet, market, ...v, registered, photo, firstReply]
       : role === "both"
-        ? [wallet, fund, firstBid, market, registered, firstReply]
+        ? [wallet, fund, firstBid, market, ...v, registered, firstReply]
         : [wallet, fund, firstBid];
 
   const done = steps.filter((s) => s.done).length;

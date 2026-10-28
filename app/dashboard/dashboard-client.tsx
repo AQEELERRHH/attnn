@@ -9,6 +9,7 @@ import { Num } from "@/components/market";
 import { BrandMark } from "@/components/market/brand-mark";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/hooks/use-toast";
+import { PROVIDER_LABEL, isSocialProvider, verifyErrorMessage } from "@/lib/social-verify-rules";
 import { cn } from "@/lib/cn";
 import { shortAddress } from "@/lib/format";
 import { AgentConsole } from "./agent-console";
@@ -45,7 +46,10 @@ export function DashboardClient({
   networkLabel,
   policy,
   onboarding,
+  verifyResult = { verified: null, error: null },
 }: {
+  /** Result of a social-account verification, from the callback's redirect query. */
+  verifyResult?: { verified: string | null; error: string | null };
   wallet: WalletData | null;
   profile: ProfileData | null;
   bidderConfig: BidderConfigData | null;
@@ -101,6 +105,21 @@ export function DashboardClient({
       router.refresh(); // the checklist depends on the role
     }
   };
+
+  // Back from verifying an X / LinkedIn account: say how it went, open the Creator tab
+  // and drop the query so a refresh doesn't repeat the message.
+  React.useEffect(() => {
+    if (!verifyResult.verified && !verifyResult.error) return;
+    setView("creator");
+    if (verifyResult.error) {
+      toast({ title: "Account not verified", description: verifyErrorMessage(verifyResult.error) ?? undefined, variant: "destructive" });
+    } else if (isSocialProvider(verifyResult.verified)) {
+      toast({ title: `${PROVIDER_LABEL[verifyResult.verified]} account verified`, description: "It now shows on your market page.", variant: "success" });
+    }
+    router.replace("/dashboard", { scroll: false });
+    // Runs once per redirect back from the provider.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Auto-provision the Circle wallet on first visit.
   React.useEffect(() => {

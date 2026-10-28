@@ -85,6 +85,13 @@
       "when": 1791750202721,
       "tag": "0011_agent_safety_withdrawals",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1793212564753,
+      "tag": "0012_social_verifications",
+      "breakpoints": true
     }
   ]
 }

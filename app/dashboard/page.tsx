@@ -12,6 +12,7 @@ import { escrowVersion } from "@/lib/escrow";
 import { getUsdcBalance } from "@/lib/activation";
 import { spentToday } from "@/lib/agent";
 import { registrationState } from "@/lib/registration";
+import { enabledProviders, listVerifications } from "@/lib/social-verify";
 import { computeCreatorStats, loadMarketBids } from "@/lib/market";
 import { bookRanks, computeBidderTotals, computeCreatorTotals } from "@/lib/portfolio";
 import { DashboardClient } from "./dashboard-client";
@@ -22,7 +23,9 @@ export const metadata = { title: "Portfolio · Attnn." };
 
 const DAY = 24 * 60 * 60 * 1000;
 
-export default async function DashboardPage() {
+export default async function DashboardPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
+  const query = await searchParams;
+  const one = (v: string | string[] | undefined) => (typeof v === "string" ? v : null);
   const session = await auth();
   if (!session?.user?.id) redirect("/register");
 
@@ -42,6 +45,9 @@ export default async function DashboardPage() {
     db.query.bids.findFirst({ where: and(eq(bids.bidderUserId, userId), ne(bids.status, "failed")), columns: { id: true } }),
     db.query.bids.findFirst({ where: and(eq(bids.creatorUserId, userId), eq(bids.status, "accepted")), columns: { id: true } }),
   ]);
+
+  const verifyProviders = enabledProviders();
+  const verifications = profile ? await listVerifications(userId) : [];
 
   // Everything still open, plus the last 30 days of history, on either side of the market.
   const myBids = await db.query.bids.findMany({
@@ -169,7 +175,14 @@ export default async function DashboardPage() {
       ...(everReplied ? [{ status: "accepted" }] : []),
       ...myBids.filter((b) => b.creatorUserId === userId).map((b) => ({ status: b.status })),
     ],
-    profile: profile ? { registration: registrationState(profile), avatarUrl: profile.avatarUrl ?? null } : null,
+    profile: profile
+      ? {
+          registration: registrationState(profile),
+          avatarUrl: profile.avatarUrl ?? null,
+          // null = verification isn't set up on this deployment, so no step.
+          verified: verifyProviders.length > 0 ? verifications.length > 0 : null,
+        }
+      : null,
     hasAgent: !!bidderCfg,
     isTestnet,
   });
@@ -184,6 +197,7 @@ export default async function DashboardPage() {
         onrampWidgetUrl: onrampEnabled() ? onrampEnvironment().widgetBaseUrl : null,
       }}
       now={now}
+      verifyResult={{ verified: one(query.verified), error: one(query.verify_error) }}
       networkLabel={arc.chain.name}
       policy={{
         escrowAddress: escrowAddress(),
@@ -215,6 +229,8 @@ export default async function DashboardPage() {
               availabilityStatus: profile.availabilityStatus ?? "available",
               openTo: profile.openTo ?? [],
               avatarUrl: profile.avatarUrl ?? null,
+              verifications,
+              verifyProviders,
             }
           : null
       }

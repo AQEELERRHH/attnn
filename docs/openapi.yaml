@@ -137,6 +137,19 @@ components:
             minBid: { type: string, description: 'Minimum bid in atomic USDC (6 decimals); "1000000" is $1.' }
             isActive: { type: boolean, description: Market registered and active on Arc. }
             market: { type: string, description: "Path of the creator's market page on attnn.xyz (where bids are placed)." }
+            verified:
+              type: array
+              description: >-
+                Social accounts the creator proved they control by signing in with that platform.
+                Proves control of the account, not real-world identity. Empty for markets that went live
+                before verification existed.
+              items:
+                type: object
+                properties:
+                  provider: { type: string, enum: [x, linkedin] }
+                  handle: { type: [string, "null"], description: X handle without the @; null for LinkedIn, which shares no profile URL. }
+                  displayName: { type: [string, "null"] }
+              example: [{ provider: x, handle: emdee002, displayName: Emdee }]
         payment:
           type: object
           description: Present on paid responses.

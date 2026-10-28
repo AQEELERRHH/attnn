@@ -8,9 +8,12 @@ import { profiles } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { ACTIVATION_FUNDS_MESSAGE, ACTIVATION_MIN_USDC, getUsdcBalance } from "@/lib/activation";
 import { RegistrationError, submitRegistration } from "@/lib/registration";
+import { hasVerification, verificationRequired } from "@/lib/social-verify";
+import { VERIFY_REQUIRED_MESSAGE } from "@/lib/social-verify-rules";
 
 /**
- * Registers the creator on the AttnnRegistry from their own wallet.
+ * Registers the creator on the AttnnRegistry from their own wallet. Requires at least
+ * one verified social account (X or LinkedIn) whenever verification is configured.
  *
  * Returns { success, status }: "registering" while the transaction confirms (the
  * market goes live when the registry confirms it, usually within seconds), or
@@ -28,6 +31,12 @@ export async function POST(req: NextRequest) {
     const profile = await db.query.profiles.findFirst({ where: eq(profiles.userId, userId) });
     if (!profile) return NextResponse.json({ error: "Profile not found" }, { status: 404 });
     if (profile.isActive) return NextResponse.json({ success: true, status: "active" });
+
+    // A market goes live only once the creator has proved they control a social
+    // account (lib/social-verify.ts), so nobody can open a market as someone else.
+    if (verificationRequired() && !(await hasVerification(userId))) {
+      return NextResponse.json({ error: VERIFY_REQUIRED_MESSAGE, code: "VERIFY_REQUIRED" }, { status: 400 });
+    }
 
     const wallet = await mainWallet(userId);
     if (!wallet) return NextResponse.json({ error: "Wallet not found" }, { status: 404 });

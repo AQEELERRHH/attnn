@@ -27,6 +27,8 @@ export const LIMITS = {
   agentRun: { name: "agent-run", max: 10, windowMs: 60 * 60 * 1000 },
   profileWrite: { name: "profile-write", max: 60, windowMs: 60 * 60 * 1000 },
   upload: { name: "upload", max: 20, windowMs: 60 * 60 * 1000 },
+  // Creator social verification (X / LinkedIn sign-in): starts per hour.
+  socialVerify: { name: "social-verify", max: 20, windowMs: 60 * 60 * 1000 },
   // Card-checkout sessions (Onramp Kit): each one costs a Circle API call.
   onrampSession: { name: "onramp-session", max: 30, windowMs: 60 * 60 * 1000 },
   // Per address: one link a minute. A cooldown, not a daily cap, so nobody can lock

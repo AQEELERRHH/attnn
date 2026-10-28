@@ -54,11 +54,16 @@ console.log(res.data.profile, res.data.payment);   // profile + Gateway receipt
     "availabilityStatus": "available",
     "minBid": "1000000",
     "isActive": true,
-    "market": "/c/emdee002"
+    "market": "/c/emdee002",
+    "verified": [{ "provider": "x", "handle": "emdee002", "displayName": "Emdee" }]
   },
   "payment": { "success": true, "transaction": "6058b27a-…", "network": "eip155:5042", "payer": "0xbbac…c58a", "amount": "1000" }
 }
 ```
+
+`verified` lists the social accounts the creator proved they control by signing in with X or
+LinkedIn (an X handle, or a LinkedIn name; LinkedIn shares no profile link). It proves control of the
+account, not real-world identity. New markets need at least one before they go live.
 
 To bid, open `https://attnn.xyz` + `profile.market`. The USDC waits in the escrow: paid to the
 creator only when they reply (at least 100 characters), refunded at once if they decline, and

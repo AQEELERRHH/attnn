@@ -6,6 +6,7 @@ import { bidderConfigs, bids, profiles } from "@/lib/db/schema";
 import { auth } from "@/lib/auth";
 import { arc, escrowAddress, txUrl } from "@/lib/chain";
 import { computeCreatorStats, loadMarketBids } from "@/lib/market";
+import { listVerifications } from "@/lib/social-verify";
 import { SiteHeader } from "@/components/market/site-header";
 import { CreatorMarket, type CreatorMarketProps } from "./client";
 
@@ -20,13 +21,14 @@ export default async function CreatorMarketPage({ params }: { params: Promise<{ 
   if (!profile) notFound();
 
   const now = Date.now();
-  const [marketBids, openRows, session] = await Promise.all([
+  const [marketBids, openRows, session, verifications] = await Promise.all([
     loadMarketBids(profile.userId, now),
     db
       .select({ id: bids.id, bidderUserId: bids.bidderUserId, amountUsdc: bids.amountUsdc, createdAt: bids.createdAt, score: bids.score })
       .from(bids)
       .where(and(eq(bids.creatorUserId, profile.userId), inArray(bids.status, ["pending", "counter_offered"]))),
     auth(),
+    listVerifications(profile.userId),
   ]);
   const stats = computeCreatorStats(marketBids, profile.minBid, now);
 
@@ -52,6 +54,7 @@ export default async function CreatorMarketPage({ params }: { params: Promise<{ 
   const props: CreatorMarketProps = {
     handle: profile.handle,
     avatarUrl: profile.avatarUrl,
+    verifications,
     tags: profile.tags,
     paused,
     registeredOnChain: profile.isActive,

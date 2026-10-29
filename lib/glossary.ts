@@ -39,7 +39,7 @@ export const glossary = {
     "In an emergency, new bids can be paused. The pause can't move or freeze USDC already in the escrow: replies, declines and refunds keep working.",
   /** Shown only when paid profile reads are on (lib/gateway.ts agentReadsEnabled). */
   agentReads:
-    "Pays $0.001 over x402 to read a creator's profile, at most once per creator a day, only from the read balance you add, and only to Attnn.'s own profile endpoint. With no read balance it reads profiles for free.",
+    "Reading a creator's profile costs $0.001, counted in your daily budget (once per creator a day). If it can't pay for a profile, it doesn't bid on that creator.",
   agentNeverWithReads:
-    "Touch your main wallet, or send USDC anywhere except into the escrow, apart from $0.001 profile reads paid from the read balance you add. Only you can move money.",
+    "Touch your main wallet, or send USDC anywhere except the escrow and $0.001 profile reads. Only you can move money.",
 } as const;

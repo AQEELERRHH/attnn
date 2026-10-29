@@ -49,9 +49,9 @@ export function AgentPolicy({ config, spent, policy }: { config: BidderConfigDat
             <Rule kind="limit">
               Fit score of at least <Num>{config.minFitScore}/10</Num>. If the AI can&apos;t score a creator, no bid
             </Rule>
-            {policy.reads && (
+            {policy.readPrice && (
               <Rule kind="limit">
-                {glossary.agentReads} Read balance now: <Money atomic={policy.reads.balance} />
+                Reading a creator&apos;s profile costs <Money atomic={policy.readPrice} />, counted in your daily budget (once per creator a day). If it can&apos;t pay for a profile, no bid on that creator
               </Rule>
             )}
           </ul>
@@ -81,7 +81,7 @@ export function AgentPolicy({ config, spent, policy }: { config: BidderConfigDat
         </h3>
         <ul className="mt-3 grid gap-2.5 text-[13px] md:grid-cols-3">
           <Rule kind="never">
-            {policy.reads ? glossary.agentNeverWithReads : "Touch your main wallet, or send USDC anywhere but the escrow. Only you can move money"}
+            {policy.readPrice ? glossary.agentNeverWithReads : "Touch your main wallet, or send USDC anywhere but the escrow. Only you can move money"}
           </Rule>
           <Rule kind="never">Approve more than the bid it&apos;s placing, or approve anything but the escrow</Rule>
           <Rule kind="never">Release your escrowed USDC to a creator</Rule>

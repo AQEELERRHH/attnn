@@ -7,7 +7,8 @@
  *   attnn/settlement.submitted → confirmSettlement
  *   attnn/creator.registering  → confirmRegistration (creator market goes live)
  *   cron every 10 min          → sweepInFlightBids (backstop for all three)
- *   attnn/agent.reads-fund     → fundAgentReads (agent wallet → its Gateway read balance)
+ *   attnn/agent.reads-fund     → fundAgentReads (agent wallet → its Gateway read balance, then
+ *                                the agent runs again)
  */
 import { and, eq, inArray, isNotNull, isNull, lt } from "drizzle-orm";
 import { inngest } from "@/lib/inngest";
@@ -15,7 +16,7 @@ import { db } from "@/lib/db/client";
 import { agentWallet, walletByAddress } from "@/lib/wallets";
 import { agentLogs, bids } from "@/lib/db/schema";
 import { arc } from "@/lib/chain";
-import { gatewayWalletAbi } from "@/lib/gateway";
+import { PROFILE_READ_PRICE, gatewayBalance, gatewayWalletAbi } from "@/lib/gateway";
 import { publicClient, usdcAbi, USDC_ADDRESS } from "@/lib/arc";
 import { escrowAbiFor, escrowVersion, placeBidArgs } from "@/lib/escrow";
 import { bidsPaused } from "@/lib/app-settings";
@@ -394,17 +395,18 @@ export async function listUnsyncedPendingBids(olderThan: Date) {
 }
 
 /**
- * Adds to the bidder agent's x402 read balance: the agent wallet approves the Gateway
- * wallet contract for exactly `amount`, then deposits it. Sent only by the user's own
- * request (POST /api/wallet/agent { action: "fund_reads" }); the agent never funds itself.
- * Each step has its own op key, so a retried run never deposits twice. One run per user
- * at a time, so two top-ups can't spend each other's approval.
+ * Tops up the bidder agent's x402 read balance: the agent wallet approves the Gateway
+ * wallet contract for exactly `amount`, then deposits it. Requested by the agent itself
+ * when it can't pay for the profiles it wants to read (lib/agent.ts requestTopUp, at most
+ * once an hour, READ_TOPUP each). Each step has its own op key, so a retried run never
+ * deposits twice; one run per user at a time, so two top-ups can't spend each other's
+ * approval. With `resume`, once Gateway shows the deposit, the agent runs again.
  */
 export const fundAgentReads = inngest.createFunction(
   { id: "fund-agent-reads", name: "Fund Agent Read Balance", retries: 4, concurrency: { limit: 1, key: "event.data.userId" } },
   { event: "attnn/agent.reads-fund" },
   async ({ event, step }) => {
-    const { userId, amount, opKey } = event.data as { userId: string; amount: string; opKey: string };
+    const { userId, amount, opKey, resume } = event.data as { userId: string; amount: string; opKey: string; resume?: boolean };
     const wallet = await step.run("wallet", async () => {
       const w = await agentWallet(userId);
       return w ? { id: w.circleWalletId, address: w.address } : null;
@@ -450,6 +452,21 @@ export const fundAgentReads = inngest.createFunction(
       }
       if (!done) return { inFlight: call.what };
     }
-    return { deposited: amount };
+    if (!resume) return { deposited: amount };
+
+    // Gateway credits a deposit shortly after it lands on Arc; then let the agent read.
+    for (let i = 0; i < MAX_CHECKS; i++) {
+      const ready = await step.run(`credited-${i}`, async () => (await gatewayBalance(wallet.address)) >= PROFILE_READ_PRICE);
+      if (ready) {
+        const run = await step.run("run-agent", async () => {
+          const { runBidderAgent } = await import("@/lib/agent");
+          const r = await runBidderAgent(userId);
+          return { bidsPlaced: r.bidsPlaced, creatorsFound: r.creatorsFound };
+        });
+        return { deposited: amount, run };
+      }
+      await step.sleep(`credit-wait-${i}`, waitFor(i));
+    }
+    return { deposited: amount, credited: false };
   },
 );

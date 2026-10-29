@@ -12,13 +12,15 @@ import { bidsPaused } from "./app-settings";
 import {
   PROFILE_READ_PRICE,
   PROFILE_READ_TTL_MS,
+  READ_TOPUP,
   agentReadsBaseUrl,
   agentReadsEnabled,
   buyProfile,
   circleSigner,
   gatewayBalance,
 } from "./gateway";
-import { formatMoney } from "./format";
+import { AGENT_WALLET_GAS_RESERVE } from "./wallets";
+import { inngest } from "./inngest";
 import { eq, and, gte, inArray, ne, sql } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
 
@@ -37,13 +39,28 @@ function startOfUtcDay(): Date {
   return d;
 }
 
-/** Today's committed spend: every bid except ones that failed (no USDC moved). */
+/**
+ * Today's committed spend: every bid except ones that failed (no USDC moved), plus the
+ * profile reads the user's agent wallet paid for over x402 today.
+ */
 export async function spentToday(userId: string): Promise<bigint> {
-  const [row] = await db
-    .select({ total: sql<string>`COALESCE(SUM(CAST(${bids.amountUsdc} AS BIGINT)), 0)` })
-    .from(bids)
-    .where(and(eq(bids.bidderUserId, userId), gte(bids.createdAt, startOfUtcDay()), ne(bids.status, "failed")));
-  return BigInt(row?.total ?? "0");
+  const since = startOfUtcDay();
+  const [[row], [reads]] = await Promise.all([
+    db
+      .select({ total: sql<string>`COALESCE(SUM(CAST(${bids.amountUsdc} AS BIGINT)), 0)` })
+      .from(bids)
+      .where(and(eq(bids.bidderUserId, userId), gte(bids.createdAt, since), ne(bids.status, "failed"))),
+    db
+      .select({ total: sql<string>`COALESCE(SUM(CAST(${x402Payments.amountUsdc} AS BIGINT)), 0)` })
+      .from(x402Payments)
+      .where(
+        and(
+          gte(x402Payments.createdAt, since),
+          sql`lower(${x402Payments.payer}) IN (SELECT lower(${wallets.address}) FROM ${wallets} WHERE ${wallets.userId} = ${userId} AND ${wallets.purpose} = 'agent')`,
+        ),
+      ),
+  ]);
+  return BigInt(row?.total ?? "0") + BigInt(reads?.total ?? "0");
 }
 
 /**
@@ -177,9 +194,13 @@ async function runBidderAgentHoldingLease(userId: string, held: { token: Date })
       return { bidsPlaced: 0, creatorsFound: 0, errors, logId: uuidv4() };
     }
 
-    // Read each creator's profile the way an outside agent would: paid over x402 from the
-    // agent's read balance (lib/gateway.ts). Without a read balance it uses the free copy.
-    const reads = await prepareProfileReads(wallet);
+    // Every agent pays to read a creator's gated profile before scoring them, Attnn.'s
+    // own included (lib/gateway.ts). Profiles bought in the last day are read from the copy.
+    const reads = await prepareProfileReads(userId, wallet, filteredCreators.map((c) => c.profile.handle), budget);
+    if (reads.stop) {
+      await logAgentAction(userId, "agent_stopped", { reason: reads.stop, creatorsFound });
+      return { bidsPlaced: 0, creatorsFound, errors: [...errors, reads.stop], logId: uuidv4() };
+    }
 
     // Score up to 10; keep those above the bidder's fit threshold.
     // A creator the AI couldn't score is skipped, never bid on blind.
@@ -289,7 +310,7 @@ async function runBidderAgentHoldingLease(userId: string, held: { token: Date })
       bidsPlaced,
       profilesBought: reads.bought,
       ...(reads.bought ? { readSpend: (PROFILE_READ_PRICE * BigInt(reads.bought)).toString() } : {}),
-      ...(reads.note ? { readNote: reads.note } : {}),
+      ...(reads.topUp ? { readTopUp: READ_TOPUP.toString() } : {}),
     });
   } catch (err) {
     errors.push(`Agent run failed: ${err}`);
@@ -301,15 +322,21 @@ async function runBidderAgentHoldingLease(userId: string, held: { token: Date })
 // ─── Paid profile reads (x402) ───────────────────────────────────────────────
 
 interface ProfileReads {
-  /** Buying is on and the read balance covers at least one more read. */
-  active: boolean;
+  /** Paid reads are switched on (otherwise every read is free: AGENT_X402=0 or no paywall). */
+  paid: boolean;
   balance: bigint;
   payer: string;
   signer: ReturnType<typeof circleSigner> | null;
   baseUrl: string;
+  budget: bigint;
+  userId: string;
   bought: number;
-  /** Why the run used free reads, for the run log. */
-  note: string | null;
+  /** Handles this payer bought in the last day: read from the copy, free. */
+  owned: Set<string>;
+  /** A top-up of the read balance was requested this run. */
+  topUp: boolean;
+  /** Set when the run can't read any profile, so it stops (and says why). */
+  stop: string | null;
   lastError: string | null;
 }
 
@@ -322,50 +349,85 @@ type ProfileView = {
   isActive: boolean;
 } & ({ source: "x402"; paid: bigint; transaction: string } | { source: "x402_earlier" | "free" });
 
-async function prepareProfileReads(wallet: { address: string; circleWalletId: string }): Promise<ProfileReads> {
+/** Handles this payer bought within PROFILE_READ_TTL_MS. */
+async function ownedProfiles(payer: string, handles: string[]): Promise<Set<string>> {
+  if (!handles.length) return new Set();
+  const rows = await db
+    .select({ resource: x402Payments.resource })
+    .from(x402Payments)
+    .where(
+      and(
+        sql`lower(${x402Payments.payer}) = ${payer.toLowerCase()}`,
+        inArray(x402Payments.resource, handles.map((h) => `profile:${h}`)),
+        gte(x402Payments.createdAt, new Date(Date.now() - PROFILE_READ_TTL_MS)),
+      ),
+    );
+  return new Set(rows.map((r) => r.resource.slice("profile:".length)));
+}
+
+/**
+ * Asks fundAgentReads to add READ_TOPUP from the agent wallet to its read balance (at most
+ * once an hour: the hour is in the op key and the event id). When the deposit lands, the
+ * job runs this agent again. Skipped if the agent wallet can't spare it.
+ */
+async function requestTopUp(userId: string, wallet: { address: string }): Promise<boolean> {
+  const usdc = await getUsdcBalance(wallet.address).catch(() => null);
+  if (usdc === null || usdc < READ_TOPUP + AGENT_WALLET_GAS_RESERVE * BigInt(2)) return false;
+  const opKey = `reads-topup:${userId}:${new Date().toISOString().slice(0, 13)}`;
+  await inngest.send({ id: opKey, name: "attnn/agent.reads-fund", data: { userId, amount: READ_TOPUP.toString(), opKey, resume: true } });
+  return true;
+}
+
+async function prepareProfileReads(
+  userId: string,
+  wallet: { address: string; circleWalletId: string },
+  handles: string[],
+  budget: bigint,
+): Promise<ProfileReads> {
   const reads: ProfileReads = {
-    active: false,
+    paid: agentReadsEnabled(),
     balance: BigInt(0),
     payer: wallet.address,
     signer: null,
     baseUrl: "",
+    budget,
+    userId,
     bought: 0,
-    note: null,
+    owned: new Set(),
+    topUp: false,
+    stop: null,
     lastError: null,
   };
-  if (!agentReadsEnabled()) return reads;
+  if (!reads.paid) return reads;
   try {
     reads.baseUrl = agentReadsBaseUrl();
-    reads.balance = await gatewayBalance(wallet.address);
+    [reads.balance, reads.owned] = await Promise.all([gatewayBalance(wallet.address), ownedProfiles(wallet.address, handles)]);
   } catch (err) {
-    reads.note = `Paid profile reads unavailable this run (${err instanceof Error ? err.message : err}); used free reads`;
-    return reads;
-  }
-  if (reads.balance < PROFILE_READ_PRICE) {
-    reads.note = `Read balance is ${formatMoney(reads.balance)}: add one on the Agent tab and your agent pays for each profile it reads over x402`;
+    console.warn("agent: profile reads unavailable:", err);
+    reads.stop = "Couldn't reach Circle to pay for creator profiles, so no profiles were read and no bids placed. The agent tries again on its next run";
     return reads;
   }
   reads.signer = circleSigner(wallet.circleWalletId, wallet.address);
-  reads.active = true;
+
+  const toBuy = handles.filter((h) => !reads.owned.has(h)).length;
+  if (reads.balance >= PROFILE_READ_PRICE * BigInt(toBuy)) return reads;
+  // Short: top up for later reads. With nothing to pay even one read, this run waits for it.
+  reads.topUp = await requestTopUp(userId, wallet).catch((err) => {
+    console.error("agent: couldn't request a read top-up:", err);
+    return false;
+  });
+  if (reads.balance < PROFILE_READ_PRICE && reads.owned.size === 0) {
+    reads.stop = reads.topUp
+      ? "Setting aside a few cents for profile reads ($0.001 each). The agent runs again as soon as that's ready"
+      : "Not enough USDC in the agent wallet to pay for profile reads ($0.001 each). Move some USDC into it on the Agent tab";
+  }
   return reads;
 }
 
-/** Has this payer bought this creator's profile recently? Then it reads its copy for free. */
-async function paidRecently(payer: string, handle: string): Promise<boolean> {
-  const row = await db.query.x402Payments.findFirst({
-    where: and(
-      sql`lower(${x402Payments.payer}) = ${payer.toLowerCase()}`,
-      eq(x402Payments.resource, `profile:${handle}`),
-      gte(x402Payments.createdAt, new Date(Date.now() - PROFILE_READ_TTL_MS)),
-    ),
-    columns: { id: true },
-  });
-  return !!row;
-}
-
 /**
- * The profile the agent scores. Paid over x402 when the read balance allows; null (skip
- * the creator) when a paid read fails, so the agent never scores what it couldn't read.
+ * The profile the agent scores, read the way any agent reads it: paid over x402 (or the
+ * copy it paid for in the last day). Null when it couldn't pay: that creator is skipped,
+ * never scored on a free read.
  */
 async function readProfile(reads: ProfileReads, p: typeof profiles.$inferSelect): Promise<ProfileView | null> {
   const stored = {
@@ -376,17 +438,22 @@ async function readProfile(reads: ProfileReads, p: typeof profiles.$inferSelect)
     availabilityStatus: p.availabilityStatus,
     isActive: p.isActive,
   };
-  if (!reads.active || !reads.signer) return { ...stored, source: "free" };
-  if (await paidRecently(reads.payer, p.handle)) return { ...stored, source: "x402_earlier" };
-  if (reads.balance < PROFILE_READ_PRICE) {
-    reads.active = false;
-    reads.note = "Read balance ran out during this run; the rest were read for free";
-    return { ...stored, source: "free" };
+  if (!reads.paid) return { ...stored, source: "free" };
+  if (reads.owned.has(p.handle)) return { ...stored, source: "x402_earlier" };
+  if (!reads.signer || reads.balance < PROFILE_READ_PRICE) {
+    reads.lastError = reads.topUp ? "the read balance is being topped up; it's read on the next run" : "no read balance left to pay for the profile";
+    return null;
+  }
+  // Reads count in the daily budget, like bids.
+  if ((await spentToday(reads.userId)) + PROFILE_READ_PRICE > reads.budget) {
+    reads.lastError = "daily budget reached";
+    return null;
   }
   try {
     const bought = await buyProfile({ baseUrl: reads.baseUrl, handle: p.handle, signer: reads.signer });
     reads.balance -= bought.amount;
     reads.bought++;
+    reads.owned.add(p.handle);
     return {
       handle: p.handle,
       bio: bought.profile.bio ?? null,

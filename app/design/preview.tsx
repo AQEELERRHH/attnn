@@ -223,6 +223,7 @@ export function DesignPreview() {
             escrowV2: true,
             agentWallet: { address: "0x00000000000000000000000000000000000000a1", href: "https://testnet.arcscan.app/address/0x00000000000000000000000000000000000000a1", usdc: "40000000" },
             mainWalletUsdc: "120000000",
+        readPrice: "1000",
           }}
         />
         <h2 className="font-display text-lg font-bold">Agent spending policy</h2>
@@ -249,6 +250,7 @@ export function DesignPreview() {
             escrowV2: true,
             agentWallet: { address: "0x00000000000000000000000000000000000000a1", href: "https://testnet.arcscan.app/address/0x00000000000000000000000000000000000000a1", usdc: "40000000" },
             mainWalletUsdc: "120000000",
+        readPrice: "1000",
           }}
         />
       </section>

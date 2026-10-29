@@ -7,8 +7,9 @@
  * facilitator is faked, and it checks the signature by recovering the signer, so a wrongly
  * built or wrongly signed payment fails here exactly as it would at Gateway.
  *
- * Also: the read balance is funded only by the user (POST /api/wallet/agent fund_reads →
- * fundAgentReads job: approve the Gateway wallet for exactly the amount, then deposit).
+ * Every agent pays: there is no free fallback. With no read balance the agent asks for a
+ * $0.10 top-up (fundAgentReads: approve the Gateway wallet for exactly that, then deposit),
+ * and runs again once Gateway shows it. Reads count in the daily budget.
  */
 import "../helpers/env.mts";
 process.env.SELLER_ADDRESS = "0x5e11e40000000000000000000000000000000005";
@@ -37,6 +38,7 @@ const gateway = {
   balances: new Map<string, bigint>(),
   settled: [] as { from: string; to: string; value: bigint }[],
   refuse: null as string | null,
+  down: false,
 };
 mock.module("@circle-fin/x402-batching/server", {
   namedExports: {
@@ -104,6 +106,7 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     });
   }
   if (url === "https://gateway-api-testnet.circle.com/v1/balances") {
+    if (gateway.down) return new Response("{}", { status: 503 });
     const { sources } = JSON.parse(String(init?.body)) as { sources: { depositor: string; domain: number }[] };
     assert.equal(sources[0]!.domain, 26, "Arc's Gateway domain");
     const atomic = gateway.balances.get(sources[0]!.depositor.toLowerCase()) ?? BigInt(0);
@@ -128,7 +131,8 @@ profileRoute = (await import("../../app/api/c/[handle]/route.ts")) as never;
 const { runBidderAgent } = await import("../../lib/agent.ts");
 const { clearSettingsCache } = await import("../../lib/app-settings.ts");
 const gw = await import("../../lib/gateway.ts");
-const agentWalletRoute = await import("../../app/api/wallet/agent/route.ts");
+const { spentToday } = await import("../../lib/agent.ts");
+const { bidderConfigs } = await import("../../lib/db/schema.ts");
 const lifecycle = await import("../../inngest/bid-lifecycle.ts");
 
 type Handler = (ctx: { event: { data: unknown }; step: unknown }) => Promise<unknown>;
@@ -139,21 +143,12 @@ const step = { run: async (_id: string, fn: () => unknown) => fn(), sleep: async
 const AGENT_KEY = `0x${"7".repeat(64)}` as Hex;
 const AGENT = privateKeyToAccount(AGENT_KEY).address.toLowerCase();
 
-const post = (body: unknown) =>
-  agentWalletRoute.POST(
-    new NextRequest("http://localhost:3000/api/wallet/agent", {
-      method: "POST",
-      headers: { "content-type": "application/json", host: "localhost:3000", origin: "http://localhost:3000" },
-      body: JSON.stringify(body),
-    }),
-  );
-
 after(async () => {
   globalThis.fetch = realFetch;
   await closeDb();
 });
 
-const logs = async (action: "creator_scored" | "creator_discovered" | "error") =>
+const logs = async (action: "creator_scored" | "creator_discovered" | "agent_stopped" | "error") =>
   (await db.select().from(agentLogs).where(eq(agentLogs.action, action))).map((l) => l.data as Record<string, unknown>);
 
 describe("bidder agent pays for profiles over x402", () => {
@@ -173,6 +168,7 @@ describe("bidder agent pays for profiles over x402", () => {
     gateway.balances.clear();
     gateway.settled.length = 0;
     gateway.refuse = null;
+    gateway.down = false;
     profileHits.length = 0;
     ai.proceed = true;
     session.userId = null; // the agent calls the profile API with no session, like an outside agent
@@ -220,13 +216,65 @@ describe("bidder agent pays for profiles over x402", () => {
     assert.deepEqual(sources, ["x402", "x402_earlier"]);
   });
 
-  test("no read balance: reads for free and says how to switch paid reads on", async () => {
+  test("no read balance: tops up $0.10 by itself, then runs again, pays and bids", async () => {
+    const first = await runBidderAgent(ids.bidder);
+    assert.equal(first.bidsPlaced, 0);
+    assert.equal(profileHits.length, 0, "no free read");
+    assert.equal(world.signed.length, 0);
+    const [stopped] = await logs("agent_stopped");
+    assert.match(String(stopped!.reason), /Setting aside a few cents for profile reads/);
+
+    const [topUp] = world.events as { id?: string; name: string; data: { userId: string; amount: string; opKey: string; resume: boolean } }[];
+    assert.equal(topUp!.name, "attnn/agent.reads-fund");
+    assert.deepEqual({ amount: topUp!.data.amount, resume: topUp!.data.resume }, { amount: "100000", resume: true });
+    assert.equal(topUp!.id, topUp!.data.opKey, "one top-up an hour: Inngest de-duplicates the event");
+
+    // The job: approve exactly $0.10 for the Gateway wallet, deposit it, wait for Gateway
+    // to show it, then run the agent again.
+    world.autoMine = true;
+    const jobStep = {
+      ...step,
+      run: async (id: string, fn: () => unknown) => {
+        if (id === "credited-1") gateway.balances.set(AGENT, BigInt(100_000)); // Gateway credits the deposit
+        return fn();
+      },
+    };
+    const out = (await fundJob({ event: { data: topUp!.data }, step: jobStep })) as { run?: { bidsPlaced: number } };
+    assert.equal(out.run?.bidsPlaced, 1);
+    assert.deepEqual(world.calls("approve")[0]!.args, [GATEWAY_WALLET, "100000"]);
+    assert.equal(world.calls("approve")[0]!.walletId, "w-bidder-agent");
+    assert.equal(world.calls("deposit")[0]!.contractAddress, GATEWAY_WALLET.toLowerCase());
+    assert.deepEqual(world.calls("deposit")[0]!.args, ["0x3600000000000000000000000000000000000000", "100000"]);
+    assert.equal(gateway.settled.length, 1, "the resumed run paid for the profile");
+  });
+
+  test("a retried top-up deposits once", async () => {
+    world.autoMine = true;
+    const data = { userId: ids.bidder, amount: "100000", opKey: "reads-topup:test", resume: false };
+    await fundJob({ event: { data }, step });
+    await fundJob({ event: { data }, step });
+    assert.equal(world.calls("approve").length, 1);
+    assert.equal(world.calls("deposit").length, 1);
+  });
+
+  test("profile reads count in the daily budget", async () => {
+    gateway.balances.set(AGENT, BigInt(100_000));
+    // Budget = exactly the creator's $5 floor: after the $0.001 read, the bid no longer fits.
+    await db.update(bidderConfigs).set({ dailyBudget: "5000000" }).where(eq(bidderConfigs.userId, ids.bidder));
     const result = await runBidderAgent(ids.bidder);
-    assert.equal(result.bidsPlaced, 1, JSON.stringify(result.errors));
+    assert.equal(gateway.settled.length, 1);
+    assert.equal(result.bidsPlaced, 0);
+    assert.match(result.errors.join(" "), /exceeds remaining budget/);
+    assert.equal(await spentToday(ids.bidder), BigInt(1_000));
+  });
+
+  test("Circle unreachable: no free reads, no bids, and the run says why", async () => {
+    gateway.down = true;
+    const result = await runBidderAgent(ids.bidder);
+    assert.equal(result.bidsPlaced, 0);
     assert.equal(profileHits.length, 0);
-    assert.equal(world.signed.length, 0, "nothing signed");
-    const [summary] = await logs("creator_discovered");
-    assert.match(String(summary!.readNote), /add one on the Agent tab/);
+    const [stopped] = await logs("agent_stopped");
+    assert.match(String(stopped!.reason), /Couldn't reach Circle/);
   });
 
   test("Gateway refuses the payment: that creator is skipped, never bid on", async () => {
@@ -290,51 +338,4 @@ describe("the agent won't sign a payment it doesn't expect", () => {
       assert.equal(world.signed.length, 0, "nothing was signed");
     });
   }
-});
-
-describe("adding to the read balance", () => {
-  beforeEach(async () => {
-    world.reset();
-    await truncateAll();
-    await seedMarket();
-    world.walletAddress.set("w-bidder-agent", addr.bidderAgent);
-    gateway.balances.clear();
-    session.userId = ids.bidder;
-  });
-
-  test("the user adds $0.10: approve the Gateway wallet for exactly that, then deposit; a retry adds nothing", async () => {
-    const requestId = crypto.randomUUID();
-    const res = await post({ action: "fund_reads", amount: "0.10", requestId });
-    assert.equal(res.status, 202, JSON.stringify(await res.clone().json()));
-    const [event] = world.events as { id?: string; name: string; data: { userId: string; amount: string; opKey: string } }[];
-    assert.equal(event!.name, "attnn/agent.reads-fund");
-    assert.equal(event!.data.amount, "100000");
-    assert.equal(event!.id, event!.data.opKey, "Inngest de-duplicates a retried request");
-
-    world.autoMine = true;
-    await fundJob({ event: { data: event!.data }, step });
-    await fundJob({ event: { data: event!.data }, step }); // Inngest retry of the whole run
-    const approve = world.calls("approve");
-    const deposit = world.calls("deposit");
-    assert.equal(approve.length, 1);
-    assert.equal(deposit.length, 1);
-    assert.deepEqual(approve[0]!.args, [GATEWAY_WALLET, "100000"]);
-    assert.equal(approve[0]!.walletId, "w-bidder-agent");
-    assert.equal(deposit[0]!.contractAddress, GATEWAY_WALLET.toLowerCase());
-    assert.deepEqual(deposit[0]!.args, ["0x3600000000000000000000000000000000000000", "100000"]);
-  });
-
-  test("only the fixed amounts, only up to $2 held, only with enough USDC, only signed in", async () => {
-    const r = () => crypto.randomUUID();
-    assert.equal((await post({ action: "fund_reads", amount: "0.37", requestId: r() })).status, 400);
-    gateway.balances.set(addr.bidderAgent, BigInt(1_600_000));
-    const over = await post({ action: "fund_reads", amount: "0.50", requestId: r() });
-    assert.equal(over.status, 400);
-    assert.match((await over.json()).error, /up to \$2\.00/);
-    world.usdc.set(addr.bidderAgent, BigInt(120_000));
-    assert.equal((await post({ action: "fund_reads", amount: "0.10", requestId: r() })).status, 400, "fees need a little more");
-    session.userId = null;
-    assert.equal((await post({ action: "fund_reads", amount: "0.10", requestId: r() })).status, 401);
-    assert.equal(world.events.length, 0);
-  });
 });

@@ -1,11 +1,12 @@
 /**
- * The bidder agent as an x402 buyer: it pays $0.001 per creator profile it reads, from
- * a small "read balance" the user adds to Circle Gateway from the agent wallet.
+ * The bidder agent as an x402 buyer. Every agent, Attnn.'s own included, pays $0.001 to
+ * read a creator's gated profile before scoring them; humans browsing the site read free.
  *
- * How the money moves:
- *   - Adding a read balance (user action, Agent tab): the agent wallet approves the
- *     Gateway wallet contract for exactly that amount and deposits it (two Circle
- *     transactions, inngest `fundAgentReads`). The balance belongs to the agent wallet.
+ * How the money moves (all within the user's daily budget, lib/agent.ts spentToday):
+ *   - Read balance: when it can't cover a run's reads, the agent tops it up by itself with
+ *     READ_TOPUP ($0.10) from its own wallet, at most once an hour (inngest
+ *     `fundAgentReads`: approve the Gateway wallet contract for exactly that, then deposit).
+ *     The balance sits in Circle Gateway under the agent wallet's address.
  *   - Each read: the agent wallet signs an EIP-3009 TransferWithAuthorization for the
  *     price, addressed to the Gateway wallet contract (Circle signs it; nothing goes
  *     on-chain from us). Gateway verifies, settles in batches, gas-free.
@@ -21,11 +22,8 @@ import { signTypedDataWithCircle } from "./circle";
 /** $0.001 in atomic USDC: what /api/c/[handle] charges, and the most the agent will pay per read. */
 export const PROFILE_READ_PRICE = BigInt(1_000);
 
-/** Read balance amounts a user can add from the Agent tab: $0.10, $0.50, $1.00. */
-export const READ_FUNDING_OPTIONS = [BigInt(100_000), BigInt(500_000), BigInt(1_000_000)] as const;
-
-/** The most a read balance may hold ($2.00 = 2,000 reads), so little USDC sits outside the wallets. */
-export const READ_BALANCE_MAX = BigInt(2_000_000);
+/** What the agent adds to its read balance when it runs low: $0.10 = 100 reads. */
+export const READ_TOPUP = BigInt(100_000);
 
 /** A creator's profile is bought at most once per bidder in this window (re-reads use the copy). */
 export const PROFILE_READ_TTL_MS = 24 * 60 * 60 * 1000;

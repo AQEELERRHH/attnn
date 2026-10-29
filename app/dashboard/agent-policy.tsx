@@ -83,7 +83,9 @@ export function AgentPolicy({ config, spent, policy }: { config: BidderConfigDat
           <Rule kind="never">
             {policy.readPrice ? glossary.agentNeverWithReads : "Touch your main wallet, or send USDC anywhere but the escrow. Only you can move money"}
           </Rule>
-          <Rule kind="never">Approve more than the bid it&apos;s placing, or approve anything but the escrow</Rule>
+          <Rule kind="never">
+            {policy.readPrice ? glossary.agentApproveWithReads : "Approve more than the bid it's placing, or approve anything but the escrow"}
+          </Rule>
           <Rule kind="never">Release your escrowed USDC to a creator</Rule>
         </ul>
       </section>

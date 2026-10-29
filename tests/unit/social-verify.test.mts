@@ -128,6 +128,17 @@ describe("reading the provider's answer", () => {
   });
 });
 
+describe("server log details", () => {
+  test("only the provider's named error fields are logged, never tokens", () => {
+    assert.equal(
+      sv.providerError({ error: "invalid_client", error_description: "Client authentication failed", access_token: "SECRET" }),
+      ": error=invalid_client error_description=Client authentication failed",
+    );
+    assert.equal(sv.providerError({ access_token: "SECRET" }), "");
+    assert.equal(sv.providerError(null), "");
+  });
+});
+
 describe("checklist", () => {
   const base = {
     role: "creator",

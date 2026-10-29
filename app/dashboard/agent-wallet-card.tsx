@@ -177,3 +177,4 @@ export function AgentWalletCard({ policy }: { policy: AgentPolicyInfo }) {
     </Panel>
   );
 }
+

@@ -10,6 +10,7 @@ import { ESCROW_MAX_BID, ESCROW_MIN_BID, REFUND_PERIOD_MS, formatUsd } from "@/l
 import { computeChecklist } from "@/lib/onboarding";
 import { escrowVersion } from "@/lib/escrow";
 import { getUsdcBalance } from "@/lib/activation";
+import { PROFILE_READ_PRICE, agentReadsEnabled } from "@/lib/gateway";
 import { spentToday } from "@/lib/agent";
 import { registrationState } from "@/lib/registration";
 import { enabledProviders, listVerifications } from "@/lib/social-verify";
@@ -211,6 +212,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           ? { address: agentWalletRow.address, href: addressUrl(agentWalletRow.address), usdc: agentWalletUsdc }
           : null,
         mainWalletUsdc: walletUsdc,
+        readPrice: agentReadsEnabled() ? PROFILE_READ_PRICE.toString() : null,
       }}
       wallet={wallet ? { id: wallet.id, address: wallet.address, circleWalletId: wallet.circleWalletId, blockchain: wallet.blockchain, state: wallet.state } : null}
       profile={

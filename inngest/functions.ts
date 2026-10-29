@@ -8,7 +8,7 @@ import { REFUND_PERIOD_MS } from "@/lib/bid-rules";
 import { acquireAgentLease, releaseAgentLease } from "@/lib/agent-lease";
 import { spentToday } from "@/lib/agent";
 import { escrowAddress } from "@/lib/chain";
-import { confirmRegistration, confirmSettlement, listUnsyncedPendingBids, placeBid, sweepInFlightBids } from "./bid-lifecycle";
+import { confirmRegistration, confirmSettlement, fundAgentReads, listUnsyncedPendingBids, placeBid, sweepInFlightBids } from "./bid-lifecycle";
 
 // ─── Auto-Refund Cron ─────────────────────────────────────────────────────────
 // Hourly. Claims refunds for escrowed bids nobody replied to within the escrow's
@@ -501,4 +501,5 @@ export const functions = [
   confirmSettlement,
   sweepInFlightBids,
   confirmRegistration,
+  fundAgentReads,
 ];

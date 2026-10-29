@@ -10,6 +10,7 @@ import { mock } from "node:test";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { encodeAbiParameters, encodeEventTopics, toFunctionSelector, zeroHash, type Hex } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
 
 const fileUrl = (p: string) => pathToFileURL(path.resolve(p)).href;
 const lower = (a: string) => a.toLowerCase();
@@ -80,6 +81,10 @@ export const world = {
   escrowPaused: false,
   escrowOwner: "0x00000000000000000000000000000000000000ad",
   escrowPendingOwner: "0x0000000000000000000000000000000000000000",
+  /** Circle wallet id → private key, for wallets that sign typed data (x402). */
+  signingKeys: new Map<string, Hex>(),
+  /** Every EIP-712 request that reached "Circle" signing, as sent (JSON string). */
+  signed: [] as { walletId: string; typedData: string }[],
 
   reset() {
     this.txs.length = 0;
@@ -103,6 +108,8 @@ export const world = {
     this.escrowPaused = false;
     this.escrowOwner = "0x00000000000000000000000000000000000000ad";
     this.escrowPendingOwner = "0x0000000000000000000000000000000000000000";
+    this.signingKeys.clear();
+    this.signed.length = 0;
   },
 
   /** Circle calls made for a given contract function. */
@@ -354,6 +361,31 @@ export async function installFakes(): Promise<void> {
         const tx = world.txs.find((t) => t.id === txId);
         if (!tx) throw new Error("Transaction not found");
         return { state: tx.state, txHash: tx.txHash };
+      },
+      // Signs like Circle's API: parses the eth_signTypedData_v4 JSON it was given, so a
+      // malformed request (missing EIP712Domain, unparseable numbers) fails here too.
+      signTypedDataWithCircle: async (walletId: string, typedData: string) => {
+        const key = world.signingKeys.get(walletId);
+        if (!key) throw new Error(`fake circle: wallet ${walletId} can't sign`);
+        world.signed.push({ walletId, typedData });
+        const t = JSON.parse(typedData) as {
+          types: Record<string, { name: string; type: string }[]>;
+          domain: Record<string, unknown>;
+          primaryType: string;
+          message: Record<string, unknown>;
+        };
+        if (!t.types.EIP712Domain) throw new Error("fake circle: EIP712Domain type missing");
+        const { EIP712Domain: _domain, ...types } = t.types;
+        const fields = types[t.primaryType] ?? [];
+        const message = Object.fromEntries(
+          Object.entries(t.message).map(([k, v]) => [k, fields.find((f) => f.name === k)?.type.startsWith("uint") ? BigInt(String(v)) : v]),
+        );
+        return privateKeyToAccount(key).signTypedData({
+          domain: { ...t.domain, chainId: Number(t.domain.chainId) } as never,
+          types,
+          primaryType: t.primaryType,
+          message,
+        } as never);
       },
       provisionUserWallet: async () => {
         throw new Error("fake circle: provisionUserWallet not used in tests");

@@ -37,4 +37,9 @@ export const glossary = {
     "Bid messages and replies are never written on Arc as text. Only a fingerprint of each is stored, which proves a reply wasn't changed afterwards without revealing what it says. Amounts and wallet addresses are public on Arc, like any blockchain payment; your name and email never go on-chain.",
   escrowPause:
     "In an emergency, new bids can be paused. The pause can't move or freeze USDC already in the escrow: replies, declines and refunds keep working.",
+  /** Shown only when paid profile reads are on (lib/gateway.ts agentReadsEnabled). */
+  agentReads:
+    "Reading a creator's profile costs $0.001, counted in your daily budget (once per creator a day). If it can't pay for a profile, it doesn't bid on that creator.",
+  agentNeverWithReads:
+    "Touch your main wallet, or send USDC anywhere except the escrow and $0.001 profile reads. Only you can move money.",
 } as const;

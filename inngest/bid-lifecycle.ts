@@ -7,12 +7,16 @@
  *   attnn/settlement.submitted → confirmSettlement
  *   attnn/creator.registering  → confirmRegistration (creator market goes live)
  *   cron every 10 min          → sweepInFlightBids (backstop for all three)
+ *   attnn/agent.reads-fund     → fundAgentReads (agent wallet → its Gateway read balance, then
+ *                                the agent runs again)
  */
 import { and, eq, inArray, isNotNull, isNull, lt } from "drizzle-orm";
 import { inngest } from "@/lib/inngest";
 import { db } from "@/lib/db/client";
-import { walletByAddress } from "@/lib/wallets";
-import { bids } from "@/lib/db/schema";
+import { agentWallet, walletByAddress } from "@/lib/wallets";
+import { agentLogs, bids } from "@/lib/db/schema";
+import { arc } from "@/lib/chain";
+import { PROFILE_READ_PRICE, gatewayBalance, gatewayWalletAbi } from "@/lib/gateway";
 import { publicClient, usdcAbi, USDC_ADDRESS } from "@/lib/arc";
 import { escrowAbiFor, escrowVersion, placeBidArgs } from "@/lib/escrow";
 import { bidsPaused } from "@/lib/app-settings";
@@ -389,3 +393,80 @@ export async function listUnsyncedPendingBids(olderThan: Date) {
     .where(and(eq(bids.status, "pending"), isNull(bids.onChainBidId), lt(bids.createdAt, olderThan)))
     .limit(100);
 }
+
+/**
+ * Tops up the bidder agent's x402 read balance: the agent wallet approves the Gateway
+ * wallet contract for exactly `amount`, then deposits it. Requested by the agent itself
+ * when it can't pay for the profiles it wants to read (lib/agent.ts requestTopUp, at most
+ * once an hour, READ_TOPUP each). Each step has its own op key, so a retried run never
+ * deposits twice; one run per user at a time, so two top-ups can't spend each other's
+ * approval. With `resume`, once Gateway shows the deposit, the agent runs again.
+ */
+export const fundAgentReads = inngest.createFunction(
+  { id: "fund-agent-reads", name: "Fund Agent Read Balance", retries: 4, concurrency: { limit: 1, key: "event.data.userId" } },
+  { event: "attnn/agent.reads-fund" },
+  async ({ event, step }) => {
+    const { userId, amount, opKey, resume } = event.data as { userId: string; amount: string; opKey: string; resume?: boolean };
+    const wallet = await step.run("wallet", async () => {
+      const w = await agentWallet(userId);
+      return w ? { id: w.circleWalletId, address: w.address } : null;
+    });
+    if (!wallet) return { failed: "no agent wallet" };
+
+    const fail = (what: string, reason: string) =>
+      step.run(`log-${what}-failed`, async () => {
+        await db.insert(agentLogs).values({
+          userId,
+          action: "error",
+          data: { reason: `Adding to the read balance failed at the ${what} step (${reason}). Nothing was deposited.` },
+        });
+      });
+
+    const calls = [
+      { what: "approval", contractAddress: USDC_ADDRESS, abi: usdcAbi, functionName: "approve", args: [arc.gatewayWallet, amount] },
+      { what: "deposit", contractAddress: arc.gatewayWallet, abi: gatewayWalletAbi, functionName: "deposit", args: [arc.usdcAddress, amount] },
+    ] as const;
+    for (const call of calls) {
+      const tx = await step.run(`submit-${call.what}`, () =>
+        executeContractCallOnce({
+          walletId: wallet.id,
+          contractAddress: call.contractAddress,
+          abi: call.abi,
+          functionName: call.functionName,
+          args: [...call.args],
+          opKey: `${opKey}:${call.what}`,
+        }),
+      );
+      let done = false;
+      for (let i = 0; i < MAX_CHECKS && !done; i++) {
+        const st = await step.run(`${call.what}-status-${i}`, async () => {
+          const t = await getTransactionStatus(tx.txId);
+          return { outcome: classifyTxState(t.state), reason: describeTxFailure(t) };
+        });
+        if (st.outcome === "failed") {
+          await fail(call.what, st.reason);
+          return { failed: call.what };
+        }
+        if (st.outcome === "complete") done = true;
+        else await step.sleep(`${call.what}-wait-${i}`, waitFor(i));
+      }
+      if (!done) return { inFlight: call.what };
+    }
+    if (!resume) return { deposited: amount };
+
+    // Gateway credits a deposit shortly after it lands on Arc; then let the agent read.
+    for (let i = 0; i < MAX_CHECKS; i++) {
+      const ready = await step.run(`credited-${i}`, async () => (await gatewayBalance(wallet.address)) >= PROFILE_READ_PRICE);
+      if (ready) {
+        const run = await step.run("run-agent", async () => {
+          const { runBidderAgent } = await import("@/lib/agent");
+          const r = await runBidderAgent(userId);
+          return { bidsPlaced: r.bidsPlaced, creatorsFound: r.creatorsFound };
+        });
+        return { deposited: amount, run };
+      }
+      await step.sleep(`credit-wait-${i}`, waitFor(i));
+    }
+    return { deposited: amount, credited: false };
+  },
+);

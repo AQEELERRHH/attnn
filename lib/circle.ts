@@ -237,6 +237,19 @@ export function parseRequestId(v: unknown): string | null {
   return typeof v === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v) ? v.toLowerCase() : null;
 }
 
+/**
+ * Signs EIP-712 typed data with a developer-controlled wallet (EOA), for off-chain
+ * authorisations such as an x402 Gateway payment. `typedData` is the standard
+ * eth_signTypedData_v4 JSON (domain, types incl. EIP712Domain, primaryType, message).
+ */
+export async function signTypedDataWithCircle(walletId: string, typedData: string, memo?: string): Promise<Hex> {
+  const client = getSDK();
+  const { data } = await client.signTypedData({ walletId, data: typedData, ...(memo ? { memo } : {}) });
+  const signature = data?.signature;
+  if (!signature || !/^0x[0-9a-fA-F]+$/.test(signature)) throw new Error("Circle did not return a signature");
+  return signature as Hex;
+}
+
 export interface TransactionStatus {
   state: string;
   txHash?: string;

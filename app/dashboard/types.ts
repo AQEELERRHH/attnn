@@ -135,4 +135,6 @@ export interface AgentPolicyInfo {
   agentWallet: { address: string; href: string; usdc: string | null } | null;
   /** Main wallet balance, for "Move to agent". */
   mainWalletUsdc: string | null;
+  /** What an agent pays to read a creator's profile (atomic USDC), or null when reads are free. */
+  readPrice: string | null;
 }

@@ -42,4 +42,6 @@ export const glossary = {
     "Reading a creator's profile costs $0.001, counted in your daily budget (once per creator a day). If it can't pay for a profile, it doesn't bid on that creator.",
   agentNeverWithReads:
     "Touch your main wallet, or send USDC anywhere except the escrow and $0.001 profile reads. Only you can move money.",
+  agentApproveWithReads:
+    "Approve any contract except the escrow, for exactly the bid it's placing, and Circle Gateway, for exactly the $0.10 it sets aside for profile reads.",
 } as const;

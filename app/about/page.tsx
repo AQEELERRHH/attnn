@@ -34,7 +34,7 @@ export default async function AboutPage() {
   const v2 = escrow ? await escrowVersion(escrow).then((v) => v === 2).catch(() => false) : false;
   const reads = agentReadsEnabled();
   const agentLimits = reads ? [...AGENT_LIMITS, glossary.agentReads] : AGENT_LIMITS;
-  const agentNever = reads ? [glossary.agentNeverWithReads, ...AGENT_NEVER.slice(1)] : AGENT_NEVER;
+  const agentNever = reads ? [glossary.agentNeverWithReads, glossary.agentApproveWithReads, ...AGENT_NEVER.slice(2)] : AGENT_NEVER;
   const escrowRules = [
     `Every bid is between ${formatUsd(ESCROW_MIN_BID)} and ${formatUsd(ESCROW_MAX_BID)}.`,
     `Only the creator can release a bid, by replying within ${days} days.`,

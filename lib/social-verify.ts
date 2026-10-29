@@ -101,9 +101,10 @@ export interface VerifyState {
 
 const b64url = (buf: Buffer) => buf.toString("base64url");
 
-function stateSecret(): string {
-  const s = process.env.AUTH_SECRET;
-  if (!s) throw new Error("AUTH_SECRET is not set");
+/** Auth.js accepts either name (production uses NEXTAUTH_SECRET); lib/withdrawals.ts does the same. */
+export function stateSecret(): string {
+  const s = process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET;
+  if (!s) throw new Error("AUTH_SECRET / NEXTAUTH_SECRET is not set");
   return s;
 }
 
@@ -111,7 +112,7 @@ export function newVerifyState(provider: SocialProvider, userId: string, now = D
   return { provider, userId, state: b64url(randomBytes(24)), verifier: b64url(randomBytes(48)), exp: now + VERIFY_STATE_TTL_MS };
 }
 
-/** `payload.signature`, both base64url; HMAC-SHA256 keyed by AUTH_SECRET. */
+/** `payload.signature`, both base64url; HMAC-SHA256 keyed by AUTH_SECRET (or NEXTAUTH_SECRET). */
 export function sealState(s: VerifyState, secret = stateSecret()): string {
   const payload = b64url(Buffer.from(JSON.stringify(s)));
   const sig = b64url(createHmac("sha256", secret).update(payload).digest());
@@ -208,7 +209,7 @@ export async function exchangeAndIdentify(p: SocialProvider, code: string, verif
   const tokenRes = await fetch(cfg.tokenUrl, { method: "POST", headers, body, signal: AbortSignal.timeout(10_000) });
   const token = (await tokenRes.json().catch(() => null)) as { access_token?: unknown } | null;
   if (!tokenRes.ok || typeof token?.access_token !== "string") {
-    console.warn(`social-verify: ${p} token exchange failed (${tokenRes.status})`);
+    console.warn(`social-verify: ${p} token exchange failed (${tokenRes.status})${providerError(token)}`);
     throw new VerificationError("failed");
   }
 
@@ -216,9 +217,10 @@ export async function exchangeAndIdentify(p: SocialProvider, code: string, verif
     headers: { Authorization: `Bearer ${token.access_token}`, Accept: "application/json" },
     signal: AbortSignal.timeout(10_000),
   });
-  const identity = parseIdentity(p, await profileRes.json().catch(() => null));
+  const profileJson: unknown = await profileRes.json().catch(() => null);
+  const identity = parseIdentity(p, profileJson);
   if (!profileRes.ok || !identity) {
-    console.warn(`social-verify: ${p} profile read failed (${profileRes.status})`);
+    console.warn(`social-verify: ${p} profile read failed (${profileRes.status})${providerError(profileJson)}`);
     throw new VerificationError("failed");
   }
   return identity;
@@ -310,4 +312,17 @@ export async function removeVerification(userId: string, p: SocialProvider): Pro
     if (live && rows.length <= 1) throw new VerificationError("last");
     await tx.delete(socialVerifications).where(and(eq(socialVerifications.userId, userId), eq(socialVerifications.provider, p)));
   });
+}
+
+/**
+ * The provider's own error code and description, for the server log only. Never includes
+ * tokens or secrets: only these named fields, each cut to 200 characters.
+ */
+export function providerError(body: unknown): string {
+  if (!body || typeof body !== "object") return "";
+  const b = body as Record<string, unknown>;
+  const parts = ["error", "error_description", "title", "detail", "message", "serviceErrorCode"]
+    .map((k) => (typeof b[k] === "string" || typeof b[k] === "number" ? `${k}=${String(b[k]).slice(0, 200)}` : null))
+    .filter(Boolean);
+  return parts.length ? `: ${parts.join(" ")}` : "";
 }

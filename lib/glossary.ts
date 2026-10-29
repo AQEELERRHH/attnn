@@ -43,5 +43,5 @@ export const glossary = {
   agentNeverWithReads:
     "Touch your main wallet, or send USDC anywhere except the escrow and $0.001 profile reads. Only you can move money.",
   agentApproveWithReads:
-    "Approve any contract except the escrow, for exactly the bid it's placing, and Circle Gateway, for exactly the $0.10 it sets aside for profile reads.",
+    "Approve any contract other than these two: the escrow, for exactly the bid it's placing, or Circle Gateway, for exactly the $0.10 it sets aside for profile reads.",
 } as const;

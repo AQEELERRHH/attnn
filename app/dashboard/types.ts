@@ -1,4 +1,5 @@
 import type { BidStatus } from "@/lib/db/schema";
+import type { PublicVerification, SocialProvider } from "@/lib/social-verify-rules";
 
 /** Shapes passed from the dashboard server page to its client components (all serialisable). */
 
@@ -25,6 +26,10 @@ export interface ProfileData {
   availabilityStatus: string;
   openTo: string[];
   avatarUrl: string | null;
+  /** Social accounts this creator has verified (X, LinkedIn). */
+  verifications: PublicVerification[];
+  /** Providers configured on this deployment; empty = verification off. */
+  verifyProviders: SocialProvider[];
 }
 
 export interface BidderConfigData {

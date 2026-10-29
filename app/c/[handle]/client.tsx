@@ -4,7 +4,7 @@ import * as React from "react";
 import { useRequestId } from "@/app/dashboard/use-request-id";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Lock, ThumbsDown, ThumbsUp } from "lucide-react";
+import { BadgeCheck, Lock, ThumbsDown, ThumbsUp } from "lucide-react";
 import {
   BidTicket,
   Change,
@@ -23,6 +23,7 @@ import {
 } from "@/components/market";
 import { cn } from "@/lib/cn";
 import { formatChange, formatDuration, shortAddress, timeAgo } from "@/lib/format";
+import { verificationHref, verificationLabel, type PublicVerification } from "@/lib/social-verify-rules";
 import { ratingShare } from "@/lib/reply-rules";
 
 export interface CreatorFill {
@@ -42,6 +43,8 @@ export interface CreatorFill {
 export interface CreatorMarketProps {
   handle: string;
   avatarUrl: string | null;
+  /** The creator's verified social accounts (lib/social-verify.ts). */
+  verifications: PublicVerification[];
   tags: string[];
   paused: boolean;
   registeredOnChain: boolean;
@@ -181,6 +184,26 @@ export function CreatorMarket(props: CreatorMarketProps) {
                 )}
                 {!stats.hasHistory && <StatusChip tone="neutral">New market</StatusChip>}
               </div>
+              {props.verifications.length > 0 && (
+                <ul aria-label="Verified accounts" className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-xs text-text-secondary">
+                  {props.verifications.map((v) => {
+                    const href = verificationHref(v);
+                    return (
+                      <li key={v.provider} className="inline-flex items-center gap-1">
+                        <BadgeCheck aria-hidden className="h-3.5 w-3.5 text-green" />
+                        <span className="sr-only">Verified:</span>
+                        {href ? (
+                          <a href={href} target="_blank" rel="noopener noreferrer" className="focus-ring rounded text-arc-lavender hover:underline">
+                            {verificationLabel(v)}
+                          </a>
+                        ) : (
+                          verificationLabel(v)
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
               {props.tags.length > 0 && (
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   {props.tags.map((t) => (

@@ -475,3 +475,29 @@ export const withdrawalCodes = pgTable(
   },
   (t) => [uniqueIndex("withdrawal_codes_user_subject_uq").on(t.userId, t.subject)],
 );
+
+// ─── Creator social verification (migration 0012) ───────────────────────────
+// A creator proves they control a social account (lib/social-verify.ts) before their
+// market goes live. Only the public account id, handle and name are kept; never a token.
+// One row per user + provider; one provider account verifies only one user.
+
+export const socialVerifications = pgTable(
+  "social_verifications",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    provider: text("provider").$type<"x" | "linkedin">().notNull(),
+    /** The provider's stable account id (X user id, LinkedIn OpenID subject). */
+    providerAccountId: text("provider_account_id").notNull(),
+    /** X handle without the @; null for LinkedIn, which shares no profile URL. */
+    handle: text("handle"),
+    displayName: text("display_name"),
+    verifiedAt: timestamp("verified_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    uniqueIndex("social_verifications_user_provider_uq").on(t.userId, t.provider),
+    uniqueIndex("social_verifications_provider_account_uq").on(t.provider, t.providerAccountId),
+  ],
+);

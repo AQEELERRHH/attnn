@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { gate } from "@/lib/x402";
+import { listVerifications } from "@/lib/social-verify";
 import { getFullProfileByHandle } from "@/lib/profiles";
 import { auth } from "@/lib/auth";
 
@@ -51,6 +52,8 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ handle: str
       minBid: profile.minBid,
       isActive: profile.isActive,
       market: `/c/${profile.handle}`,
+      // Social accounts the creator proved they control (X handle; LinkedIn name only).
+      verified: await listVerifications(profile.userId),
     },
     ...(payment ? { payment } : {}),
   });

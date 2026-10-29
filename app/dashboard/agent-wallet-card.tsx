@@ -33,7 +33,7 @@ async function post(body: unknown) {
  */
 export function AgentWalletCard({ policy }: { policy: AgentPolicyInfo }) {
   const router = useRouter();
-  const [busy, setBusy] = React.useState<null | "create" | "fund" | "withdraw">(null);
+  const [busy, setBusy] = React.useState<null | "create" | "fund" | "withdraw" | "reads">(null);
   const [amount, setAmount] = React.useState("");
   /** Set when a top-up is over the 24-hour allowance and an emailed code was sent for it. */
   const [codeSentTo, setCodeSentTo] = React.useState<string | null>(null);
@@ -82,6 +82,25 @@ export function AgentWalletCard({ policy }: { policy: AgentPolicyInfo }) {
     } catch (err) {
       if ((err as { restart?: boolean }).restart) requestId.done();
       toast({ title: "Couldn't move USDC", description: err instanceof Error ? err.message : "Try again", variant: "destructive" });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function fundReads(option: string) {
+    setBusy("reads");
+    try {
+      const amount = atomicToDollarInput(BigInt(option));
+      await post({ action: "fund_reads", amount, requestId: requestId.idFor(`reads:${option}`) });
+      requestId.done();
+      toast({
+        title: `Adding ${formatMoney(option)} to your read balance`,
+        description: "Two quick transactions on Arc. The balance updates in under a minute.",
+        variant: "success",
+      });
+      setTimeout(() => router.refresh(), 15000);
+    } catch (err) {
+      toast({ title: "Couldn't add to the read balance", description: err instanceof Error ? err.message : "Try again", variant: "destructive" });
     } finally {
       setBusy(null);
     }
@@ -174,6 +193,61 @@ export function AgentWalletCard({ policy }: { policy: AgentPolicyInfo }) {
           reason="Moving USDC to your agent counts toward the $500 that can leave your wallet in any 24 hours without your approval."
         />
       )}
+      {policy.reads && (
+        <ReadBalance reads={policy.reads} agentUsdc={agentUsdc} busy={busy === "reads"} disabled={!!busy} onAdd={fundReads} />
+      )}
     </Panel>
+  );
+}
+
+/** The agent's x402 read balance: what it pays from to read creator profiles, like any outside agent. */
+function ReadBalance({
+  reads,
+  agentUsdc,
+  busy,
+  disabled,
+  onAdd,
+}: {
+  reads: NonNullable<AgentPolicyInfo["reads"]>;
+  agentUsdc: bigint | null;
+  busy: boolean;
+  disabled: boolean;
+  onAdd: (option: string) => void;
+}) {
+  const balance = reads.balance === null ? null : BigInt(reads.balance);
+  const room = balance === null ? BigInt(0) : BigInt(reads.max) - balance;
+  const perRead = BigInt(reads.price);
+  return (
+    <section aria-labelledby="read-balance" className="mt-5 border-t border-border pt-4">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h3 id="read-balance" className="eyebrow">
+            Profile reads (x402)
+          </h3>
+          <Money atomic={balance} className="text-lg font-medium" />
+          {balance !== null && perRead > BigInt(0) && (
+            <span className="ml-2 text-xs text-text-secondary">
+              about <Num>{(balance / perRead).toString()}</Num> reads
+            </span>
+          )}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {reads.options.map((o) => {
+            const amount = BigInt(o);
+            const tooMuch = balance === null || amount > room || agentUsdc === null || amount + GAS_RESERVE * BigInt(2) > agentUsdc;
+            return (
+              <Button key={o} size="sm" variant="outline" onClick={() => onAdd(o)} disabled={disabled || tooMuch}>
+                {busy ? "Adding…" : `Add ${formatMoney(o)}`}
+              </Button>
+            );
+          })}
+        </div>
+      </div>
+      <p className="mt-2 text-xs text-text-secondary">
+        Your agent pays <Money atomic={perRead} /> from this balance to read each creator&apos;s profile, the way any outside AI agent does
+        (once per creator a day). It comes from your agent wallet and is held in Circle Gateway; it can&apos;t be moved back from here yet,
+        so add a little at a time. With no read balance, your agent reads profiles for free.
+      </p>
+    </section>
   );
 }

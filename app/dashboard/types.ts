@@ -135,4 +135,9 @@ export interface AgentPolicyInfo {
   agentWallet: { address: string; href: string; usdc: string | null } | null;
   /** Main wallet balance, for "Move to agent". */
   mainWalletUsdc: string | null;
+  /**
+   * The agent's x402 read balance in Circle Gateway (atomic USDC; null if Gateway couldn't
+   * be asked). Absent when paid profile reads are off or there's no agent wallet yet.
+   */
+  reads?: { balance: string | null; price: string; options: string[]; max: string };
 }

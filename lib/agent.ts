@@ -1,5 +1,5 @@
 import { db } from "./db/client";
-import { bids, agentLogs, profiles, bidderConfigs, wallets } from "./db/schema";
+import { bids, agentLogs, profiles, bidderConfigs, wallets, x402Payments } from "./db/schema";
 import { arc } from "./chain";
 import { evaluateCreatorForBidder } from "./ai";
 import { isActiveOnRegistry } from "./registration";
@@ -9,6 +9,16 @@ import { getUsdcBalance } from "./activation";
 import { agentWallet } from "./wallets";
 import { acquireAgentLease, releaseAgentLease, renewAgentLease } from "./agent-lease";
 import { bidsPaused } from "./app-settings";
+import {
+  PROFILE_READ_PRICE,
+  PROFILE_READ_TTL_MS,
+  agentReadsBaseUrl,
+  agentReadsEnabled,
+  buyProfile,
+  circleSigner,
+  gatewayBalance,
+} from "./gateway";
+import { formatMoney } from "./format";
 import { eq, and, gte, inArray, ne, sql } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
 
@@ -167,20 +177,36 @@ async function runBidderAgentHoldingLease(userId: string, held: { token: Date })
       return { bidsPlaced: 0, creatorsFound: 0, errors, logId: uuidv4() };
     }
 
+    // Read each creator's profile the way an outside agent would: paid over x402 from the
+    // agent's read balance (lib/gateway.ts). Without a read balance it uses the free copy.
+    const reads = await prepareProfileReads(wallet);
+
     // Score up to 10; keep those above the bidder's fit threshold.
     // A creator the AI couldn't score is skipped, never bid on blind.
     const scored: { profile: typeof profiles.$inferSelect; score: number; bidAmount: bigint }[] = [];
     let unscored = 0;
     for (const ct of filteredCreators) {
       try {
+        const view = await readProfile(reads, ct.profile);
+        if (!view) {
+          errors.push(`Skipping ${ct.profile.handle}: ${reads.lastError ?? "couldn't read the profile"}`);
+          continue;
+        }
+        if (!view.isActive || view.availabilityStatus === "not_accepting") continue;
         const result = await evaluateCreatorForBidder(
-          { handle: ct.profile.handle, bio: ct.profile.bio ?? undefined, tags: ct.profile.tags, minBid: ct.profile.minBid },
+          { handle: view.handle, bio: view.bio ?? undefined, tags: view.tags, minBid: view.minBid },
           config.goal ?? "general",
         );
         if (!result) {
           unscored++;
           continue;
         }
+        await logAgentAction(userId, "creator_scored", {
+          creator: ct.profile.handle,
+          score: result.score,
+          profile: view.source,
+          ...(view.source === "x402" ? { x402: { amount: view.paid.toString(), transaction: view.transaction } } : {}),
+        });
         if (!result.proceed || result.score < config.minFitScore) continue;
 
         // The agent bids the creator's floor; the AI only decided whether and how
@@ -256,12 +282,127 @@ async function runBidderAgentHoldingLease(userId: string, held: { token: Date })
       }
     }
 
-    await logAgentAction(userId, "creator_discovered", { count: creatorsFound, scored: scored.length, unscored, bidsPlaced });
+    await logAgentAction(userId, "creator_discovered", {
+      count: creatorsFound,
+      scored: scored.length,
+      unscored,
+      bidsPlaced,
+      profilesBought: reads.bought,
+      ...(reads.bought ? { readSpend: (PROFILE_READ_PRICE * BigInt(reads.bought)).toString() } : {}),
+      ...(reads.note ? { readNote: reads.note } : {}),
+    });
   } catch (err) {
     errors.push(`Agent run failed: ${err}`);
   }
 
   return { bidsPlaced, creatorsFound, errors, logId: uuidv4() };
+}
+
+// ─── Paid profile reads (x402) ───────────────────────────────────────────────
+
+interface ProfileReads {
+  /** Buying is on and the read balance covers at least one more read. */
+  active: boolean;
+  balance: bigint;
+  payer: string;
+  signer: ReturnType<typeof circleSigner> | null;
+  baseUrl: string;
+  bought: number;
+  /** Why the run used free reads, for the run log. */
+  note: string | null;
+  lastError: string | null;
+}
+
+type ProfileView = {
+  handle: string;
+  bio: string | null;
+  tags: string[];
+  minBid: string;
+  availabilityStatus: string;
+  isActive: boolean;
+} & ({ source: "x402"; paid: bigint; transaction: string } | { source: "x402_earlier" | "free" });
+
+async function prepareProfileReads(wallet: { address: string; circleWalletId: string }): Promise<ProfileReads> {
+  const reads: ProfileReads = {
+    active: false,
+    balance: BigInt(0),
+    payer: wallet.address,
+    signer: null,
+    baseUrl: "",
+    bought: 0,
+    note: null,
+    lastError: null,
+  };
+  if (!agentReadsEnabled()) return reads;
+  try {
+    reads.baseUrl = agentReadsBaseUrl();
+    reads.balance = await gatewayBalance(wallet.address);
+  } catch (err) {
+    reads.note = `Paid profile reads unavailable this run (${err instanceof Error ? err.message : err}); used free reads`;
+    return reads;
+  }
+  if (reads.balance < PROFILE_READ_PRICE) {
+    reads.note = `Read balance is ${formatMoney(reads.balance)}: add one on the Agent tab and your agent pays for each profile it reads over x402`;
+    return reads;
+  }
+  reads.signer = circleSigner(wallet.circleWalletId, wallet.address);
+  reads.active = true;
+  return reads;
+}
+
+/** Has this payer bought this creator's profile recently? Then it reads its copy for free. */
+async function paidRecently(payer: string, handle: string): Promise<boolean> {
+  const row = await db.query.x402Payments.findFirst({
+    where: and(
+      sql`lower(${x402Payments.payer}) = ${payer.toLowerCase()}`,
+      eq(x402Payments.resource, `profile:${handle}`),
+      gte(x402Payments.createdAt, new Date(Date.now() - PROFILE_READ_TTL_MS)),
+    ),
+    columns: { id: true },
+  });
+  return !!row;
+}
+
+/**
+ * The profile the agent scores. Paid over x402 when the read balance allows; null (skip
+ * the creator) when a paid read fails, so the agent never scores what it couldn't read.
+ */
+async function readProfile(reads: ProfileReads, p: typeof profiles.$inferSelect): Promise<ProfileView | null> {
+  const stored = {
+    handle: p.handle,
+    bio: p.bio,
+    tags: p.tags,
+    minBid: p.minBid,
+    availabilityStatus: p.availabilityStatus,
+    isActive: p.isActive,
+  };
+  if (!reads.active || !reads.signer) return { ...stored, source: "free" };
+  if (await paidRecently(reads.payer, p.handle)) return { ...stored, source: "x402_earlier" };
+  if (reads.balance < PROFILE_READ_PRICE) {
+    reads.active = false;
+    reads.note = "Read balance ran out during this run; the rest were read for free";
+    return { ...stored, source: "free" };
+  }
+  try {
+    const bought = await buyProfile({ baseUrl: reads.baseUrl, handle: p.handle, signer: reads.signer });
+    reads.balance -= bought.amount;
+    reads.bought++;
+    return {
+      handle: p.handle,
+      bio: bought.profile.bio ?? null,
+      tags: Array.isArray(bought.profile.tags) ? bought.profile.tags : [],
+      minBid: String(bought.profile.minBid ?? p.minBid),
+      availabilityStatus: String(bought.profile.availabilityStatus ?? p.availabilityStatus),
+      isActive: bought.profile.isActive === true,
+      source: "x402",
+      paid: bought.amount,
+      transaction: bought.transaction,
+    };
+  } catch (err) {
+    reads.lastError = `couldn't pay for the profile (${err instanceof Error ? err.message : err})`;
+    console.warn(`agent: x402 read of @${p.handle} failed:`, err);
+    return null;
+  }
 }
 
 // ─── Logging ─────────────────────────────────────────────────────────────────

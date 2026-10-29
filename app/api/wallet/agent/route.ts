@@ -18,6 +18,8 @@ import { getUsdcBalance } from "@/lib/activation";
 import { formatUsd } from "@/lib/bid-rules";
 import { dollarsToAtomic } from "@/lib/format";
 import { AGENT_WALLET_GAS_RESERVE, agentWallet, ensureAgentWallet, mainWallet } from "@/lib/wallets";
+import { READ_BALANCE_MAX, READ_FUNDING_OPTIONS, agentReadsEnabled, gatewayBalance } from "@/lib/gateway";
+import { inngest } from "@/lib/inngest";
 
 /**
  * The bidder agent's separate wallet. Only the signed-in user can call this; the
@@ -29,6 +31,9 @@ import { AGENT_WALLET_GAS_RESERVE, agentWallet, ensureAgentWallet, mainWallet } 
  *                                            route emails a code (202 { needsCode }) and goes
  *                                            ahead when called again with { code }.
  *   { action: "withdraw", amount }        → agent wallet → main wallet
+ *   { action: "fund_reads", amount }      → agent wallet → its x402 read balance in Circle
+ *                                            Gateway ($0.10, $0.50 or $1.00; at most $2 held),
+ *                                            which the agent spends at $0.001 per profile read
  *
  * Transfers return as soon as Circle accepts them; balances (read from Arc)
  * update a few seconds later.
@@ -49,8 +54,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, address: wallet.address });
     }
 
+    if (action === "fund_reads") return await fundReads(userId, body?.amount, body?.requestId);
+
     if (action !== "fund" && action !== "withdraw") {
-      return NextResponse.json({ error: 'action must be "create", "fund" or "withdraw"' }, { status: 400 });
+      return NextResponse.json({ error: 'action must be "create", "fund", "withdraw" or "fund_reads"' }, { status: 400 });
     }
     const amount = dollarsToAtomic(String(body?.amount ?? ""));
     if (amount === null || amount <= BigInt(0)) return NextResponse.json({ error: "Enter an amount like 25" }, { status: 400 });
@@ -127,4 +134,39 @@ export async function POST(req: NextRequest) {
     if (err instanceof WithdrawalError) return NextResponse.json({ error: err.message }, { status: err.status });
     return serverError("wallet/agent", err, "We couldn't confirm the transfer. Check your balances before trying again.");
   }
+}
+
+/**
+ * Agent wallet → its Gateway read balance. The USDC stays the user's (it pays only for
+ * profile reads), so like agent → main it isn't part of the D4 allowance; the amounts are
+ * fixed and small, and the balance is capped at READ_BALANCE_MAX.
+ */
+async function fundReads(userId: string, rawAmount: unknown, rawRequestId: unknown) {
+  if (!agentReadsEnabled()) return NextResponse.json({ error: "Paid profile reads aren't switched on" }, { status: 400 });
+  const amount = dollarsToAtomic(String(rawAmount ?? ""));
+  if (amount === null || !READ_FUNDING_OPTIONS.some((o) => o === amount)) {
+    return NextResponse.json({ error: `Choose ${READ_FUNDING_OPTIONS.map((o) => formatUsd(o)).join(", ")}` }, { status: 400 });
+  }
+  const requestId = parseRequestId(rawRequestId);
+  if (!requestId) return NextResponse.json({ error: "Missing request id. Please reload the page and try again." }, { status: 400 });
+
+  const agent = await agentWallet(userId);
+  if (!agent) return NextResponse.json({ error: "Create the agent wallet first" }, { status: 404 });
+
+  const [balance, readBalance] = await Promise.all([getUsdcBalance(agent.address), gatewayBalance(agent.address)]);
+  // Two transactions (approve + deposit), each paying a small network fee in USDC.
+  if (amount + AGENT_WALLET_GAS_RESERVE * BigInt(2) > balance) {
+    return NextResponse.json({ error: "Not enough USDC in your agent wallet. Move some in first (a little stays behind for network fees)." }, { status: 400 });
+  }
+  if (readBalance + amount > READ_BALANCE_MAX) {
+    return NextResponse.json(
+      { error: `Your read balance is ${formatUsd(readBalance)}; it can hold up to ${formatUsd(READ_BALANCE_MAX)}.` },
+      { status: 400 },
+    );
+  }
+
+  // Same request id → same op keys and the same event: a retry never deposits twice.
+  const opKey = `reads:${stableUuid(`${userId}:${requestId}`)}`;
+  await inngest.send({ id: opKey, name: "attnn/agent.reads-fund", data: { userId, amount: amount.toString(), opKey } });
+  return NextResponse.json({ success: true, amount: amount.toString() }, { status: 202 });
 }

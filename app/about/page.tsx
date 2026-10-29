@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { escrowVersion } from "@/lib/escrow";
 import { glossary } from "@/lib/glossary";
+import { agentReadsEnabled } from "@/lib/gateway";
 
 // Re-checked hourly: the v2 escrow lines depend on reading the contract, which may fail at build time.
 export const revalidate = 3600;
@@ -31,6 +32,9 @@ export default async function AboutPage() {
   const escrow = escrowAddress();
   const days = Math.round(REFUND_PERIOD_MS / (24 * 60 * 60 * 1000));
   const v2 = escrow ? await escrowVersion(escrow).then((v) => v === 2).catch(() => false) : false;
+  const reads = agentReadsEnabled();
+  const agentLimits = reads ? [...AGENT_LIMITS, glossary.agentReads] : AGENT_LIMITS;
+  const agentNever = reads ? [glossary.agentNeverWithReads, ...AGENT_NEVER.slice(1)] : AGENT_NEVER;
   const escrowRules = [
     `Every bid is between ${formatUsd(ESCROW_MIN_BID)} and ${formatUsd(ESCROW_MAX_BID)}.`,
     `Only the creator can release a bid, by replying within ${days} days.`,
@@ -175,7 +179,7 @@ export default async function AboutPage() {
             </p>
             <h3 className="font-medium mb-3">Limits every bidder sets for their agent</h3>
             <ul className="mb-6 list-disc space-y-2 pl-5 text-sm text-text-secondary">
-              {AGENT_LIMITS.map((r) => (
+              {agentLimits.map((r) => (
                 <li key={r}>{r}</li>
               ))}
             </ul>
@@ -187,7 +191,7 @@ export default async function AboutPage() {
             </ul>
             <h3 className="font-medium mb-3">What an agent can never do</h3>
             <ul className="list-disc space-y-2 pl-5 text-sm text-text-secondary">
-              {AGENT_NEVER.map((r) => (
+              {agentNever.map((r) => (
                 <li key={r}>{r}</li>
               ))}
             </ul>

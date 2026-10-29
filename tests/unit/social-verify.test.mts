@@ -128,6 +128,18 @@ describe("reading the provider's answer", () => {
   });
 });
 
+describe("signing secret", () => {
+  test("NEXTAUTH_SECRET works when AUTH_SECRET isn't set (production uses it)", () => {
+    const saved = process.env.AUTH_SECRET;
+    delete process.env.AUTH_SECRET;
+    process.env.NEXTAUTH_SECRET = "legacy-name";
+    assert.equal(sv.stateSecret(), "legacy-name");
+    delete process.env.NEXTAUTH_SECRET;
+    assert.throws(() => sv.stateSecret());
+    process.env.AUTH_SECRET = saved;
+  });
+});
+
 describe("server log details", () => {
   test("only the provider's named error fields are logged, never tokens", () => {
     assert.equal(

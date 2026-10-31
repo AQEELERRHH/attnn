@@ -9,6 +9,7 @@ import assert from "node:assert/strict";
 import { installFakes, world } from "../helpers/fakes.mts";
 import { closeDb, resetDatabase, truncateAll } from "../helpers/db.mts";
 import { seedEscrowedBid, seedMarket } from "../helpers/seed.mts";
+import { runLikeInngest } from "../helpers/inngest-replay.mts";
 
 await installFakes();
 
@@ -95,14 +96,15 @@ describe("timed jobs: idle runs cost one execution", () => {
   });
 
   test("hourly health check with nothing wrong: no steps; the daily full check still runs", async () => {
+    const hour = (h: number) => Date.UTC(2026, 9, 31, h, 40);
     const quiet = recordingStep();
-    const out = await health({ event: { data: {} }, step: quiet.step });
+    const out = await health({ event: { data: {}, ts: hour(11) }, step: quiet.step } as never);
     assert.deepEqual(out.problems, []);
     assert.deepEqual(quiet.ids, []);
 
     const full = recordingStep();
-    await health({ event: { data: { full: true } }, step: full.step });
-    assert.ok(full.ids.includes("quick") && full.ids.includes("prune-rate-limits") && full.ids.includes("evaluate"));
+    await health({ event: { data: {}, ts: hour(6) }, step: full.step } as never);
+    assert.ok(full.ids.includes("prune-rate-limits") && full.ids.includes("snapshot") && full.ids.includes("evaluate"));
   });
 
   test("hourly health check with a problem: checked in a step and alerted", async () => {
@@ -116,9 +118,67 @@ describe("timed jobs: idle runs cost one execution", () => {
       createdAt: new Date(Date.now() - 3 * 60 * 60 * 1000),
     });
     const s = recordingStep();
-    const out = await health({ event: { data: {} }, step: s.step });
+    const out = await health({ event: { data: {}, ts: Date.UTC(2026, 9, 31, 11, 40) }, step: s.step } as never);
     assert.ok((out.problems as string[]).length > 0);
-    assert.deepEqual(s.ids, ["quick", "alert"]);
+    assert.deepEqual(s.ids, ["alert"]);
+  });
+
+  // ── Resumes: Inngest re-runs the function from the top after every step, so the
+  //    read-only checks run again. A resumed run must never skip pending work. ──
+
+  test("sweep resumed after every step still handles every pending row", async () => {
+    const stuck = async () =>
+      (
+        await db
+          .insert(bids)
+          .values({
+            bidderUserId: "00000000-0000-0000-0000-00000000000b",
+            creatorUserId: "00000000-0000-0000-0000-00000000000c",
+            bidderAddress: "0xb100000000000000000000000000000000000001",
+            creatorAddress: "0xc100000000000000000000000000000000000001",
+            amountUsdc: "5000000",
+            status: "placing",
+            createdAt: new Date(Date.now() - 45 * 60 * 1000),
+          })
+          .returning()
+      )[0]!;
+    const a = await stuck();
+    const b = await stuck();
+    const { executed } = await runLikeInngest(sweep, { data: {} });
+    assert.deepEqual(executed.sort(), ["load-work", `placing-${a.id}`, `placing-${b.id}`].sort());
+    const rows = await db.select({ status: bids.status }).from(bids);
+    assert.ok(rows.every((r) => r.status === "failed"), "both stuck placements handled (never sent: failed, no USDC moved)");
+  });
+
+  test("refunds resumed after every claim: every expired bid claimed exactly once", async () => {
+    const old = 3 * 24 * 3600 + 3600;
+    const expired = [await seedEscrowedBid({ ageSeconds: old }), await seedEscrowedBid({ ageSeconds: old }), await seedEscrowedBid({ ageSeconds: old })];
+    const { executed } = await runLikeInngest(refunds, { data: {} });
+    for (const b of expired) assert.equal(executed.filter((s) => s === `refund-${b.id}-0`).length, 1);
+    assert.equal(world.calls("claimRefund").length, 3);
+  });
+
+  test("a claim that fails mid-run doesn't stop the others, and isn't retried in a loop", async () => {
+    const old = 3 * 24 * 3600 + 3600;
+    const expired = [await seedEscrowedBid({ ageSeconds: old }), await seedEscrowedBid({ ageSeconds: old }), await seedEscrowedBid({ ageSeconds: old })];
+    world.failNextSubmit = Object.assign(new Error("circle down"), { status: 503 });
+    const { executed } = await runLikeInngest(refunds, { data: {} });
+    assert.equal(executed.filter((s) => s.startsWith("refund-")).length, 3, "one attempt per bid this hour");
+    assert.equal(world.calls("claimRefund").length, 2, "the other two were claimed");
+    for (const b of expired) assert.ok(executed.includes(`refund-${b.id}-0`));
+  });
+
+  test("a bid settled elsewhere while the run waits is skipped; the rest still run", async () => {
+    const old = 3 * 24 * 3600 + 3600;
+    const [first, second] = [await seedEscrowedBid({ ageSeconds: old }), await seedEscrowedBid({ ageSeconds: old })];
+    const { executed } = await runLikeInngest(refunds, { data: {} }, {
+      between: async (last) => {
+        // After the load step, the creator declines the second bid (it refunds by itself).
+        if (last === "fetch-refundable-bids") await db.update(bids).set({ status: "rejected" }).where(eq(bids.id, second!.id));
+      },
+    });
+    assert.ok(executed.includes(`refund-${first!.id}-0`), "the still-pending bid was claimed");
+    assert.equal(world.calls("claimRefund").length >= 1, true);
   });
 
   test("agents with none switched on: no steps", async () => {

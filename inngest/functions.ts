@@ -456,16 +456,17 @@ export const moneyHealthCheck = inngest.createFunction(
     const health = await import("@/lib/health");
     const { sendAlert } = await import("@/lib/alerts");
     const manualFull = (event?.data as { full?: boolean } | undefined)?.full === true;
-    const full = manualFull || new Date().getUTCHours() === 6;
+    // Decided from when the run was SCHEDULED, which stays the same on every resume and
+    // retry. (The wall clock doesn't: a 06:40 run retried after 07:00 would otherwise
+    // stop being the full check halfway through.)
+    const scheduledAt = typeof event?.ts === "number" ? event.ts : Date.now();
+    const full = manualFull || new Date(scheduledAt).getUTCHours() === 6;
 
-    // Most hours find nothing wrong. A read-only quick check outside any step ends a
-    // clean hourly run in one execution (Inngest bills every step); anything to report,
-    // and the daily full check, run in steps as before.
-    if (!full) {
-      const peek = await health.quickHealthCheck();
-      if (!peek.problems.length) return { full, problems: [], notes: peek.notes };
-    }
-    const quick = await step.run("quick", () => health.quickHealthCheck());
+    // The quick check only reads, so it runs outside any step on every invocation (one
+    // execution for a clean hour: Inngest bills every step). If it throws, the run
+    // fails and Inngest retries it; when retries run out, onFailure emails ALERT_EMAIL.
+    // An alert, once sent, is a memoized step, so a resume never sends it twice.
+    const quick = await health.quickHealthCheck();
     // Rate-limit rows older than two days: pruning once a day is plenty.
     if (full) await step.run("prune-rate-limits", () => health.pruneRateLimits());
 

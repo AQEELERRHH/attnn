@@ -29,25 +29,32 @@ export const autoRefund = inngest.createFunction(
     const escrow = escrowAddress();
     if (!escrow) return { message: "ATTN_ESCROW_CONTRACT not configured" };
 
-    const refundable = await step.run("fetch-refundable-bids", () =>
-      db
-        .select({ id: bids.id, bidderUserId: bids.bidderUserId, amountUsdc: bids.amountUsdc, settlementAttempt: bids.settlementAttempt })
-        .from(bids)
-        .where(
-          and(
-            inArray(bids.status, ["pending", "counter_offered"]),
-            isNotNull(bids.onChainBidId),
-            isNull(bids.settlementTxHash),
-            lt(bids.createdAt, claimableBefore),
-          ),
-        )
-        .limit(100),
-    );
+    const loadRefundWork = async () => {
+      const [refundable, unsynced] = await Promise.all([
+        db
+          .select({ id: bids.id, bidderUserId: bids.bidderUserId, amountUsdc: bids.amountUsdc, settlementAttempt: bids.settlementAttempt })
+          .from(bids)
+          .where(
+            and(
+              inArray(bids.status, ["pending", "counter_offered"]),
+              isNotNull(bids.onChainBidId),
+              isNull(bids.settlementTxHash),
+              lt(bids.createdAt, claimableBefore),
+            ),
+          )
+          .limit(100),
+        // Pre-fix rows that never got an on-chain id can't be claimed automatically.
+        listUnsyncedPendingBids(new Date(Date.now() - REFUND_PERIOD_MS)),
+      ]);
+      return { refundable, unsynced };
+    };
 
-    // Pre-fix rows that never got an on-chain id can't be claimed automatically.
-    const unsynced = await step.run("report-unsynced-expired-bids", () =>
-      listUnsyncedPendingBids(new Date(Date.now() - REFUND_PERIOD_MS)),
-    );
+    // Inngest bills every step and most hours have nothing to refund: a read-only check
+    // outside any step ends an idle run in one execution. With work, the load and every
+    // claim are steps as before, so a retry never claims twice.
+    const peek = await loadRefundWork();
+    if (!peek.refundable.length && !peek.unsynced.length) return { submitted: 0, skipped: 0, unsyncedCount: 0, idle: true };
+    const { refundable, unsynced } = await step.run("fetch-refundable-bids", loadRefundWork);
 
     const results = [];
     for (const bid of refundable) {
@@ -117,9 +124,10 @@ export const runActiveBidders = inngest.createFunction(
     const { bidderConfigs } = await import("@/lib/db/schema");
     const { runBidderAgent } = await import("@/lib/agent");
 
-    const activeBidders = await step.run("fetch-active-bidders", () =>
-      db.select({ userId: bidderConfigs.userId }).from(bidderConfigs).where(eq(bidderConfigs.isActive, true)),
-    );
+    const loadActive = () => db.select({ userId: bidderConfigs.userId }).from(bidderConfigs).where(eq(bidderConfigs.isActive, true));
+    // Read-only check outside any step: with no active agents the run is one execution.
+    if ((await loadActive()).length === 0) return { message: "No active bidders" };
+    const activeBidders = await step.run("fetch-active-bidders", loadActive);
     if (activeBidders.length === 0) return { message: "No active bidders" };
 
     const results = [];
@@ -450,8 +458,16 @@ export const moneyHealthCheck = inngest.createFunction(
     const manualFull = (event?.data as { full?: boolean } | undefined)?.full === true;
     const full = manualFull || new Date().getUTCHours() === 6;
 
+    // Most hours find nothing wrong. A read-only quick check outside any step ends a
+    // clean hourly run in one execution (Inngest bills every step); anything to report,
+    // and the daily full check, run in steps as before.
+    if (!full) {
+      const peek = await health.quickHealthCheck();
+      if (!peek.problems.length) return { full, problems: [], notes: peek.notes };
+    }
     const quick = await step.run("quick", () => health.quickHealthCheck());
-    await step.run("prune-rate-limits", () => health.pruneRateLimits());
+    // Rate-limit rows older than two days: pruning once a day is plenty.
+    if (full) await step.run("prune-rate-limits", () => health.pruneRateLimits());
 
     let daily: { problems: string[]; notes: string[] } = { problems: [], notes: [] };
     if (full) {

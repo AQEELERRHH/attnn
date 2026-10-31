@@ -75,6 +75,13 @@ The **Money Health Check** job (Inngest) runs every hour, plus a full escrow che
 
 Users' wallet keys never leave Circle; Attnn only holds the API key and entity secret that operate them. Protect those two above everything else.
 
+## Inngest: keeping the jobs running
+
+Every background job (placing bids, confirming settlements, the 3-day refunds, the sweep, the health check, the agents) runs on Inngest.
+
+- **Resync after a deploy that adds or changes a job.** Inngest only runs the jobs it knows about. In the Inngest dashboard, Apps → attnn → ⋮ → Resync, then check the function count matches `inngest/` (each "(failure)" handler is listed as its own function). On 29 Oct 2026 the app had last synced on 6 Oct, so two newer jobs had never run. Installing the Inngest integration on the Vercel project makes this automatic.
+- **Watch the execution limit.** Inngest bills every run and every step inside it. When the plan's monthly limit is reached, new runs stop, including refunds and confirmations (escrowed USDC stays safe on-chain, but nothing finishes until runs resume). The timed jobs end idle runs before their first step, so a quiet day costs roughly 250 executions; agent runs, bids and settlements add to that. If usage nears the limit, upgrade the plan rather than switching jobs off.
+
 ## A service is down
 
 | Down | Effect | What to do |

@@ -7,7 +7,8 @@ import { z } from "zod";
 
 const AISA_API_URL = process.env.AISA_API_URL ?? "https://api.aisa.one/v1";
 const AISA_API_KEY = process.env.AISA_API_KEY ?? "";
-const AISA_MODEL = process.env.AISA_MODEL ?? "deepseek-chat";
+// AISA retired "deepseek-chat" and "deepseek-v3" (calls failed with 404 "model not found").
+const AISA_MODEL = process.env.AISA_MODEL || "deepseek-v4.1-flash";
 
 interface AISAResponse {
   id: string;
@@ -131,6 +132,8 @@ export async function evaluateCreatorForBidder(
 ): Promise<z.infer<typeof EvaluateCreatorForBidderSchema> | null> {
   const systemPrompt = `You are an AI evaluation agent for a bidder on a creator attention marketplace.
 Evaluate how well a creator fits the bidder's goal on a scale of 0-10, judging only from their topics and bio.
+"proceed" is a red flag, not a second score: set it to false ONLY if the creator looks unsuitable to contact at all (signs of spam, a scam or impersonation, or nothing whatsoever to do with the goal). Otherwise set it to true, even for a low score: the bidder's own minimum score decides the rest.
+"reason" is one short sentence explaining the score.
 ${UNTRUSTED_RULE}
 Return JSON: { "score": number, "reason": string, "proceed": boolean }`;
 

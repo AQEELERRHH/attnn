@@ -26,6 +26,14 @@ export function logKind(action: string): LogKind {
   }
 }
 
+const DECISION_LABEL: Record<string, string> = {
+  BID: "BID",
+  SKIPPED: "SKIPPED",
+  BLOCKED: "BLOCKED",
+  FAILED: "FAILED",
+  NOT_REACHED: "NOT REACHED",
+};
+
 const money = (v: unknown) => (typeof v === "string" || typeof v === "bigint" ? formatMoney(v) : "");
 const short = (v: unknown) => (typeof v === "string" && v.length > 10 ? `${v.slice(0, 8)}…` : String(v ?? ""));
 
@@ -36,6 +44,19 @@ export function logMessage(action: string, data: LogPayload): string {
   const plural = (n: unknown, word: string) => `${n ?? 0} ${word}${n === 1 ? "" : "s"}`;
   switch (action) {
     case "creator_discovered":
+      // Newer runs record each stage: discovered → evaluated → qualified → attempted → queued.
+      if (d.evaluated !== undefined) {
+        return [
+          `${agent} found ${plural(d.count, "creator")}`,
+          `evaluated ${d.evaluated}`,
+          `qualified ${d.qualified ?? 0}`,
+          `attempted ${d.attempted ?? 0}`,
+          `queued ${plural(d.queued ?? d.bidsPlaced, "bid")}`,
+          typeof d.unscored === "number" && d.unscored > 0 ? `${d.unscored} couldn't be scored` : null,
+        ]
+          .filter(Boolean)
+          .join(" · ") + ".";
+      }
       return [
         `${agent} found ${plural(d.count, "creator")}`,
         d.scored !== undefined ? `scored ${d.scored}` : null,
@@ -45,8 +66,17 @@ export function logMessage(action: string, data: LogPayload): string {
       ]
         .filter(Boolean)
         .join(", ") + ".";
-    case "creator_scored":
-      return `${agent} scored ${d.creator ? `@${d.creator}` : "a creator"}${d.score !== undefined ? ` ${d.score}/10` : ""}.`;
+    case "creator_scored": {
+      const who = d.creator ? `@${d.creator}` : "A creator";
+      const score = typeof d.score === "number" ? ` ${d.score}/10` : "";
+      // Decision records (newer runs): verdict, the rule that decided it, the AI's reason.
+      if (typeof d.decision === "string") {
+        const verdict = DECISION_LABEL[d.decision] ?? d.decision;
+        const ai = typeof d.aiReason === "string" && d.aiReason ? ` · AI: "${d.aiReason}"` : "";
+        return `${who} —${score} · ${verdict}: ${typeof d.reason === "string" ? d.reason : ""}${ai}`;
+      }
+      return `${agent} scored ${d.creator ? `@${d.creator}` : "a creator"}${score}.`;
+    }
     case "bid_placed":
       return `${agent} bid ${money(d.amount)}${d.creator ? ` on @${d.creator}` : ""}${d.score !== undefined ? ` · fit ${d.score}/10` : ""}.`;
     case "bid_accepted":

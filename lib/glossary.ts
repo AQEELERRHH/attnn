@@ -31,7 +31,7 @@ export const glossary = {
   maxBidPerCreator:
     "Your agent bids each creator's lowest price, and never offers one creator more than this, even if they counter. Creators whose lowest bid is higher are skipped.",
   fitScore:
-    "Your agent's AI rates each creator from 0 to 10 against your goal. It only bids on creators scoring at least this. If the AI can't score a creator, it doesn't bid.",
+    "Your agent's AI rates each creator from 0 to 10 against your goal. It only bids on creators scoring at least this, unless the AI flags them as unsuitable (spam, impersonation or nothing to do with your goal). If the AI can't score a creator, it doesn't bid.",
   searchTags: "Topics to look for. Your agent only considers creators whose tags match at least one of these.",
   escrowPrivacy:
     "Bid messages and replies are never written on Arc as text. Only a fingerprint of each is stored, which proves a reply wasn't changed afterwards without revealing what it says. Amounts and wallet addresses are public on Arc, like any blockchain payment; your name and email never go on-chain.",

@@ -43,11 +43,11 @@ export function AgentPolicy({ config, spent, policy }: { config: BidderConfigDat
             <Rule kind="limit">
               Bids each creator&apos;s floor, and skips creators whose floor is above <Money atomic={cap} />. A re-bid at a counter-offer is also capped at <Money atomic={cap} />
             </Rule>
-            <Rule kind="limit">One bid per creator per day, plus one re-bid if they counter</Rule>
+            <Rule kind="limit">One bid per creator per day, plus one re-bid if they counter. At most 5 bids per run, highest score first</Rule>
             <Rule kind="limit">Paused means paused: no new bids, no counter-offers accepted</Rule>
             <Rule kind="limit">Only creators registered on Arc, never paused markets</Rule>
             <Rule kind="limit">
-              Fit score of at least <Num>{config.minFitScore}/10</Num>. If the AI can&apos;t score a creator, no bid
+              Fit score of at least <Num>{config.minFitScore}/10</Num>, and not flagged as unsuitable by the AI. If the AI can&apos;t score a creator, no bid
             </Rule>
             {policy.readPrice && (
               <Rule kind="limit">

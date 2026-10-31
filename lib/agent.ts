@@ -94,8 +94,33 @@ async function runBidderAgentHoldingLease(userId: string, held: { token: Date })
   const errors: string[] = [];
   let bidsPlaced = 0;
   let creatorsFound = 0;
+  const decisions = new Map<string, DecisionRecord>();
 
   try {
+    return await runBidderAgentSteps(userId, held, errors, decisions, (n) => (bidsPlaced = n), (n) => (creatorsFound = n));
+  } catch (err) {
+    errors.push(`Agent run failed: ${err}`);
+    return { bidsPlaced, creatorsFound, errors, logId: uuidv4() };
+  } finally {
+    // Every creator the run looked at gets its decision record, however the run ended.
+    for (const rec of decisions.values()) {
+      if (!rec.decision) Object.assign(rec, { decision: "NOT_REACHED", reason: "The run stopped before reaching this creator" });
+      await logAgentAction(userId, "creator_scored", rec as unknown as Record<string, unknown>);
+    }
+  }
+}
+
+async function runBidderAgentSteps(
+  userId: string,
+  held: { token: Date },
+  errors: string[],
+  decisions: Map<string, DecisionRecord>,
+  reportBids: (n: number) => void,
+  reportFound: (n: number) => void,
+): Promise<AgentRunResult> {
+  let bidsPlaced = 0;
+  let creatorsFound = 0;
+  {
     const config = await db.query.bidderConfigs.findFirst({ where: eq(bidderConfigs.userId, userId) });
     if (!config || !config.isActive) {
       await logAgentAction(userId, "agent_stopped", { reason: "Config not active" });
@@ -156,7 +181,10 @@ async function runBidderAgentHoldingLease(userId: string, held: { token: Date })
     // Best tag overlap first.
     const matches = activeProfiles
       .filter((p) => p.userId !== userId && p.availabilityStatus !== "not_accepting" && !alreadyBidToday.has(p.userId))
-      .map((p) => ({ profile: p, overlap: p.tags.filter((t) => wanted.has(t.trim().toLowerCase())).length }))
+      .map((p) => {
+        const matched = p.tags.filter((t) => wanted.has(t.trim().toLowerCase()));
+        return { profile: p, matched, overlap: matched.length };
+      })
       .filter((m) => m.overlap > 0)
       .sort((a, b) => b.overlap - a.overlap);
 
@@ -176,13 +204,13 @@ async function runBidderAgentHoldingLease(userId: string, held: { token: Date })
 
     // Verify on the registry, stopping once there are enough to score.
     const MAX_TO_SCORE = 10;
-    const filteredCreators: { profile: typeof profiles.$inferSelect; address: string }[] = [];
+    const filteredCreators: { profile: typeof profiles.$inferSelect; address: string; matched: string[] }[] = [];
     for (const m of matches) {
       if (filteredCreators.length >= MAX_TO_SCORE) break;
       const address = walletByUser.get(m.profile.userId);
       if (!address) continue;
       try {
-        if (await isActiveOnRegistry(address)) filteredCreators.push({ profile: m.profile, address });
+        if (await isActiveOnRegistry(address)) filteredCreators.push({ profile: m.profile, address, matched: m.matched });
       } catch (err) {
         errors.push(`Couldn't verify @${m.profile.handle} on Arc: ${err instanceof Error ? err.message : err}`);
       }
@@ -194,55 +222,83 @@ async function runBidderAgentHoldingLease(userId: string, held: { token: Date })
       return { bidsPlaced: 0, creatorsFound: 0, errors, logId: uuidv4() };
     }
 
+    // One decision record per creator, written to the run log at the end of the run
+    // (or when it stops early): what was checked and why the agent did what it did.
+    for (const ct of filteredCreators) {
+      decisions.set(ct.profile.handle, {
+        creator: ct.profile.handle,
+        matchedTags: ct.matched,
+        threshold: config.minFitScore,
+        floor: ct.profile.minBid,
+        cap: config.maxBidPerCreator,
+      });
+    }
+    const decide = (handle: string, decision: Decision, reason: string, extra: Partial<DecisionRecord> = {}) => {
+      const rec = decisions.get(handle);
+      if (rec) Object.assign(rec, extra, { decision, reason });
+    };
+
     // Every agent pays to read a creator's gated profile before scoring them, Attnn.'s
     // own included (lib/gateway.ts). Profiles bought in the last day are read from the copy.
     const reads = await prepareProfileReads(userId, wallet, filteredCreators.map((c) => c.profile.handle), budget);
     if (reads.stop) {
+      for (const ct of filteredCreators) decide(ct.profile.handle, "NOT_REACHED", reads.stop);
       await logAgentAction(userId, "agent_stopped", { reason: reads.stop, creatorsFound });
       return { bidsPlaced: 0, creatorsFound, errors: [...errors, reads.stop], logId: uuidv4() };
     }
 
-    // Score up to 10; keep those above the bidder's fit threshold.
+    // Score each creator. The AI only recommends: the score and its red flag feed fixed
+    // rules (your minimum score, the per-creator cap); amounts are never the AI's (D3).
     // A creator the AI couldn't score is skipped, never bid on blind.
-    const scored: { profile: typeof profiles.$inferSelect; score: number; bidAmount: bigint }[] = [];
+    const qualified: { profile: typeof profiles.$inferSelect; score: number; bidAmount: bigint }[] = [];
     let unscored = 0;
+    let evaluated = 0;
     for (const ct of filteredCreators) {
+      const handle = ct.profile.handle;
       try {
         const view = await readProfile(reads, ct.profile);
         if (!view) {
-          errors.push(`Skipping ${ct.profile.handle}: ${reads.lastError ?? "couldn't read the profile"}`);
+          const why = reads.lastError ?? "couldn't read the profile";
+          errors.push(`Skipping ${handle}: ${why}`);
+          decide(handle, "SKIPPED", `Couldn't read the profile: ${why}`);
           continue;
         }
-        if (!view.isActive || view.availabilityStatus === "not_accepting") continue;
+        const source = view.source === "x402" ? { profile: view.source, x402: { amount: view.paid.toString(), transaction: view.transaction } } : { profile: view.source };
+        if (!view.isActive || view.availabilityStatus === "not_accepting") {
+          decide(handle, "SKIPPED", "Not accepting bids right now", source);
+          continue;
+        }
         const result = await evaluateCreatorForBidder(
           { handle: view.handle, bio: view.bio ?? undefined, tags: view.tags, minBid: view.minBid },
           config.goal ?? "general",
         );
         if (!result) {
           unscored++;
+          decide(handle, "SKIPPED", "The AI couldn't score this creator, so no bid (your agent never bids blind)", source);
           continue;
         }
-        await logAgentAction(userId, "creator_scored", {
-          creator: ct.profile.handle,
-          score: result.score,
-          profile: view.source,
-          ...(view.source === "x402" ? { x402: { amount: view.paid.toString(), transaction: view.transaction } } : {}),
-        });
-        if (!result.proceed || result.score < config.minFitScore) continue;
-
-        // The agent bids the creator's floor; the AI only decided whether and how
-        // well they fit. Skip creators priced above the bidder's per-creator cap.
-        const amount = resolveAgentBidAmount({
-          creatorMinBid: ct.profile.minBid,
-          maxBidPerCreator: config.maxBidPerCreator,
-        });
+        evaluated++;
+        const scored = { ...source, score: result.score, aiReason: result.reason, flagged: !result.proceed };
+        if (result.score < config.minFitScore) {
+          decide(handle, "SKIPPED", `Score ${result.score}/10 is below your minimum of ${config.minFitScore}/10`, scored);
+          continue;
+        }
+        if (!result.proceed) {
+          decide(handle, "SKIPPED", `The AI flagged this creator as unsuitable${result.reason ? `: ${result.reason}` : ""}`, scored);
+          continue;
+        }
+        // The agent bids the creator's floor; skip creators priced above the per-creator cap.
+        const amount = resolveAgentBidAmount({ creatorMinBid: ct.profile.minBid, maxBidPerCreator: config.maxBidPerCreator });
         if (amount === null) {
-          errors.push(`Skipping ${ct.profile.handle}: floor is above your ${formatUsd(BigInt(config.maxBidPerCreator))} per-creator cap`);
+          errors.push(`Skipping ${handle}: floor is above your ${formatUsd(BigInt(config.maxBidPerCreator))} per-creator cap`);
+          decide(handle, "SKIPPED", `Floor ${formatUsd(BigInt(ct.profile.minBid))} is above your ${formatUsd(BigInt(config.maxBidPerCreator))} per-creator cap`, scored);
           continue;
         }
-        scored.push({ profile: ct.profile, score: result.score, bidAmount: amount });
+        decide(handle, "NOT_REACHED", "Qualified; not tried yet", scored);
+        qualified.push({ profile: ct.profile, score: result.score, bidAmount: amount });
       } catch (err) {
-        errors.push(`Score error for ${ct.profile.handle}: ${err}`);
+        errors.push(`Score error for ${handle}: ${err}`);
+        decide(handle, "SKIPPED", "Something went wrong while scoring; no bid");
       }
     }
 
@@ -255,28 +311,58 @@ async function runBidderAgentHoldingLease(userId: string, held: { token: Date })
     }
     if (unscored > 0) errors.push(`${unscored} creator(s) skipped: AI couldn't score them`);
 
-    scored.sort((a, b) => b.score - a.score);
-    const topCreators = scored.slice(0, 5);
+    // What the agent wallet can really spend this run: its USDC, minus bids from it still
+    // being placed (their USDC hasn't left yet), minus a read top-up asked for this run.
+    // Each bid also keeps BID_FEE_RESERVE back for its approval + placement fees. null =
+    // couldn't read the chain: createBidIntent still checks the balance before each bid.
+    let spendable = await spendableNow(wallet.address, reads.topUp);
 
-    for (const tc of topCreators) {
+    // Highest score first; a creator the wallet or budget can't cover is skipped, not the
+    // end of the run, so a cheaper qualified creator still gets its bid.
+    qualified.sort((a, b) => b.score - a.score);
+    let attempted = 0;
+    let stopped: string | null = null;
+    for (const tc of qualified) {
+      const handle = tc.profile.handle;
+      if (stopped) {
+        decide(handle, "NOT_REACHED", stopped);
+        continue;
+      }
+      if (bidsPlaced >= MAX_BIDS_PER_RUN) {
+        decide(handle, "NOT_REACHED", `Your agent places at most ${MAX_BIDS_PER_RUN} bids per run; higher scores came first`);
+        continue;
+      }
       // Still ours? A run slower than the lease must stop, or it would race the next run.
       const renewed = await renewAgentLease(userId, held.token);
       if (!renewed) {
+        stopped = "The run took too long and another run took over";
         await logAgentAction(userId, "agent_stopped", { reason: "Run took too long; another run took over" });
-        break;
+        decide(handle, "NOT_REACHED", stopped);
+        continue;
       }
       held.token = renewed;
-      // Re-check budget before each bid — placing intents count immediately.
+
+      // Budget: re-read before each bid (bids count the moment they're recorded).
       const currentSpent = await spentToday(userId);
-      if (currentSpent >= budget) {
-        await logAgentAction(userId, "agent_stopped", { reason: "Daily budget exhausted mid-run" });
-        break;
+      const budgetLeft = budget > currentSpent ? budget - currentSpent : BigInt(0);
+      if (tc.bidAmount > budgetLeft) {
+        errors.push(`Skipping ${handle}: bid exceeds remaining budget`);
+        decide(handle, "BLOCKED", `Floor ${formatUsd(tc.bidAmount)} is more than the ${formatUsd(budgetLeft)} left in today's budget`, {
+          budgetLeft: budgetLeft.toString(),
+        });
+        continue;
       }
-      if (tc.bidAmount > budget - currentSpent) {
-        errors.push(`Skipping ${tc.profile.handle}: bid exceeds remaining budget`);
+      if (spendable !== null && tc.bidAmount + BID_FEE_RESERVE > spendable) {
+        decide(
+          handle,
+          "BLOCKED",
+          `Floor ${formatUsd(tc.bidAmount)} plus network fees is more than the ${formatUsd(spendable > BigInt(0) ? spendable : BigInt(0))} your agent wallet can spend`,
+          { budgetLeft: budgetLeft.toString(), spendable: (spendable > BigInt(0) ? spendable : BigInt(0)).toString() },
+        );
         continue;
       }
 
+      attempted++;
       try {
         const intent = await createBidIntent({
           bidderUserId: userId,
@@ -287,36 +373,113 @@ async function runBidderAgentHoldingLease(userId: string, held: { token: Date })
           fromAgentWallet: true,
         });
         await logAgentAction(userId, "bid_placed", {
-          creator: tc.profile.handle,
+          creator: handle,
           amount: tc.bidAmount.toString(),
           score: tc.score,
           bidId: intent.id,
           status: "placing",
         });
         bidsPlaced++;
+        if (spendable !== null) spendable -= tc.bidAmount + BID_FEE_RESERVE;
+        decide(handle, "BID", `Bid ${formatUsd(tc.bidAmount)} (the creator's floor); confirming on Arc`, {
+          bidId: intent.id,
+          amount: tc.bidAmount.toString(),
+          budgetLeft: budgetLeft.toString(),
+          ...(spendable !== null ? { spendable: (spendable + tc.bidAmount + BID_FEE_RESERVE).toString() } : {}),
+        });
       } catch (err) {
         const message = err instanceof BidError ? err.message : String(err);
-        errors.push(`Failed to bid on ${tc.profile.handle}: ${message}`);
-        await logAgentAction(userId, "error", { creator: tc.profile.handle, error: message });
-        // Out of funds affects every remaining bid in this run.
-        if (err instanceof BidError && message.startsWith("Not enough USDC")) break;
+        errors.push(`Failed to bid on ${handle}: ${message}`);
+        await logAgentAction(userId, "error", { creator: handle, error: message });
+        decide(handle, "FAILED", `Bid refused: ${message}`, { budgetLeft: budgetLeft.toString() });
+        // Not the end of the run: a cheaper creator may still fit. Re-read what the wallet
+        // can spend, in case the chain knows better than our running total.
+        if (err instanceof BidError && message.startsWith("Not enough USDC")) spendable = await spendableNow(wallet.address, reads.topUp);
       }
     }
 
     await logAgentAction(userId, "creator_discovered", {
       count: creatorsFound,
-      scored: scored.length,
+      evaluated,
+      qualified: qualified.length,
+      attempted,
+      queued: bidsPlaced,
       unscored,
       bidsPlaced,
       profilesBought: reads.bought,
       ...(reads.bought ? { readSpend: (PROFILE_READ_PRICE * BigInt(reads.bought)).toString() } : {}),
       ...(reads.topUp ? { readTopUp: READ_TOPUP.toString() } : {}),
     });
-  } catch (err) {
-    errors.push(`Agent run failed: ${err}`);
   }
-
+  reportBids(bidsPlaced);
+  reportFound(creatorsFound);
   return { bidsPlaced, creatorsFound, errors, logId: uuidv4() };
+}
+
+// ─── Decisions ───────────────────────────────────────────────────────────────
+
+/**
+ * What happened to one creator in a run, in plain words, from the same values the code
+ * checked (never the AI's account of itself):
+ *   BID          a bid was recorded and sent to be placed (it's escrowed once confirmed)
+ *   SKIPPED      a rule said no: below your minimum, flagged, over your cap, unreadable…
+ *   BLOCKED      eligible, but today's budget or the agent wallet couldn't cover it
+ *   FAILED       a bid was attempted and refused
+ *   NOT_REACHED  the run ended, or hit its bids-per-run limit, before this creator
+ */
+export type Decision = "BID" | "SKIPPED" | "BLOCKED" | "FAILED" | "NOT_REACHED";
+
+export interface DecisionRecord {
+  creator: string;
+  matchedTags: string[];
+  /** Your saved minimum fit score at the time of the run. */
+  threshold: number;
+  /** Creator's floor and your per-creator cap (atomic USDC). */
+  floor: string;
+  cap: string;
+  decision?: Decision;
+  reason?: string;
+  profile?: "x402" | "x402_earlier" | "free";
+  x402?: { amount: string; transaction: string };
+  score?: number;
+  /** The AI's one-line reason for its score: advice, never authority. */
+  aiReason?: string;
+  /** The AI flagged the creator as unsuitable (spam, impersonation, unrelated). */
+  flagged?: boolean;
+  /** Atomic USDC at the moment of the decision. */
+  budgetLeft?: string;
+  spendable?: string;
+  amount?: string;
+  bidId?: string;
+}
+
+/** Most bids one run may place (highest scores first). */
+export const MAX_BIDS_PER_RUN = 5;
+
+/** Kept back per bid for its approval and placement fees, paid in USDC on Arc. */
+export const BID_FEE_RESERVE = AGENT_WALLET_GAS_RESERVE;
+
+/**
+ * What the agent wallet can spend on bids right now: its USDC, minus bids from it still
+ * being placed (their USDC hasn't left the wallet yet), minus a read top-up asked for this
+ * run (plus its two transactions' fees). null if the chain couldn't be read.
+ */
+async function spendableNow(address: string, topUpRequested: boolean): Promise<bigint | null> {
+  try {
+    const [balance, [row]] = await Promise.all([
+      getUsdcBalance(address),
+      db
+        .select({ total: sql<string>`COALESCE(SUM(CAST(${bids.amountUsdc} AS BIGINT)), 0)` })
+        .from(bids)
+        .where(and(sql`lower(${bids.bidderAddress}) = ${address.toLowerCase()}`, eq(bids.status, "placing"))),
+    ]);
+    const committed = BigInt(row?.total ?? "0");
+    const topUp = topUpRequested ? READ_TOPUP + AGENT_WALLET_GAS_RESERVE * BigInt(2) : BigInt(0);
+    return balance - committed - topUp;
+  } catch (err) {
+    console.warn("runBidderAgent: couldn't work out the spendable balance:", err);
+    return null;
+  }
 }
 
 // ─── Paid profile reads (x402) ───────────────────────────────────────────────

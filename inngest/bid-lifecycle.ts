@@ -305,23 +305,45 @@ export const confirmRegistration = inngest.createFunction(
 );
 
 /**
+ * What the sweep has to look at: placements older than two minutes, settlements in
+ * flight and creator registrations confirming. Read-only.
+ */
+export async function loadSweepWork() {
+  const twoMinAgo = new Date(Date.now() - 2 * 60 * 1000);
+  const [placing, settling, registering] = await Promise.all([
+    db
+      .select({ id: bids.id, bidTxHash: bids.bidTxHash, createdAt: bids.createdAt })
+      .from(bids)
+      .where(and(eq(bids.status, "placing"), lt(bids.createdAt, twoMinAgo)))
+      .limit(100),
+    db
+      .select({ id: bids.id })
+      .from(bids)
+      .where(and(inArray(bids.status, ["pending", "counter_offered"]), isNotNull(bids.settlementTxHash)))
+      .limit(100),
+    loadRegisteringUserIds(),
+  ]);
+  return { placing, settling, registering };
+}
+
+/**
  * Backstop: finishes placements and settlements whose own job ran out of time,
  * missed an event, or was interrupted by a deploy.
+ *
+ * Inngest bills every step, and most runs find nothing to do. So a read-only check
+ * runs first, outside any step: with no work the run ends there (one execution, not
+ * four). With work, everything happens in steps exactly as before (one load step,
+ * then one step per row), so retries never repeat a finished row.
  */
 export const sweepInFlightBids = inngest.createFunction(
   { id: "sweep-in-flight-bids", name: "Sweep In-Flight Bids" },
   { cron: "*/10 * * * *" },
   async ({ step }) => {
-    const twoMinAgo = new Date(Date.now() - 2 * 60 * 1000);
-    const thirtyMinAgo = new Date(Date.now() - 30 * 60 * 1000);
+    const peek = await loadSweepWork();
+    if (!peek.placing.length && !peek.settling.length && !peek.registering.length) return { idle: true };
 
-    const placing = await step.run("load-placing", () =>
-      db
-        .select({ id: bids.id, bidTxHash: bids.bidTxHash, createdAt: bids.createdAt })
-        .from(bids)
-        .where(and(eq(bids.status, "placing"), lt(bids.createdAt, twoMinAgo)))
-        .limit(100),
-    );
+    const thirtyMinAgo = new Date(Date.now() - 30 * 60 * 1000);
+    const { placing, settling, registering } = await step.run("load-work", loadSweepWork);
 
     let escrowed = 0;
     let failed = 0;
@@ -353,20 +375,12 @@ export const sweepInFlightBids = inngest.createFunction(
       if (result === "failed") failed++;
     }
 
-    const settling = await step.run("load-settling", () =>
-      db
-        .select({ id: bids.id })
-        .from(bids)
-        .where(and(inArray(bids.status, ["pending", "counter_offered"]), isNotNull(bids.settlementTxHash)))
-        .limit(100),
-    );
     let settled = 0;
     for (const row of settling) {
       const outcome = await step.run(`settling-${row.id}`, () => finalizeSettlement(row.id));
       if (outcome === "settled") settled++;
     }
 
-    const registering = await step.run("load-registering", () => loadRegisteringUserIds());
     let registered = 0;
     for (const userId of registering) {
       const state = await step.run(`registering-${userId}`, () => refreshRegistration(userId));

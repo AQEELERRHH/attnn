@@ -1,6 +1,7 @@
 import { triageDecision } from "./creator-agent-rules";
 import { ESCROW_MAX_BID, creatorFloor } from "./bid-rules";
 import { REPLY_MIN_CHARS, replyError } from "./reply-rules";
+import { createHash } from "node:crypto";
 import { z } from "zod";
 
 // ─── AI Client ───────────────────────────────────────────────────────────────
@@ -26,7 +27,12 @@ interface AISAResponse {
 /** Longest a single AI call may take. Agent runs make up to ~11 calls inside a 10-minute lease. */
 const AI_TIMEOUT_MS = 25_000;
 
-async function callAI(prompt: string, systemPrompt?: string): Promise<string> {
+/** The model the agents call (AISA_MODEL). Part of every score's cache key. */
+export function aiModel(): string {
+  return AISA_MODEL;
+}
+
+async function callAI(prompt: string, systemPrompt?: string, opts: { temperature?: number } = {}): Promise<string> {
   const messages: { role: string; content: string }[] = [];
   if (systemPrompt) messages.push({ role: "system", content: systemPrompt });
   messages.push({ role: "user", content: prompt });
@@ -42,7 +48,7 @@ async function callAI(prompt: string, systemPrompt?: string): Promise<string> {
       messages,
       response_format: { type: "json_object" },
       max_tokens: 500,
-      temperature: 0.3,
+      temperature: opts.temperature ?? 0.3,
     }),
     // A hung provider must not stall an agent run past its lease (lib/agent-lease.ts).
     signal: AbortSignal.timeout(AI_TIMEOUT_MS),
@@ -119,31 +125,85 @@ export interface CreatorProfile {
 // ─── AI Functions ────────────────────────────────────────────────────────────
 
 
+// ─── Bidder scoring ──────────────────────────────────────────────────────────
+
 /**
- * Scores how well a creator fits the bidder's goal.
+ * Bump whenever the scoring prompt or rubric changes: it is part of the cache key, so
+ * scores made under an older prompt are never reused.
+ */
+export const SCORE_PROMPT_VERSION = "bidder-score-v2";
+
+/** A score is reused for the same model, prompt, goal and profile for at most this long. */
+export const SCORE_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * What the AI sees about a creator, and all it sees: topics and bio. The floor price is
+ * deliberately not here; price is decided by fixed rules (the per-creator cap, the
+ * budget), so it must not move the fit score either way.
+ */
+export interface ScoredCreator {
+  handle: string;
+  bio?: string | null;
+  tags: string[];
+}
+
+const normaliseGoal = (goal: string) => goal.trim().replace(/\s+/g, " ");
+
+/** The exact input the scorer gets, in a fixed shape (tags sorted, empty bio as ""). */
+function scoringInput(creator: ScoredCreator) {
+  return {
+    handle: creator.handle,
+    bio: (creator.bio ?? "").trim(),
+    tags: [...creator.tags].map((t) => t.trim().toLowerCase()).sort(),
+  };
+}
+
+/**
+ * Cache key for one score: sha256 over the model, the prompt version, the bidder's goal
+ * and the creator's profile as the AI sees it. Any change to one of those (a new model, a
+ * new rubric, an edited goal, an edited bio or tags) makes a new key, so a fresh score.
+ */
+export function scoreCacheKey(creator: ScoredCreator, bidderGoal: string): string {
+  const material = JSON.stringify([AISA_MODEL, SCORE_PROMPT_VERSION, normaliseGoal(bidderGoal), scoringInput(creator)]);
+  return createHash("sha256").update(material).digest("hex");
+}
+
+const SCORING_PROMPT = `You are an AI evaluation agent for a bidder on a creator attention marketplace. You score how well a creator fits the bidder's goal; the bidder pays to get a reply from creators who fit.
+Judge ONLY from the creator's topics (tags) and bio. Do not guess at anything not written there. Price is not your concern.
+
+Scoring guide (use a whole number):
+- 9-10: the bio and topics show the creator does exactly what the goal is looking for.
+- 7-8: a clear match on the goal's main subject; some details are unclear or missing.
+- 5-6: a related field or partial overlap; plausibly useful but not a direct match.
+- 3-4: only a loose or indirect connection to the goal.
+- 0-2: unrelated to the goal, or the profile says too little to judge.
+If the bio is empty, judge from the topics alone and score at most 6.
+The same profile and goal must always get the same score.
+
+"proceed" is a red flag, not a second score: set it to false ONLY if the creator looks unsuitable to contact at all (signs of spam, a scam or impersonation, or nothing whatsoever to do with the goal). Otherwise set it to true, even for a low score: the bidder's own minimum score decides the rest.
+"reason" is one short sentence naming what in the profile led to the score.
+${UNTRUSTED_RULE}
+Return JSON: { "score": number, "reason": string, "proceed": boolean }`;
+
+/**
+ * Scores how well a creator fits the bidder's goal, at temperature 0 with a fixed rubric.
  *
  * Returns null when the AI can't produce a valid answer (outage, timeout, bad JSON).
  * There is deliberately no rule-based fallback here: the bidder agent spends real
  * USDC, so a creator it couldn't score is skipped, never bid on blind.
  */
 export async function evaluateCreatorForBidder(
-  creator: CreatorProfile,
+  creator: ScoredCreator,
   bidderGoal: string,
 ): Promise<z.infer<typeof EvaluateCreatorForBidderSchema> | null> {
-  const systemPrompt = `You are an AI evaluation agent for a bidder on a creator attention marketplace.
-Evaluate how well a creator fits the bidder's goal on a scale of 0-10, judging only from their topics and bio.
-"proceed" is a red flag, not a second score: set it to false ONLY if the creator looks unsuitable to contact at all (signs of spam, a scam or impersonation, or nothing whatsoever to do with the goal). Otherwise set it to true, even for a low score: the bidder's own minimum score decides the rest.
-"reason" is one short sentence explaining the score.
-${UNTRUSTED_RULE}
-Return JSON: { "score": number, "reason": string, "proceed": boolean }`;
-
   // The bidder's goal is their own; the creator's profile is someone else's text.
-  const prompt = `Bidder's goal: ${JSON.stringify(bidderGoal)}\nCreator profile: ${untrusted(creator)}`;
+  // Only the fields in scoringInput() are sent, whatever else the caller passes.
+  const prompt = `Bidder's goal: ${JSON.stringify(normaliseGoal(bidderGoal))}\nCreator profile: ${untrusted(scoringInput(creator))}`;
 
   try {
-    const raw = await callAI(prompt, systemPrompt);
-    const parsed = safeJsonParse(raw);
-    return EvaluateCreatorForBidderSchema.parse(parsed);
+    const raw = await callAI(prompt, SCORING_PROMPT, { temperature: 0 });
+    const parsed = EvaluateCreatorForBidderSchema.parse(safeJsonParse(raw));
+    return { ...parsed, score: Math.round(parsed.score) };
   } catch (err) {
     console.warn(`evaluateCreatorForBidder: AI unavailable for @${creator.handle}:`, err instanceof Error ? err.message : err);
     return null;

@@ -73,7 +73,9 @@ export function logMessage(action: string, data: LogPayload): string {
       if (typeof d.decision === "string") {
         const verdict = DECISION_LABEL[d.decision] ?? d.decision;
         const ai = typeof d.aiReason === "string" && d.aiReason ? ` · AI: "${d.aiReason}"` : "";
-        return `${who} —${score} · ${verdict}: ${typeof d.reason === "string" ? d.reason : ""}${ai}`;
+        // Same goal and profile as an earlier run: that run's score was reused, not re-asked.
+        const reused = d.scoreSource === "cache" ? " · same score as an earlier run (nothing changed)" : "";
+        return `${who} —${score} · ${verdict}: ${typeof d.reason === "string" ? d.reason : ""}${ai}${reused}`;
       }
       return `${agent} scored ${d.creator ? `@${d.creator}` : "a creator"}${score}.`;
     }

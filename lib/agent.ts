@@ -314,7 +314,7 @@ async function runBidderAgentSteps(
     // What the agent wallet can really spend this run: its USDC, minus bids from it still
     // being placed (their USDC hasn't left yet), minus a read top-up asked for this run.
     // Each bid also keeps BID_FEE_RESERVE back for its approval + placement fees. null =
-    // couldn't read the chain: createBidIntent still checks the balance before each bid.
+    // couldn't read the chain: the agent then bids nothing this run (fail closed).
     let spendable = await spendableNow(wallet.address, reads.topUp);
 
     // Highest score first; a creator the wallet or budget can't cover is skipped, not the
@@ -352,7 +352,16 @@ async function runBidderAgentSteps(
         });
         continue;
       }
-      if (spendable !== null && tc.bidAmount + BID_FEE_RESERVE > spendable) {
+      // Fail closed: if the agent wallet's balance couldn't be read from Arc, the agent
+      // doesn't try to spend this run (createBidIntent's own check lets a hand-placed
+      // bid through on a read error; an autonomous one must not rely on that).
+      if (spendable === null) {
+        decide(handle, "BLOCKED", "Couldn't read your agent wallet's balance on Arc, so no bid this run. Your agent tries again on its next run", {
+          budgetLeft: budgetLeft.toString(),
+        });
+        continue;
+      }
+      if (tc.bidAmount + BID_FEE_RESERVE > spendable) {
         decide(
           handle,
           "BLOCKED",
@@ -380,12 +389,12 @@ async function runBidderAgentSteps(
           status: "placing",
         });
         bidsPlaced++;
-        if (spendable !== null) spendable -= tc.bidAmount + BID_FEE_RESERVE;
-        decide(handle, "BID", `Bid ${formatUsd(tc.bidAmount)} (the creator's floor); confirming on Arc`, {
+        spendable -= tc.bidAmount + BID_FEE_RESERVE;
+        decide(handle, "BID_QUEUED", `Bid of ${formatUsd(tc.bidAmount)} (the creator's floor) recorded and queued for escrow on Arc; not confirmed yet`, {
           bidId: intent.id,
           amount: tc.bidAmount.toString(),
           budgetLeft: budgetLeft.toString(),
-          ...(spendable !== null ? { spendable: (spendable + tc.bidAmount + BID_FEE_RESERVE).toString() } : {}),
+          spendable: (spendable + tc.bidAmount + BID_FEE_RESERVE).toString(),
         });
       } catch (err) {
         const message = err instanceof BidError ? err.message : String(err);
@@ -393,7 +402,8 @@ async function runBidderAgentSteps(
         await logAgentAction(userId, "error", { creator: handle, error: message });
         decide(handle, "FAILED", `Bid refused: ${message}`, { budgetLeft: budgetLeft.toString() });
         // Not the end of the run: a cheaper creator may still fit. Re-read what the wallet
-        // can spend, in case the chain knows better than our running total.
+        // can spend, in case the chain knows better than our running total (a failed
+        // re-read leaves it null, and the rest are BLOCKED: fail closed).
         if (err instanceof BidError && message.startsWith("Not enough USDC")) spendable = await spendableNow(wallet.address, reads.topUp);
       }
     }
@@ -421,13 +431,16 @@ async function runBidderAgentSteps(
 /**
  * What happened to one creator in a run, in plain words, from the same values the code
  * checked (never the AI's account of itself):
- *   BID          a bid was recorded and sent to be placed (it's escrowed once confirmed)
+ *   BID_QUEUED   a bid intent was recorded ("placing") and queued for the placeBid job.
+ *                It is NOT yet escrowed: the on-chain approve + placeBid happen after
+ *                this run and can still fail (then the bid becomes "failed", no USDC
+ *                moved). Only status "pending" means escrowed.
  *   SKIPPED      a rule said no: below your minimum, flagged, over your cap, unreadable…
  *   BLOCKED      eligible, but today's budget or the agent wallet couldn't cover it
  *   FAILED       a bid was attempted and refused
  *   NOT_REACHED  the run ended, or hit its bids-per-run limit, before this creator
  */
-export type Decision = "BID" | "SKIPPED" | "BLOCKED" | "FAILED" | "NOT_REACHED";
+export type Decision = "BID_QUEUED" | "SKIPPED" | "BLOCKED" | "FAILED" | "NOT_REACHED";
 
 export interface DecisionRecord {
   creator: string;
@@ -456,7 +469,15 @@ export interface DecisionRecord {
 /** Most bids one run may place (highest scores first). */
 export const MAX_BIDS_PER_RUN = 5;
 
-/** Kept back per bid for its approval and placement fees, paid in USDC on Arc. */
+/**
+ * Kept back per bid for its network fees: an approval and the placement, both paid in
+ * USDC from the agent wallet on Arc. AN ESTIMATE, not a measured fee: $0.05 is set well
+ * above what two Arc transactions normally cost, so near the edge the agent may skip a
+ * creator it could just about afford, never the other way round. It only decides
+ * whether the agent TRIES a bid; the real limits are enforced later regardless:
+ * createBidIntent re-reads the on-chain balance, the placeBid job approves exactly the
+ * bid amount, and an underfunded placement reverts on Arc with no USDC moved.
+ */
 export const BID_FEE_RESERVE = AGENT_WALLET_GAS_RESERVE;
 
 /**

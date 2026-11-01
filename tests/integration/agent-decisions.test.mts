@@ -88,8 +88,31 @@ describe("bidder agent decisions", () => {
     const amina = await decisionOf("amina");
     assert.equal(amina.decision, "BLOCKED");
     assert.match(amina.reason, /Floor \$20\.00 plus network fees is more than the \$10\.00 your agent wallet can spend/);
-    assert.equal((await decisionOf("cheapdev")).decision, "BID");
+    assert.equal((await decisionOf("cheapdev")).decision, "BID_QUEUED");
     assert.equal(world.calls("approve").length + world.calls("placeBid").length, 0, "the agent itself never touches the chain");
+  });
+
+  test("BID_QUEUED means a bid intent was recorded and queued, not that it's escrowed", async () => {
+    await runBidderAgent(ids.bidder);
+    const rec = await decisionOf("cheapdev");
+    assert.equal(rec.decision, "BID_QUEUED");
+    assert.match(rec.reason, /recorded and queued for escrow on Arc; not confirmed yet/);
+    const [row] = await db.select().from(bids).where(eq(bids.creatorUserId, CHEAP.id));
+    assert.equal(row!.status, "placing", "still only an intent: the placeBid job escrows it later");
+    assert.equal(row!.onChainBidId, null);
+    assert.equal(world.calls("placeBid").length, 0, "nothing was sent on-chain during the run");
+  });
+
+  test("balance can't be read from Arc: the agent fails closed and bids nothing", async () => {
+    world.failBalanceReads = true;
+    const result = await runBidderAgent(ids.bidder);
+    assert.equal(result.bidsPlaced, 0);
+    assert.equal((await db.select().from(bids)).length, 0, "no bid intent recorded");
+    for (const handle of ["amina", "cheapdev"]) {
+      const rec = await decisionOf(handle);
+      assert.equal(rec.decision, "BLOCKED");
+      assert.match(rec.reason, /Couldn't read your agent wallet's balance on Arc/);
+    }
   });
 
   test("the run summary counts each stage separately", async () => {
@@ -168,7 +191,7 @@ describe("bidder agent decisions", () => {
     const amina = await decisionOf("amina");
     assert.equal(amina.decision, "FAILED");
     assert.match(amina.reason, /minimum on Arc is still \$30\.00/);
-    assert.equal((await decisionOf("cheapdev")).decision, "BID");
+    assert.equal((await decisionOf("cheapdev")).decision, "BID_QUEUED");
     assert.equal(await spentToday(ids.bidder), BigInt(5_000_000), "only the bid that was recorded counts");
   });
 

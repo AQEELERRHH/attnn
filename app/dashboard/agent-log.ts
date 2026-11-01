@@ -27,7 +27,7 @@ export function logKind(action: string): LogKind {
 }
 
 const DECISION_LABEL: Record<string, string> = {
-  BID: "BID",
+  BID_QUEUED: "BID QUEUED",
   SKIPPED: "SKIPPED",
   BLOCKED: "BLOCKED",
   FAILED: "FAILED",

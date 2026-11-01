@@ -76,6 +76,9 @@ export function BidderSetupForm({
       if (data.needsCode) {
         setCodeSentTo(String(data.sentTo ?? "your email"));
         setError("");
+        // Nothing is saved until the code is entered: say so plainly, so a closed form
+        // isn't mistaken for a saved one.
+        toast({ title: "Not saved yet", description: "Enter the code we emailed you to save these changes. Until then your agent keeps its current settings." });
       } else if (data.success) {
         toast({ title: existingConfig ? "Strategy saved" : "Bidder agent created", variant: "success" });
         onComplete();
@@ -224,6 +227,11 @@ export function BidderSetupForm({
             onChange={setCode}
             reason="Raising your agent's budget or per-creator maximum, or changing which creators it bids on, needs your approval."
           />
+        )}
+        {codeSentTo && (
+          <p role="status" className="text-sm font-medium text-arc-coral sm:col-span-2">
+            Not saved yet. Your agent keeps its current settings until you enter the code and press Approve &amp; save.
+          </p>
         )}
         {error && (
           <p role="alert" className="text-sm text-arc-coral sm:col-span-2">

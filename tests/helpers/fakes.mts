@@ -83,6 +83,8 @@ export const world = {
   escrowPendingOwner: "0x0000000000000000000000000000000000000000",
   /** Circle wallet id → private key, for wallets that sign typed data (x402). */
   signingKeys: new Map<string, Hex>(),
+  /** When true, USDC balanceOf reads fail (an RPC outage). */
+  failBalanceReads: false,
   /** Every EIP-712 request that reached "Circle" signing, as sent (JSON string). */
   signed: [] as { walletId: string; typedData: string }[],
 
@@ -110,6 +112,7 @@ export const world = {
     this.escrowPendingOwner = "0x0000000000000000000000000000000000000000";
     this.signingKeys.clear();
     this.signed.length = 0;
+    this.failBalanceReads = false;
   },
 
   /** Circle calls made for a given contract function. */
@@ -276,6 +279,7 @@ const fakePublicClient = {
   async readContract({ functionName, args, address }: { functionName: string; args?: readonly unknown[]; address: string }) {
     switch (functionName) {
       case "balanceOf":
+        if (world.failBalanceReads) throw new Error("fake chain: RPC unavailable");
         return world.usdc.get(lower(String(args![0]))) ?? BigInt(0);
       case "allowance":
         return world.allowance.get(`${lower(String(args![0]))}:${lower(String(args![1]))}`) ?? BigInt(0);

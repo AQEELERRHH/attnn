@@ -215,7 +215,7 @@ describe("consistent bidder scores", () => {
     assert.equal((await latestFor("amina")).decision, "BID_QUEUED");
   });
 
-  test("a red flag is cleared sooner when the creator edits their profile (a goal change too: see "a new goal asks again")", async () => {
+  test("a red flag is cleared sooner when the creator edits their profile (a goal change too: see 'a new goal asks again')", async () => {
     await db.update(bidderConfigs).set({ minFitScore: 4 }).where(eq(bidderConfigs.userId, ids.bidder));
     ai.scores.set("amina", { score: 8, proceed: false });
     await runBidderAgent(ids.bidder);

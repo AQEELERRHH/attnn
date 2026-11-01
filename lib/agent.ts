@@ -23,6 +23,7 @@ import { AGENT_WALLET_GAS_RESERVE } from "./wallets";
 import { inngest } from "./inngest";
 import { eq, and, gte, inArray, ne, sql } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
+import { AsyncLocalStorage } from "node:async_hooks";
 
 // ─── Bidder Agent Run ────────────────────────────────────────────────────────
 
@@ -84,7 +85,9 @@ export async function runBidderAgent(userId: string): Promise<AgentRunResult> {
   }
   const held = { token: lease };
   try {
-    return await runBidderAgentHoldingLease(userId, held);
+    // Every log row this run writes carries the same runId, so Decision History can show
+    // one run as one group (lib/decision-history.ts).
+    return await runContext.run({ runId: uuidv4() }, () => runBidderAgentHoldingLease(userId, held));
   } finally {
     await releaseAgentLease(userId, held.token).catch((err) => console.error("agent: could not release lease", err));
   }
@@ -481,6 +484,8 @@ async function scoreCreator(
         sql`${agentLogs.data}->>'scoreKey' = ${key}`,
         sql`${agentLogs.data}->>'scoredAt' >= ${cutoff}`,
         sql`jsonb_typeof(${agentLogs.data}->'score') = 'number'`,
+        // "Ask again" (requestFreshScore) retires every earlier score for that creator.
+        sql`not (${agentLogs.data} ? 'rescoreRequestedAt')`,
       ),
     )
     .orderBy(sql`${agentLogs.createdAt} desc`)
@@ -495,6 +500,32 @@ async function scoreCreator(
   const fresh = await evaluateCreatorForBidder(creator, goal);
   if (!fresh) return null;
   return { result: fresh, meta: { ...base, scoreSource: "ai", scoredAt: new Date().toISOString() } };
+}
+
+/**
+ * "Ask again" for one creator: the next run asks the AI for a fresh score instead of
+ * reusing an earlier one (e.g. to clear a red flag the AI got wrong). Nothing is erased:
+ * each earlier score for that creator keeps its score and reason and gains
+ * `rescoreRequestedAt`, which takes it out of the cache. No bid is placed and no rule
+ * changes: the fresh score goes through the same minimum score, cap, budget and wallet
+ * checks as any other. Returns how many scores were retired (0 = none to refresh).
+ */
+export async function requestFreshScore(userId: string, creatorHandle: string): Promise<number> {
+  const at = new Date().toISOString();
+  const rows = await db
+    .update(agentLogs)
+    .set({ data: sql`${agentLogs.data} || jsonb_build_object('rescoreRequestedAt', ${at}::text)` })
+    .where(
+      and(
+        eq(agentLogs.userId, userId),
+        eq(agentLogs.action, "creator_scored"),
+        sql`lower(${agentLogs.data}->>'creator') = lower(${creatorHandle})`,
+        sql`${agentLogs.data} ? 'scoreKey'`,
+        sql`not (${agentLogs.data} ? 'rescoreRequestedAt')`,
+      ),
+    )
+    .returning({ id: agentLogs.id });
+  return rows.length;
 }
 
 // ─── Decisions ───────────────────────────────────────────────────────────────
@@ -736,13 +767,17 @@ async function readProfile(reads: ProfileReads, p: typeof profiles.$inferSelect)
 
 // ─── Logging ─────────────────────────────────────────────────────────────────
 
+/** The run in progress (if any), so every log row it writes is tagged with its runId. */
+const runContext = new AsyncLocalStorage<{ runId: string }>();
+
 async function logAgentAction(
   userId: string,
   action: (typeof agentLogs.$inferInsert)["action"],
   data: Record<string, unknown> = {},
 ): Promise<void> {
+  const run = runContext.getStore();
   try {
-    await db.insert(agentLogs).values({ userId, action, data });
+    await db.insert(agentLogs).values({ userId, action, data: run ? { ...data, runId: run.runId } : data });
   } catch (err) {
     console.error("Failed to log agent action:", err);
   }

@@ -16,6 +16,7 @@ import { registrationState } from "@/lib/registration";
 import { enabledProviders, listVerifications } from "@/lib/social-verify";
 import { computeCreatorStats, loadMarketBids } from "@/lib/market";
 import { bookRanks, computeBidderTotals, computeCreatorTotals } from "@/lib/portfolio";
+import { RUN_ACTIONS, groupRuns } from "@/lib/decision-history";
 import { DashboardClient } from "./dashboard-client";
 import type { BidData, PortfolioSummary } from "./types";
 
@@ -70,7 +71,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     ),
   ];
 
-  const [walletUsdc, agentWalletUsdc, spent, earnedRow, creatorMarket, creatorProfiles, agentConfigs, openBook, logs] = await Promise.all([
+  const [walletUsdc, agentWalletUsdc, spent, earnedRow, creatorMarket, creatorProfiles, agentConfigs, openBook, logs, historyRows] = await Promise.all([
     wallet ? getUsdcBalance(wallet.address).then((v) => v.toString()).catch(() => null) : Promise.resolve(null),
     agentWalletRow ? getUsdcBalance(agentWalletRow.address).then((v) => v.toString()).catch(() => null) : Promise.resolve(null),
     spentToday(userId),
@@ -102,6 +103,17 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       where: eq(agentLogs.userId, userId),
       orderBy: desc(agentLogs.createdAt),
       limit: 50,
+    }),
+    // Decision History: the bidder agent's runs over the last 14 days (grouped below).
+    db.query.agentLogs.findMany({
+      where: and(
+        eq(agentLogs.userId, userId),
+        inArray(agentLogs.action, [...RUN_ACTIONS]),
+        gte(agentLogs.createdAt, new Date(Date.now() - 14 * 24 * 60 * 60 * 1000)),
+      ),
+      orderBy: desc(agentLogs.createdAt),
+      columns: { id: true, action: true, data: true, createdAt: true },
+      limit: 1500,
     }),
   ]);
 
@@ -261,6 +273,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         txHref: l.txHash?.startsWith("0x") ? txUrl(l.txHash) : null,
         createdAt: l.createdAt.toISOString(),
       }))}
+      history={groupRuns(historyRows.map((r) => ({ id: r.id, action: r.action, data: r.data, createdAt: r.createdAt.toISOString() })))}
       userId={userId}
       userRole={role}
     />

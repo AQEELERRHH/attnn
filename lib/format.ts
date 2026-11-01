@@ -10,7 +10,13 @@ export const EMPTY = "—";
 export function formatMoney(atomic: string | bigint | null | undefined): string {
   if (atomic === null || atomic === undefined) return EMPTY;
   const v = typeof atomic === "bigint" ? atomic : parseAtomicUsdc(atomic);
-  return v === null ? EMPTY : formatUsd(v);
+  if (v === null) return EMPTY;
+  // Under a cent (an agent's $0.001 profile read), show the exact amount, not "$0.00".
+  const abs = v < BigInt(0) ? -v : v;
+  if (abs > BigInt(0) && abs < BigInt(10_000)) {
+    return `${v < BigInt(0) ? "-" : ""}$0.${abs.toString().padStart(6, "0").replace(/0+$/, "")}`;
+  }
+  return formatUsd(v);
 }
 
 /** Converts a "35.5" style dollar input to atomic USDC, or null if invalid. */

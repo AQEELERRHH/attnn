@@ -90,36 +90,65 @@ export async function runBidderAgent(userId: string): Promise<AgentRunResult> {
   }
 }
 
+/**
+ * Live counts for one run, updated the moment each thing happens (a creator verified, a
+ * bid intent queued, a bid attempted), so a run that stops on an unexpected error still
+ * reports exactly what it did. `queued` counts bid INTENTS recorded as "placing": they
+ * are escrowed later by the placeBid job, never during the run.
+ */
+interface RunProgress {
+  creatorsFound: number;
+  evaluated: number;
+  qualified: number;
+  attempted: number;
+  queued: number;
+}
+
 async function runBidderAgentHoldingLease(userId: string, held: { token: Date }): Promise<AgentRunResult> {
   const errors: string[] = [];
-  let bidsPlaced = 0;
-  let creatorsFound = 0;
+  const progress: RunProgress = { creatorsFound: 0, evaluated: 0, qualified: 0, attempted: 0, queued: 0 };
   const decisions = new Map<string, DecisionRecord>();
+  let stoppedBy: string | null = null;
 
   try {
-    return await runBidderAgentSteps(userId, held, errors, decisions, (n) => (bidsPlaced = n), (n) => (creatorsFound = n));
+    return await runBidderAgentSteps(userId, held, errors, decisions, progress);
   } catch (err) {
-    errors.push(`Agent run failed: ${err}`);
-    return { bidsPlaced, creatorsFound, errors, logId: uuidv4() };
+    // Unexpected error part-way through. Never thrown on to the caller (an Inngest step
+    // would retry the whole run); report exactly what happened up to here instead.
+    stoppedBy = err instanceof Error ? err.message : String(err);
+    errors.push(`Agent run failed: ${stoppedBy}`);
+    await logAgentAction(userId, "error", {
+      error: `The run stopped on an unexpected error after queuing ${progress.queued} bid${progress.queued === 1 ? "" : "s"}: ${stoppedBy}`,
+    });
+    await logAgentAction(userId, "creator_discovered", { count: progress.creatorsFound, ...progress, bidsPlaced: progress.queued, stoppedEarly: true });
+    return { bidsPlaced: progress.queued, creatorsFound: progress.creatorsFound, errors, logId: uuidv4() };
   } finally {
     // Every creator the run looked at gets its decision record, however the run ended.
+    // Decisions already made (BID_QUEUED, FAILED, BLOCKED, SKIPPED) are kept as they are;
+    // anything still waiting is NOT_REACHED, with the reason it wasn't reached.
     for (const rec of decisions.values()) {
-      if (!rec.decision) Object.assign(rec, { decision: "NOT_REACHED", reason: "The run stopped before reaching this creator" });
+      const waiting = !rec.decision || (rec.decision === "NOT_REACHED" && rec.reason === QUALIFIED_NOT_TRIED);
+      if (waiting) {
+        Object.assign(rec, {
+          decision: "NOT_REACHED",
+          reason: stoppedBy ? `The run stopped on an error before reaching this creator: ${stoppedBy}` : "The run stopped before reaching this creator",
+        });
+      }
       await logAgentAction(userId, "creator_scored", rec as unknown as Record<string, unknown>);
     }
   }
 }
+
+/** Placeholder reason for a qualified creator the bid loop hasn't reached yet. */
+const QUALIFIED_NOT_TRIED = "Qualified; not tried yet";
 
 async function runBidderAgentSteps(
   userId: string,
   held: { token: Date },
   errors: string[],
   decisions: Map<string, DecisionRecord>,
-  reportBids: (n: number) => void,
-  reportFound: (n: number) => void,
+  progress: RunProgress,
 ): Promise<AgentRunResult> {
-  let bidsPlaced = 0;
-  let creatorsFound = 0;
   {
     const config = await db.query.bidderConfigs.findFirst({ where: eq(bidderConfigs.userId, userId) });
     if (!config || !config.isActive) {
@@ -215,7 +244,8 @@ async function runBidderAgentSteps(
         errors.push(`Couldn't verify @${m.profile.handle} on Arc: ${err instanceof Error ? err.message : err}`);
       }
     }
-    creatorsFound = filteredCreators.length;
+    progress.creatorsFound = filteredCreators.length;
+    const creatorsFound = progress.creatorsFound;
 
     if (creatorsFound === 0) {
       await logAgentAction(userId, "creator_discovered", { count: 0 });
@@ -252,7 +282,6 @@ async function runBidderAgentSteps(
     // A creator the AI couldn't score is skipped, never bid on blind.
     const qualified: { profile: typeof profiles.$inferSelect; score: number; bidAmount: bigint }[] = [];
     let unscored = 0;
-    let evaluated = 0;
     for (const ct of filteredCreators) {
       const handle = ct.profile.handle;
       try {
@@ -277,7 +306,7 @@ async function runBidderAgentSteps(
           decide(handle, "SKIPPED", "The AI couldn't score this creator, so no bid (your agent never bids blind)", source);
           continue;
         }
-        evaluated++;
+        progress.evaluated++;
         const scored = { ...source, score: result.score, aiReason: result.reason, flagged: !result.proceed };
         if (result.score < config.minFitScore) {
           decide(handle, "SKIPPED", `Score ${result.score}/10 is below your minimum of ${config.minFitScore}/10`, scored);
@@ -294,8 +323,9 @@ async function runBidderAgentSteps(
           decide(handle, "SKIPPED", `Floor ${formatUsd(BigInt(ct.profile.minBid))} is above your ${formatUsd(BigInt(config.maxBidPerCreator))} per-creator cap`, scored);
           continue;
         }
-        decide(handle, "NOT_REACHED", "Qualified; not tried yet", scored);
+        decide(handle, "NOT_REACHED", QUALIFIED_NOT_TRIED, scored);
         qualified.push({ profile: ct.profile, score: result.score, bidAmount: amount });
+        progress.qualified++;
       } catch (err) {
         errors.push(`Score error for ${handle}: ${err}`);
         decide(handle, "SKIPPED", "Something went wrong while scoring; no bid");
@@ -320,7 +350,6 @@ async function runBidderAgentSteps(
     // Highest score first; a creator the wallet or budget can't cover is skipped, not the
     // end of the run, so a cheaper qualified creator still gets its bid.
     qualified.sort((a, b) => b.score - a.score);
-    let attempted = 0;
     let stopped: string | null = null;
     for (const tc of qualified) {
       const handle = tc.profile.handle;
@@ -328,7 +357,7 @@ async function runBidderAgentSteps(
         decide(handle, "NOT_REACHED", stopped);
         continue;
       }
-      if (bidsPlaced >= MAX_BIDS_PER_RUN) {
+      if (progress.queued >= MAX_BIDS_PER_RUN) {
         decide(handle, "NOT_REACHED", `Your agent places at most ${MAX_BIDS_PER_RUN} bids per run; higher scores came first`);
         continue;
       }
@@ -371,7 +400,7 @@ async function runBidderAgentSteps(
         continue;
       }
 
-      attempted++;
+      progress.attempted++;
       try {
         const intent = await createBidIntent({
           bidderUserId: userId,
@@ -388,7 +417,7 @@ async function runBidderAgentSteps(
           bidId: intent.id,
           status: "placing",
         });
-        bidsPlaced++;
+        progress.queued++;
         spendable -= tc.bidAmount + BID_FEE_RESERVE;
         decide(handle, "BID_QUEUED", `Bid of ${formatUsd(tc.bidAmount)} (the creator's floor) recorded and queued for escrow on Arc; not confirmed yet`, {
           bidId: intent.id,
@@ -410,20 +439,18 @@ async function runBidderAgentSteps(
 
     await logAgentAction(userId, "creator_discovered", {
       count: creatorsFound,
-      evaluated,
-      qualified: qualified.length,
-      attempted,
-      queued: bidsPlaced,
+      evaluated: progress.evaluated,
+      qualified: progress.qualified,
+      attempted: progress.attempted,
+      queued: progress.queued,
       unscored,
-      bidsPlaced,
+      bidsPlaced: progress.queued,
       profilesBought: reads.bought,
       ...(reads.bought ? { readSpend: (PROFILE_READ_PRICE * BigInt(reads.bought)).toString() } : {}),
       ...(reads.topUp ? { readTopUp: READ_TOPUP.toString() } : {}),
     });
   }
-  reportBids(bidsPlaced);
-  reportFound(creatorsFound);
-  return { bidsPlaced, creatorsFound, errors, logId: uuidv4() };
+  return { bidsPlaced: progress.queued, creatorsFound: progress.creatorsFound, errors, logId: uuidv4() };
 }
 
 // ─── Decisions ───────────────────────────────────────────────────────────────

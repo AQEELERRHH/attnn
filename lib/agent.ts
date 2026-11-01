@@ -1,7 +1,7 @@
 import { db } from "./db/client";
 import { bids, agentLogs, profiles, bidderConfigs, wallets, x402Payments } from "./db/schema";
 import { arc } from "./chain";
-import { evaluateCreatorForBidder } from "./ai";
+import { SCORE_CACHE_TTL_MS, SCORE_PROMPT_VERSION, aiModel, evaluateCreatorForBidder, scoreCacheKey, type ScoredCreator } from "./ai";
 import { isActiveOnRegistry } from "./registration";
 import { BidError, createBidIntent } from "./bids";
 import { ESCROW_MIN_BID, formatUsd, resolveAgentBidAmount } from "./bid-rules";
@@ -297,17 +297,17 @@ async function runBidderAgentSteps(
           decide(handle, "SKIPPED", "Not accepting bids right now", source);
           continue;
         }
-        const result = await evaluateCreatorForBidder(
-          { handle: view.handle, bio: view.bio ?? undefined, tags: view.tags, minBid: view.minBid },
-          config.goal ?? "general",
-        );
+        // The AI sees topics and bio only (never the floor). The same model, prompt, goal
+        // and profile reuse the earlier score, so a creator doesn't score 6 one run and 3 the next.
+        const scored0 = await scoreCreator(userId, { handle: view.handle, bio: view.bio, tags: view.tags }, config.goal ?? "general");
+        const result = scored0?.result ?? null;
         if (!result) {
           unscored++;
           decide(handle, "SKIPPED", "The AI couldn't score this creator, so no bid (your agent never bids blind)", source);
           continue;
         }
         progress.evaluated++;
-        const scored = { ...source, score: result.score, aiReason: result.reason, flagged: !result.proceed };
+        const scored = { ...source, score: result.score, aiReason: result.reason, flagged: !result.proceed, ...scored0!.meta };
         if (result.score < config.minFitScore) {
           decide(handle, "SKIPPED", `Score ${result.score}/10 is below your minimum of ${config.minFitScore}/10`, scored);
           continue;
@@ -453,6 +453,50 @@ async function runBidderAgentSteps(
   return { bidsPlaced: progress.queued, creatorsFound: progress.creatorsFound, errors, logId: uuidv4() };
 }
 
+// ─── Consistent scores ───────────────────────────────────────────────────────
+
+type ScoreResult = NonNullable<Awaited<ReturnType<typeof evaluateCreatorForBidder>>>;
+
+/**
+ * The score for one creator against this bidder's goal: an earlier AI score for exactly
+ * the same model, prompt version, goal and profile (from this user's own decision records,
+ * at most SCORE_CACHE_TTL_MS old), or a fresh one from the AI. Null when the AI can't score.
+ * The cache is the run log itself, so every reused score points back to the run that made it.
+ */
+async function scoreCreator(
+  userId: string,
+  creator: ScoredCreator,
+  goal: string,
+): Promise<{ result: ScoreResult; meta: Pick<DecisionRecord, "scoreKey" | "scoreSource" | "scoredAt" | "model" | "promptVersion"> } | null> {
+  const key = scoreCacheKey(creator, goal);
+  const base = { scoreKey: key, model: aiModel(), promptVersion: SCORE_PROMPT_VERSION };
+  const cutoff = new Date(Date.now() - SCORE_CACHE_TTL_MS).toISOString();
+  const [earlier] = await db
+    .select({ data: agentLogs.data })
+    .from(agentLogs)
+    .where(
+      and(
+        eq(agentLogs.userId, userId),
+        eq(agentLogs.action, "creator_scored"),
+        sql`${agentLogs.data}->>'scoreKey' = ${key}`,
+        sql`${agentLogs.data}->>'scoredAt' >= ${cutoff}`,
+        sql`jsonb_typeof(${agentLogs.data}->'score') = 'number'`,
+      ),
+    )
+    .orderBy(sql`${agentLogs.createdAt} desc`)
+    .limit(1);
+  const d = earlier?.data as Partial<DecisionRecord> | undefined;
+  if (d && typeof d.score === "number" && typeof d.scoredAt === "string") {
+    return {
+      result: { score: d.score, reason: d.aiReason ?? "", proceed: !d.flagged },
+      meta: { ...base, scoreSource: "cache", scoredAt: d.scoredAt },
+    };
+  }
+  const fresh = await evaluateCreatorForBidder(creator, goal);
+  if (!fresh) return null;
+  return { result: fresh, meta: { ...base, scoreSource: "ai", scoredAt: new Date().toISOString() } };
+}
+
 // ─── Decisions ───────────────────────────────────────────────────────────────
 
 /**
@@ -486,6 +530,13 @@ export interface DecisionRecord {
   aiReason?: string;
   /** The AI flagged the creator as unsuitable (spam, impersonation, unrelated). */
   flagged?: boolean;
+  /** Cache key of the score (model + prompt version + goal + profile) and where it came from. */
+  scoreKey?: string;
+  scoreSource?: "ai" | "cache";
+  /** When the AI actually made this score (an earlier run's time if reused). */
+  scoredAt?: string;
+  model?: string;
+  promptVersion?: string;
   /** Atomic USDC at the moment of the decision. */
   budgetLeft?: string;
   spendable?: string;

@@ -206,9 +206,11 @@ describe("bidder agent pays for profiles over x402", () => {
 
   test("a profile bought earlier today isn't paid for again", async () => {
     gateway.balances.set(AGENT, BigInt(100_000));
-    ai.proceed = false; // first run: reads and scores, but doesn't bid
+    // First run: reads and scores (9/10), but doesn't bid: the minimum is 10. The AI's
+    // score is reused on the second run (lib/agent.ts scoreCreator), so lower the minimum.
+    await db.update(bidderConfigs).set({ minFitScore: 10 }).where(eq(bidderConfigs.userId, ids.bidder));
     assert.equal((await runBidderAgent(ids.bidder)).bidsPlaced, 0);
-    ai.proceed = true;
+    await db.update(bidderConfigs).set({ minFitScore: 5 }).where(eq(bidderConfigs.userId, ids.bidder));
     const second = await runBidderAgent(ids.bidder);
     assert.equal(second.bidsPlaced, 1, JSON.stringify(second.errors));
     assert.equal(gateway.settled.length, 1, "paid once");

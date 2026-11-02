@@ -35,7 +35,7 @@ import { bids, externalBidIntents, profiles, wallets, x402Payments } from "./db/
 import { escrowAbi, publicClient, usdcAbi, USDC_ADDRESS } from "./arc";
 import { escrowVersion, fingerprint, newSalt, readEscrowBid } from "./escrow";
 import { escrowAddress } from "./chain";
-import { ONCHAIN_STATUS, formatUsd, validateBidAmount } from "./bid-rules";
+import { ONCHAIN_STATUS, formatUsd, parseAtomicUsdc, validateBidAmount } from "./bid-rules";
 import { PAUSED_MESSAGE, bidsPaused } from "./app-settings";
 import { registryMinBid } from "./registration";
 import { mainWallet } from "./wallets";
@@ -203,7 +203,9 @@ export async function createExternalBidIntent(req: ExternalBidRequest): Promise<
 /** The intent an Idempotency-Key already created, if this request asks for the same bid. */
 async function sameRequestOrThrow(existing: IntentRow, handle: unknown, amount: unknown, message: string | null): Promise<IntentRow> {
   const profile = typeof handle === "string" ? await db.query.profiles.findFirst({ where: handleIs(handle), columns: { userId: true } }) : null;
-  const sameAmount = (typeof amount === "string" || typeof amount === "number") && String(amount).trim() === existing.amountUsdc;
+  // Parsed the same way as the first request ("020000000", 20000000 and "20000000" are one amount).
+  const retried = typeof amount === "string" || typeof amount === "number" ? parseAtomicUsdc(amount) : null;
+  const sameAmount = retried !== null && retried.toString() === existing.amountUsdc;
   if (profile?.userId !== existing.creatorUserId || !sameAmount || (message ?? null) !== (existing.message ?? null)) {
     throw new BidError("This Idempotency-Key was already used for a different bid. Use a new key for a new bid.", 409);
   }

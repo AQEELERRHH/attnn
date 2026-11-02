@@ -337,6 +337,20 @@ describe("external bid API: security audit", () => {
     assert.equal((await db.select().from(externalBidIntents)).length, 1);
   });
 
+  test("idempotency: the same amount written differently is the same bid (leading zeros, number vs string)", async () => {
+    await payForProfile();
+    const first = await createBid({ amount: "020000000" }, "kz");
+    assert.equal(first.status, 201, JSON.stringify(first.body));
+    for (const amount of ["020000000", "20000000", 20000000, " 20000000 "]) {
+      const again = await createBid({ amount }, "kz");
+      assert.equal(again.status, 200, `retry with ${JSON.stringify(amount)}`);
+      assert.equal(again.body.id, first.body.id);
+      assert.equal(again.body.accessToken, first.body.accessToken);
+    }
+    assert.equal((await createBid({ amount: "020000001" }, "kz")).status, 409, "a really different amount is still refused");
+    assert.equal((await db.select().from(externalBidIntents)).length, 1);
+  });
+
   test("idempotency: keys are per wallet, so one agent can't collide with another's", async () => {
     const OTHER_AGENT = "0x0a9e00000000000000000000000000000000a9e0";
     await payForProfile();

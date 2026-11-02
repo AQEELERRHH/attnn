@@ -115,10 +115,12 @@ export async function createExternalBidIntent(req: ExternalBidRequest): Promise<
   const key = typeof req.idempotencyKey === "string" && req.idempotencyKey.trim() ? req.idempotencyKey.trim().slice(0, 200) : null;
   const requestKey = key ? `${bidder}:${key}` : null;
 
-  // A retried request with the same Idempotency-Key gets the same intent back.
+  // A retried request with the same Idempotency-Key gets the same intent back, but only
+  // if it asks for the same bid: a key reused for another creator, amount or message is
+  // refused, so an agent never believes it bid something it didn't.
   if (requestKey) {
     const existing = await db.query.externalBidIntents.findFirst({ where: eq(externalBidIntents.requestKey, requestKey) });
-    if (existing) return { intent: existing, created: false };
+    if (existing) return { intent: await sameRequestOrThrow(existing, req.handle, req.amount, message), created: false };
   }
 
   const escrow = escrowAddress();
@@ -192,10 +194,20 @@ export async function createExternalBidIntent(req: ExternalBidRequest): Promise<
     .onConflictDoNothing({ target: externalBidIntents.requestKey })
     .returning();
   if (row) return { intent: row, created: true };
-  // Two identical requests at once: the other one created it.
+  // Two requests with the same key at once: the other one created it.
   const existing = requestKey ? await db.query.externalBidIntents.findFirst({ where: eq(externalBidIntents.requestKey, requestKey) }) : null;
   if (!existing) throw new BidError("Could not record the bid", 500);
-  return { intent: existing, created: false };
+  return { intent: await sameRequestOrThrow(existing, req.handle, req.amount, message), created: false };
+}
+
+/** The intent an Idempotency-Key already created, if this request asks for the same bid. */
+async function sameRequestOrThrow(existing: IntentRow, handle: unknown, amount: unknown, message: string | null): Promise<IntentRow> {
+  const profile = typeof handle === "string" ? await db.query.profiles.findFirst({ where: handleIs(handle), columns: { userId: true } }) : null;
+  const sameAmount = (typeof amount === "string" || typeof amount === "number") && String(amount).trim() === existing.amountUsdc;
+  if (profile?.userId !== existing.creatorUserId || !sameAmount || (message ?? null) !== (existing.message ?? null)) {
+    throw new BidError("This Idempotency-Key was already used for a different bid. Use a new key for a new bid.", 409);
+  }
+  return existing;
 }
 
 /** The approve + placeBid calls for an intent, ready to sign and send. */
@@ -264,7 +276,15 @@ export async function recordExternalPlacement(txHash: string, onlyIntentId?: str
     const candidate = await db.query.externalBidIntents.findFirst({ where: sameBid, columns: { id: true } });
     if (!candidate) continue;
     const view = await readEscrowBid(escrow, onChainBidId);
-    if (!view.messageHash) continue;
+    // The escrow's own record must say the same as the event: bidder, creator, amount.
+    if (
+      !view.messageHash ||
+      lower(view.bidder) !== lower(log.args.bidder) ||
+      lower(view.creator) !== lower(log.args.creator) ||
+      view.amount !== log.args.amount
+    ) {
+      continue;
+    }
     const intent = await db.query.externalBidIntents.findFirst({
       where: and(sameBid, eq(externalBidIntents.messageHash, lower(view.messageHash))),
     });

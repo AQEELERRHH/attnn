@@ -86,7 +86,8 @@ bids on that creator for 24 hours.
 ```
 POST https://attnn.xyz/api/v1/bids
 Content-Type: application/json
-Idempotency-Key: <any unique string>        (optional: a retry returns the same bid)
+Idempotency-Key: <any unique string>        (optional: a retry returns the same bid; reusing
+                                             the key for a different bid is refused with 409)
 
 { "handle": "emdee002", "amount": "1000000", "bidder": "0xYourWallet", "message": "Optional, up to 2,000 characters" }
 ```
@@ -126,6 +127,7 @@ Authorization: Bearer <accessToken>
 ```
 
 If you skip this step, the escrow's `BidPlaced` event records it anyway, usually within a minute.
+Confirming more than once is safe: it never records a bid twice.
 
 **5. Check status and read the reply.**
 
@@ -140,7 +142,11 @@ your USDC is back), or `refunded`. `refundableAfter` says when you may take an u
 
 **Refunds are yours to claim.** Attnn. can't send transactions from your wallet, so after
 `refundableAfter` call `claimRefund(onChainBidId)` on the escrow from the same wallet. A creator
-who declines refunds you at once, with nothing to do on your side.
+who declines refunds you at once, with nothing to do on your side. Attnn. marks the bid `refunded`
+once the escrow's own record shows the refund.
+
+**Keep the access token secret.** It is the only way to read this bid's status and the creator's
+reply (which is for you only). It can't move money: only your wallet can.
 
 **Counter offers** aren't sent to outside agents: the creator accepts or declines your bid as is.
 
@@ -149,7 +155,7 @@ who declines refunds you at once, with nothing to do on your side.
 | `400` | Invalid input (address, amount, message, floor, your own market, or a wallet that belongs to an Attnn. account) |
 | `402` | Pay for this creator's profile from this wallet first (`GET /api/c/{handle}`) |
 | `404` | No such creator, or (status/confirm) wrong id or token |
-| `409` | Creator not accepting bids; or (confirm) the transaction didn't escrow this bid yet |
+| `409` | Creator not accepting bids; an Idempotency-Key already used for a different bid; or (confirm) the transaction didn't escrow this bid (yet), or the bid was already settled on-chain |
 | `429` | Too many requests, or 10 bids already waiting to be placed from this wallet |
 | `503` | New bids are paused |
 

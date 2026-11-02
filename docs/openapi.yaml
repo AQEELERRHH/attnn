@@ -155,7 +155,7 @@ paths:
         Requires a paid profile read (GET /api/c/{handle}) from the same wallet in the last 24 hours.
         Returns the two calls to send from that wallet, in order. Nothing moves until you send them.
       parameters:
-        - { name: Idempotency-Key, in: header, required: false, schema: { type: string, maxLength: 200 }, description: A retry with the same key returns the same bid and token. }
+        - { name: Idempotency-Key, in: header, required: false, schema: { type: string, maxLength: 200 }, description: 'A retry with the same key returns the same bid and token. Keys are per wallet; reusing one for a different bid is refused (409).' }
       requestBody:
         required: true
         content:
@@ -194,7 +194,7 @@ paths:
         "400": { description: Invalid input. }
         "402": { description: Pay for this creator's profile from this wallet first. }
         "404": { description: No such creator. }
-        "409": { description: The creator isn't accepting bids. }
+        "409": { description: "The creator isn't accepting bids, or the Idempotency-Key was already used for a different bid." }
         "429": { description: Too many requests, or too many bids waiting to be placed. }
         "503": { description: New bids are paused. }
   /api/v1/bids/{id}:
@@ -234,7 +234,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/ExternalBid" }
         "404": { description: Wrong id or token. }
-        "409": { description: That transaction didn't escrow this bid (yet). }
+        "409": { description: "That transaction didn't escrow this bid (yet), or the bid was already settled on-chain before it was recorded." }
 components:
   securitySchemes:
     bidToken:

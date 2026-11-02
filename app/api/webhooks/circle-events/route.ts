@@ -3,7 +3,8 @@ import { and, eq, inArray } from "drizzle-orm";
 import { decodeEventLog, type Hex } from "viem";
 import { db } from "@/lib/db/client";
 import { bids, webhookEvents } from "@/lib/db/schema";
-import { escrowAbiFor, escrowVersion } from "@/lib/escrow";
+import { escrowAbiFor, escrowVersion, readEscrowBid } from "@/lib/escrow";
+import { ONCHAIN_STATUS } from "@/lib/bid-rules";
 import { arc, escrowAddress } from "@/lib/chain";
 import { verifyCircleSignature } from "@/lib/circle-webhook";
 import { finalizePlacement, finalizeSettlement, notifyBidEscrowed, pickReply } from "@/lib/bids";
@@ -158,6 +159,23 @@ async function handle(body: {
   // Otherwise (or Circle not caught up yet) the log itself is the on-chain fact.
   const finalStatus =
     decoded.eventName === "BidAccepted" ? "accepted" : decoded.eventName === "BidRejected" ? "rejected" : "refunded";
+
+  // An outside agent's bid (external bid API) changes state from transactions Attnn. didn't
+  // send (its own refund claim), so before trusting the notification, read the bid from the
+  // escrow itself: same bidder, creator and amount, and really settled this way. A read
+  // failure throws (500), so Circle retries rather than the row being left or set wrongly.
+  if (!bid.bidderUserId) {
+    const onChain = await readEscrowBid(escrow, onChainBidId);
+    const expected = { accepted: ONCHAIN_STATUS.Accepted, rejected: ONCHAIN_STATUS.Rejected, refunded: ONCHAIN_STATUS.Refunded }[finalStatus];
+    const same =
+      onChain.bidder.toLowerCase() === bid.bidderAddress.toLowerCase() &&
+      onChain.creator.toLowerCase() === bid.creatorAddress.toLowerCase() &&
+      onChain.amount.toString() === bid.amountUsdc;
+    if (!same || onChain.status !== expected) {
+      console.warn(`circle-events: ${decoded.eventName} for outside bid ${bid.id} doesn't match the escrow (status ${onChain.status}); ignored`);
+      return { event: decoded.eventName, ignored: "escrow disagrees" };
+    }
+  }
   const updated = await db
     .update(bids)
     .set({

@@ -3,7 +3,8 @@
 --     its escrowed bid has no bidder user; bidder_address is its wallet.
 --   - external_bid_intents keeps the private message, its salt and the fingerprint the
 --     agent was told to send, until the bid is verified escrowed on Arc.
--- Row Level Security like every other table (0009). Safe to re-run.
+-- Row Level Security like every other table (0009), plus no privileges for Supabase's
+-- public API roles on the new table. Safe to re-run.
 CREATE TABLE IF NOT EXISTS "external_bid_intents" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"bidder_address" text NOT NULL,
@@ -38,3 +39,16 @@ CREATE INDEX IF NOT EXISTS "external_bid_intents_bidder_idx" ON "external_bid_in
 CREATE INDEX IF NOT EXISTS "external_bid_intents_hash_idx" ON "external_bid_intents" USING btree ("message_hash");
 --> statement-breakpoint
 ALTER TABLE "external_bid_intents" ENABLE ROW LEVEL SECURITY;
+--> statement-breakpoint
+-- Defence in depth for private bid messages: besides RLS with no policies (no rows for
+-- anyone but the owner), Supabase's public API roles get no privileges on this table at
+-- all. The app connects as the table owner and is unaffected. The roles exist only on
+-- Supabase, so this is skipped where they don't.
+DO $$ BEGIN
+ IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
+  REVOKE ALL ON TABLE "external_bid_intents" FROM anon;
+ END IF;
+ IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+  REVOKE ALL ON TABLE "external_bid_intents" FROM authenticated;
+ END IF;
+END $$;

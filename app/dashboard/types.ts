@@ -46,7 +46,8 @@ export interface BidderConfigData {
 
 export interface BidData {
   id: string;
-  bidderUserId: string;
+  /** Null for an outside agent's bid (external bid API); agentName then names its wallet. */
+  bidderUserId: string | null;
   creatorUserId: string;
   bidderAddress: string;
   creatorAddress: string;

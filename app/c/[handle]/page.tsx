@@ -1,4 +1,5 @@
 import { handleIs } from "@/lib/profiles";
+import { outsideAgentName } from "@/lib/bid-display";
 import { notFound } from "next/navigation";
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db/client";
@@ -24,7 +25,7 @@ export default async function CreatorMarketPage({ params }: { params: Promise<{ 
   const [marketBids, openRows, session, verifications] = await Promise.all([
     loadMarketBids(profile.userId, now),
     db
-      .select({ id: bids.id, bidderUserId: bids.bidderUserId, amountUsdc: bids.amountUsdc, createdAt: bids.createdAt, score: bids.score })
+      .select({ id: bids.id, bidderUserId: bids.bidderUserId, bidderAddress: bids.bidderAddress, amountUsdc: bids.amountUsdc, createdAt: bids.createdAt, score: bids.score })
       .from(bids)
       .where(and(eq(bids.creatorUserId, profile.userId), inArray(bids.status, ["pending", "counter_offered"]))),
     auth(),
@@ -33,7 +34,9 @@ export default async function CreatorMarketPage({ params }: { params: Promise<{ 
   const stats = computeCreatorStats(marketBids, profile.minBid, now);
 
   // Names for bidders in the book and in fills: agent name, else handle, else generic.
-  const bidderIds = [...new Set([...openRows.map((b) => b.bidderUserId), ...stats.fills.map((f) => f.bidderUserId)])];
+  const bidderIds = [
+    ...new Set([...openRows.map((b) => b.bidderUserId), ...stats.fills.map((f) => f.bidderUserId)].filter((id): id is string => !!id)),
+  ];
   const viewerId = session?.user?.id ?? null;
   const lookupIds = viewerId ? [...new Set([...bidderIds, viewerId])] : bidderIds;
   const [configs, bidderProfiles] = lookupIds.length
@@ -44,8 +47,10 @@ export default async function CreatorMarketPage({ params }: { params: Promise<{ 
     : [[], []];
   const agentBy = new Map(configs.map((c) => [c.userId, c.agentName]));
   const handleBy = new Map(bidderProfiles.map((p) => [p.userId, p.handle]));
-  const nameFor = (userId: string) => agentBy.get(userId) || (handleBy.get(userId) ? `@${handleBy.get(userId)}` : "Bidder");
-  const ownerFor = (userId: string) => (agentBy.get(userId) && handleBy.get(userId) ? `@${handleBy.get(userId)}` : null);
+  // An outside agent (external bid API) has no Attnn. account: name it by its wallet.
+  const nameFor = (userId: string | null, address: string) =>
+    !userId ? outsideAgentName(address) : agentBy.get(userId) || (handleBy.get(userId) ? `@${handleBy.get(userId)}` : "Bidder");
+  const ownerFor = (userId: string | null) => (userId && agentBy.get(userId) && handleBy.get(userId) ? `@${handleBy.get(userId)}` : null);
 
   const isOwner = viewerId === profile.userId;
   const paused = !profile.isActive || profile.availabilityStatus === "not_accepting";
@@ -75,7 +80,7 @@ export default async function CreatorMarketPage({ params }: { params: Promise<{ 
     },
     book: openRows.map((b) => ({
       id: b.id,
-      agent: nameFor(b.bidderUserId),
+      agent: nameFor(b.bidderUserId, b.bidderAddress),
       owner: ownerFor(b.bidderUserId),
       amountUsdc: b.amountUsdc,
       createdAt: b.createdAt.toISOString(),
@@ -83,7 +88,7 @@ export default async function CreatorMarketPage({ params }: { params: Promise<{ 
     })),
     fills: stats.fills.map((f) => ({
       id: f.bidId,
-      agent: nameFor(f.bidderUserId),
+      agent: nameFor(f.bidderUserId, f.bidderAddress),
       amountUsdc: f.amountUsdc,
       settledAt: f.settledAt,
       replyMs: f.replyMs,

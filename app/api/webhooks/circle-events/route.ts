@@ -7,6 +7,7 @@ import { escrowAbiFor, escrowVersion } from "@/lib/escrow";
 import { arc, escrowAddress } from "@/lib/chain";
 import { verifyCircleSignature } from "@/lib/circle-webhook";
 import { finalizePlacement, finalizeSettlement, notifyBidEscrowed, pickReply } from "@/lib/bids";
+import { recordExternalPlacement } from "@/lib/external-bids";
 
 /**
  * Circle Smart Contract Platform event monitor → AttnnEscrow logs.
@@ -127,7 +128,11 @@ async function handle(body: {
         escrowed++;
       }
     }
-    return { event: "BidPlaced", escrowed };
+    // An outside agent's bid from its own wallet (external bid API): recorded only after
+    // reading this transaction from Arc and matching a waiting intent exactly.
+    let external = 0;
+    if (txHash) external = (await recordExternalPlacement(txHash)).recorded.length;
+    return { event: "BidPlaced", escrowed, external };
   }
 
   const onChainBidId = String(decoded.args.bidId);

@@ -3,11 +3,13 @@
 Attnn. is an agentic attention marketplace on **Arc mainnet**. Bidders put USDC into an on-chain
 escrow to reach creators; creators earn it by replying; unanswered bids are refunded after 3 days.
 
-AI agents can reach Attnn. three ways, all live on mainnet:
+AI agents can reach Attnn. these ways, all live on mainnet:
 
 | Way | Cost | What you get |
 |---|---|---|
+| `GET https://attnn.xyz/api/v1/creators?tag=…` | Free | Live markets an agent can bid on: handle, topics, floor, verified accounts |
 | `GET https://attnn.xyz/api/c/{handle}` | **$0.001 USDC via x402** (Circle Gateway, gas-free) | A creator's profile: bio, tags, what they're open to, availability, minimum bid, market link |
+| `POST https://attnn.xyz/api/v1/bids` | The bid itself, from **your own wallet** | Bid on a creator programmatically ([below](#bid-from-your-own-wallet)) |
 | Read the contracts on Arc | Free | Live markets: creators by tag, minimum bids, bid counts and statuses |
 | PayBox plugin "Attnn." | Free | Find creators and check prices from a PayBox-connected agent |
 
@@ -65,9 +67,93 @@ console.log(res.data.profile, res.data.payment);   // profile + Gateway receipt
 LinkedIn (an X handle, or a LinkedIn name; LinkedIn shares no profile link). It proves control of the
 account, not real-world identity. New markets need at least one before they go live.
 
-To bid, open `https://attnn.xyz` + `profile.market`. The USDC waits in the escrow: paid to the
-creator only when they reply (at least 100 characters), refunded at once if they decline, and
-refundable after 3 days with no reply.
+To bid, use the bid API below (agents) or open `https://attnn.xyz` + `profile.market` (people).
+The USDC waits in the escrow: paid to the creator only when they reply (at least 100 characters),
+refunded at once if they decline, and refundable after 3 days with no reply.
+
+## Bid from your own wallet
+
+Your agent bids from **its own wallet**. Attnn. never holds your USDC or your keys: you send the
+transactions yourself, and the escrow contract decides where the money goes (to the creator when
+they reply, back to you when they decline or after 3 days).
+
+**1. Read the profile over x402, paying from the wallet you'll bid from.** This is how Attnn. knows
+the wallet is yours: Circle Gateway only settles a payment that wallet signed. A read is good for
+bids on that creator for 24 hours.
+
+**2. Prepare the bid.**
+
+```
+POST https://attnn.xyz/api/v1/bids
+Content-Type: application/json
+Idempotency-Key: <any unique string>        (optional: a retry returns the same bid)
+
+{ "handle": "emdee002", "amount": "1000000", "bidder": "0xYourWallet", "message": "Optional, up to 2,000 characters" }
+```
+
+`amount` is atomic USDC (6 decimals): at least the creator's floor, at most `1000000000` ($1,000).
+The same rules apply as for any bid: the creator must be live and accepting bids, and new bids can
+be paused. Your message stays private with Attnn.: only its fingerprint goes on-chain.
+
+Response `201`:
+
+```json
+{
+  "id": "6f1c…",
+  "accessToken": "keep this secret",
+  "status": "waiting",
+  "escrow": "0xff00aa5414e205367af5dd29927e23a1ccf3bad8",
+  "amount": "1000000",
+  "messageHash": "0x9a…",
+  "calls": [
+    { "to": "0x3600…0000", "data": "0x095ea7b3…", "value": "0", "description": "USDC approve(escrow, amount)" },
+    { "to": "0xFF00…bAD8", "data": "0x…",         "value": "0", "description": "placeBid(creator, amount, messageHash)" }
+  ]
+}
+```
+
+**3. Send both calls from your wallet, in order,** on Arc (gas is paid in USDC on Arc, so keep a few
+cents more than the bid).
+
+**4. Confirm.** Attnn. reads the transaction from Arc itself and records the bid only if it escrowed
+exactly this one (your wallet, this creator, this amount, this message fingerprint):
+
+```
+POST https://attnn.xyz/api/v1/bids/{id}/confirm
+Authorization: Bearer <accessToken>
+
+{ "txHash": "0x…the placeBid transaction" }
+```
+
+If you skip this step, the escrow's `BidPlaced` event records it anyway, usually within a minute.
+
+**5. Check status and read the reply.**
+
+```
+GET https://attnn.xyz/api/v1/bids/{id}
+Authorization: Bearer <accessToken>
+```
+
+`status` is `waiting` (not escrowed yet), `pending` (escrowed, waiting for the creator), `accepted`
+(the creator replied and was paid: `reply` holds their answer, for you only), `rejected` (declined,
+your USDC is back), or `refunded`. `refundableAfter` says when you may take an unanswered bid back.
+
+**Refunds are yours to claim.** Attnn. can't send transactions from your wallet, so after
+`refundableAfter` call `claimRefund(onChainBidId)` on the escrow from the same wallet. A creator
+who declines refunds you at once, with nothing to do on your side.
+
+**Counter offers** aren't sent to outside agents: the creator accepts or declines your bid as is.
+
+| Status | Meaning |
+|---|---|
+| `400` | Invalid input (address, amount, message, floor, your own market, or a wallet that belongs to an Attnn. account) |
+| `402` | Pay for this creator's profile from this wallet first (`GET /api/c/{handle}`) |
+| `404` | No such creator, or (status/confirm) wrong id or token |
+| `409` | Creator not accepting bids; or (confirm) the transaction didn't escrow this bid yet |
+| `429` | Too many requests, or 10 bids already waiting to be placed from this wallet |
+| `503` | New bids are paused |
+
+A runnable end-to-end example (testnet by default): `scripts/external-bid-demo.mjs`.
 
 ## Free endpoint: payment receipts
 

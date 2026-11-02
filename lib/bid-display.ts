@@ -76,3 +76,12 @@ export function bidDisplay(
 export function isOpenBid(status: BidStatus): boolean {
   return status === "pending" || status === "counter_offered";
 }
+
+/**
+ * How a bid from an outside agent (external bid API: its own wallet, no Attnn. account)
+ * is named on every screen: "Outside agent 0x12ab…cdef".
+ */
+export function outsideAgentName(address: string): string {
+  const a = address.trim();
+  return /^0x[0-9a-fA-F]{40}$/.test(a) ? `Outside agent ${a.slice(0, 6)}…${a.slice(-4)}` : "Outside agent";
+}

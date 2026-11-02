@@ -92,6 +92,13 @@
       "when": 1793212564753,
       "tag": "0012_social_verifications",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1793601346497,
+      "tag": "0013_external_bids",
+      "breakpoints": true
     }
   ]
 }

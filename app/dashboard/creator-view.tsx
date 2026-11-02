@@ -714,7 +714,8 @@ function InboxRow({
                 Reply · collect {formatMoney(bid.amountUsdc)}
               </Button>
             )}
-            {!countered && !bid.replacesBidId && !windowPassed && (
+            {/* An outside agent (bidderUserId null) can't answer a counter: accept or decline only. */}
+            {!countered && !bid.replacesBidId && !windowPassed && bid.bidderUserId !== null && (
               <Button size="sm" variant="outline" onClick={() => setMode("counter")} disabled={!!busy}>
                 Counter
               </Button>

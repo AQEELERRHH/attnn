@@ -26,6 +26,10 @@ export async function POST(req: NextRequest) {
     if (bid.creatorUserId !== session.user.id) return NextResponse.json({ error: "Only the creator can counter this bid" }, { status: 403 });
     if (bid.status !== "pending") return NextResponse.json({ error: "Bid already processed" }, { status: 400 });
     if (bid.settlementTxHash) return NextResponse.json({ error: "This bid is already being settled" }, { status: 409 });
+    // An outside agent bid from its own wallet and can't answer a counter: accept or decline it.
+    if (!bid.bidderUserId) {
+      return NextResponse.json({ error: "This bid is from an outside agent, which can't answer a counter. Accept or decline it instead." }, { status: 409 });
+    }
     // A re-bid already pays your counter price; countering again could ratchet the bidder up.
     if (bid.replacesBidId) {
       return NextResponse.json({ error: "This bid already meets your counter price. Reply to it or decline it." }, { status: 400 });

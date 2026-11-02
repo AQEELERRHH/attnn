@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import type { RunView } from "@/lib/decision-history";
 import { useRouter } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { Bot, Coins, Inbox, LogOut } from "lucide-react";
@@ -40,6 +41,7 @@ export function DashboardClient({
   bids,
   summary,
   logs,
+  history,
   userId,
   userRole,
   now,
@@ -56,6 +58,8 @@ export function DashboardClient({
   bids: BidData[];
   summary: PortfolioSummary;
   logs: LogData[];
+  /** The bidder agent's runs, grouped (lib/decision-history.ts). */
+  history: RunView[];
   userId: string;
   userRole: string;
   /** Server render time; every relative time uses it so server and browser agree. */
@@ -306,7 +310,7 @@ export function DashboardClient({
           {view === "creator" && (
             <CreatorView profile={profile} wallet={wallet} bids={received} summary={summary} now={now} isTestnet={onboarding.isTestnet} onrampWidgetUrl={onboarding.onrampWidgetUrl} photoRequest={photoRequest} />
           )}
-          {view === "agent" && <AgentConsole config={bidderConfig} bids={placed} logs={logs} summary={summary} now={now} policy={policy} />}
+          {view === "agent" && <AgentConsole config={bidderConfig} bids={placed} logs={logs} history={history} summary={summary} now={now} policy={policy} />}
         </div>
       </main>
 

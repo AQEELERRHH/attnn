@@ -11,12 +11,13 @@ import { timeAgo } from "@/lib/format";
 import { logKind, logMessage, type LogKind } from "./agent-log";
 import { AgentPolicy } from "./agent-policy";
 import { AgentWalletCard } from "./agent-wallet-card";
+import { DecisionHistory } from "./decision-history";
+import type { RunView } from "@/lib/decision-history";
 import { BidderSetupForm } from "./bidder-setup-form";
 import type { AgentPolicyInfo, BidData, BidderConfigData, LogData, PortfolioSummary } from "./types";
 
 const FILTERS: { id: "all" | LogKind; label: string }[] = [
   { id: "all", label: "All" },
-  { id: "discovery", label: "Discovery" },
   { id: "bid", label: "Bids" },
   { id: "settled", label: "Settled" },
   { id: "error", label: "Errors" },
@@ -35,6 +36,7 @@ export function AgentConsole({
   config,
   bids,
   logs,
+  history,
   summary,
   now,
   policy,
@@ -43,6 +45,8 @@ export function AgentConsole({
   /** Only bids this user placed. */
   bids: BidData[];
   logs: LogData[];
+  /** The bidder agent's runs, grouped into decisions (Decision history). */
+  history: RunView[];
   summary: PortfolioSummary;
   now: number;
   policy: AgentPolicyInfo;
@@ -74,7 +78,10 @@ export function AgentConsole({
   const bidsToday = bids.filter((b) => b.status !== "failed" && new Date(b.createdAt).getTime() >= startOfDay.getTime()).length;
   const lastDiscovery = logs.find((l) => l.action === "creator_discovered");
   const lastRun = logs[0];
-  const shown = filter === "all" ? logs : logs.filter((l) => logKind(l.action) === filter);
+  // Bidder runs (discovery and per-creator decisions) are in Decision history; this log
+  // keeps everything else: settlements, the creator agent's triage, stops outside a run.
+  const activity = logs.filter((l) => l.action !== "creator_scored" && l.action !== "creator_discovered" && !l.data?.runId);
+  const shown = filter === "all" ? activity : activity.filter((l) => logKind(l.action) === filter);
 
   async function toggle() {
     setToggling(true);
@@ -217,6 +224,8 @@ export function AgentConsole({
 
       <AgentPolicy config={config} spent={spent} policy={policy} />
 
+      <DecisionHistory runs={history} now={now} />
+
       <div className="flex flex-wrap items-start gap-5">
         <Panel title="Strategy" className="min-w-0 flex-[1_1_300px]">
           <dl className="flex flex-col gap-3 text-[13px]">
@@ -239,11 +248,11 @@ export function AgentConsole({
 
         <Panel
           padded={false}
-          title="Run log"
-          description="What your agents did, newest first. Includes your creator agent's triage."
+          title="Other activity"
+          description="Bids settled, your creator agent's triage and other events, newest first. Your bidder agent's decisions are in Decision history above."
           className="min-w-0 flex-[999_1_520px]"
         >
-          <div role="group" aria-label="Filter run log" className="flex flex-wrap gap-1.5 border-t border-border px-5 py-3">
+          <div role="group" aria-label="Filter other activity" className="flex flex-wrap gap-1.5 border-t border-border px-5 py-3">
             {FILTERS.map((f) => (
               <button
                 key={f.id}
@@ -261,7 +270,7 @@ export function AgentConsole({
           </div>
           {shown.length === 0 ? (
             <p className="border-t border-border px-5 py-10 text-center text-sm text-text-secondary">
-              {logs.length === 0 ? "No activity yet. Resume your agent or press Run now." : "Nothing of this kind in the last 50 entries."}
+              {activity.length === 0 ? "Nothing else yet. Settled bids and your creator agent's triage show here." : "Nothing of this kind in the last 50 entries."}
             </p>
           ) : (
             <ol className="max-h-[520px] overflow-y-auto border-t border-border">

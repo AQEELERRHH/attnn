@@ -71,6 +71,34 @@ describe("groupRuns", () => {
     assert.equal(by(newest, "cy").freshScoreRequested, true);
   });
 
+  test("a request stays outstanding until a score whose evaluation started after it", () => {
+    const req = "2026-11-01T12:00:00.000Z";
+    const base = { scoreKey: "k", score: 6 };
+    // The request was stamped on the old record; a run already in flight then wrote a
+    // newer record that reused the old score (old scoredAt, no stamp).
+    const pending = groupRuns([
+      row("creator_scored", { runId: "a", ...scored("amina", "SKIPPED", { ...base, scoredAt: "2026-11-01T11:00:00.000Z", rescoreRequestedAt: req }) }, t0),
+      row("creator_scored", { runId: "b", ...scored("amina", "SKIPPED", { ...base, scoreSource: "cache", scoredAt: "2026-11-01T11:00:00.000Z" }) }, t0 + 60_000),
+    ]);
+    assert.equal(pending[0]!.decisions[0]!.freshScoreRequested, true);
+    assert.equal(pending[0]!.decisions[0]!.canAskAgain, false);
+
+    // An evaluation that started at the very moment of the request doesn't count either.
+    const same = groupRuns([
+      row("creator_scored", { runId: "a", ...scored("amina", "SKIPPED", { ...base, scoredAt: "2026-11-01T11:00:00.000Z", rescoreRequestedAt: req }) }, t0),
+      row("creator_scored", { runId: "c", ...scored("amina", "SKIPPED", { ...base, scoreSource: "ai", scoredAt: req }) }, t0 + 120_000),
+    ]);
+    assert.equal(same[0]!.decisions[0]!.freshScoreRequested, true);
+
+    // One that started after it answers it.
+    const answered = groupRuns([
+      row("creator_scored", { runId: "a", ...scored("amina", "SKIPPED", { ...base, scoredAt: "2026-11-01T11:00:00.000Z", rescoreRequestedAt: req }) }, t0),
+      row("creator_scored", { runId: "d", ...scored("amina", "SKIPPED", { ...base, scoreSource: "ai", scoredAt: "2026-11-01T12:00:00.001Z" }) }, t0 + 180_000),
+    ]);
+    assert.equal(answered[0]!.decisions[0]!.freshScoreRequested, false);
+    assert.equal(answered[0]!.decisions[0]!.canAskAgain, true);
+  });
+
   test("profile read cost and reused scores come through", () => {
     const [run] = groupRuns([
       row("creator_scored", { runId: "a", ...scored("amina", "SKIPPED", { score: 6, profile: "x402", x402: { amount: "1000", transaction: "t" } }) }, t0),

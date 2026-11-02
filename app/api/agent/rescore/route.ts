@@ -20,9 +20,9 @@ export async function POST(req: NextRequest) {
     const creator = typeof body?.creator === "string" ? body.creator.trim().replace(/^@/, "") : "";
     if (!/^[a-zA-Z0-9_.-]{1,64}$/.test(creator)) return NextResponse.json({ error: "Which creator?" }, { status: 400 });
 
-    const retired = await requestFreshScore(session.user.id, creator);
-    if (retired === 0) {
-      return NextResponse.json({ error: "There's no score to refresh for this creator (or a fresh one is already on its way)." }, { status: 404 });
+    const stamped = await requestFreshScore(session.user.id, creator);
+    if (stamped === 0) {
+      return NextResponse.json({ error: "Your agent hasn't scored this creator yet, so there's nothing to refresh." }, { status: 404 });
     }
     return NextResponse.json({ success: true, creator });
   } catch (err) {

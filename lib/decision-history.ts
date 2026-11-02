@@ -141,8 +141,15 @@ export function groupRuns(rows: HistoryRow[], maxRuns = 30): RunView[] {
   runs.sort((a, b) => b.at.localeCompare(a.at));
   const kept = runs.slice(0, maxRuns);
 
-  // "Ask again" goes on each creator's newest scored decision only.
+  // A creator's latest "Ask again" (newest rescoreRequestedAt on any of their rows). It
+  // stays outstanding until a score whose evaluation STARTED after it exists.
   const byId = new Map(rows.map((r) => [r.id, r]));
+  const requestedAt = new Map<string, string>();
+  for (const r of rows) {
+    const at = str(r.data?.rescoreRequestedAt);
+    const who = str(r.data?.creator)?.toLowerCase();
+    if (at && who && at > (requestedAt.get(who) ?? "")) requestedAt.set(who, at);
+  }
   const seen = new Set<string>();
   for (const run of kept) {
     for (const dec of run.decisions) {
@@ -151,7 +158,10 @@ export function groupRuns(rows: HistoryRow[], maxRuns = 30): RunView[] {
       const scored = dec.score !== null && !!str(row?.data?.scoreKey);
       if (!scored || seen.has(key)) continue;
       seen.add(key);
-      if (str(row?.data?.rescoreRequestedAt)) dec.freshScoreRequested = true;
+      // "Ask again" goes on each creator's newest score; "Fresh score requested" while
+      // that score's evaluation started before the latest request.
+      const asked = requestedAt.get(key);
+      if (asked && !(dec.scoredAt && dec.scoredAt > asked)) dec.freshScoreRequested = true;
       else dec.canAskAgain = true;
     }
   }

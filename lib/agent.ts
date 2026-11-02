@@ -23,6 +23,7 @@ import { AGENT_WALLET_GAS_RESERVE } from "./wallets";
 import { inngest } from "./inngest";
 import { eq, and, gte, inArray, ne, sql } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
+import { AsyncLocalStorage } from "node:async_hooks";
 
 // ─── Bidder Agent Run ────────────────────────────────────────────────────────
 
@@ -84,7 +85,9 @@ export async function runBidderAgent(userId: string): Promise<AgentRunResult> {
   }
   const held = { token: lease };
   try {
-    return await runBidderAgentHoldingLease(userId, held);
+    // Every log row this run writes carries the same runId, so Decision History can show
+    // one run as one group (lib/decision-history.ts).
+    return await runContext.run({ runId: uuidv4() }, () => runBidderAgentHoldingLease(userId, held));
   } finally {
     await releaseAgentLease(userId, held.token).catch((err) => console.error("agent: could not release lease", err));
   }
@@ -458,10 +461,36 @@ async function runBidderAgentSteps(
 type ScoreResult = NonNullable<Awaited<ReturnType<typeof evaluateCreatorForBidder>>>;
 
 /**
+ * The latest outstanding "Ask again" for one creator: the newest `rescoreRequestedAt` on
+ * any of this user's scored records for them (ISO string), or null. Requests are stamped
+ * on every scored record that exists when they're made (requestFreshScore), so a record
+ * written afterwards by a run already in flight can't hide them.
+ */
+async function latestRescoreRequest(userId: string, handle: string): Promise<string | null> {
+  const [row] = await db
+    .select({ at: sql<string | null>`max(${agentLogs.data}->>'rescoreRequestedAt')` })
+    .from(agentLogs)
+    .where(
+      and(
+        eq(agentLogs.userId, userId),
+        eq(agentLogs.action, "creator_scored"),
+        sql`lower(${agentLogs.data}->>'creator') = lower(${handle})`,
+        sql`${agentLogs.data} ? 'rescoreRequestedAt'`,
+      ),
+    );
+  return row?.at ?? null;
+}
+
+/**
  * The score for one creator against this bidder's goal: an earlier AI score for exactly
  * the same model, prompt version, goal and profile (from this user's own decision records,
  * at most SCORE_CACHE_TTL_MS old), or a fresh one from the AI. Null when the AI can't score.
  * The cache is the run log itself, so every reused score points back to the run that made it.
+ *
+ * `scoredAt` is when the AI evaluation STARTED (a reused score keeps its original one). A
+ * score is reused only if it started after the latest "Ask again" for that creator, so an
+ * evaluation already running when Ask again is pressed, or a reused score a run had already
+ * picked up, never satisfies the request: the next run asks the AI again.
  */
 async function scoreCreator(
   userId: string,
@@ -471,6 +500,7 @@ async function scoreCreator(
   const key = scoreCacheKey(creator, goal);
   const base = { scoreKey: key, model: aiModel(), promptVersion: SCORE_PROMPT_VERSION };
   const cutoff = new Date(Date.now() - SCORE_CACHE_TTL_MS).toISOString();
+  const requested = await latestRescoreRequest(userId, creator.handle);
   const [earlier] = await db
     .select({ data: agentLogs.data })
     .from(agentLogs)
@@ -481,6 +511,8 @@ async function scoreCreator(
         sql`${agentLogs.data}->>'scoreKey' = ${key}`,
         sql`${agentLogs.data}->>'scoredAt' >= ${cutoff}`,
         sql`jsonb_typeof(${agentLogs.data}->'score') = 'number'`,
+        // Only scores whose evaluation started after the latest "Ask again" for this creator.
+        requested ? sql`${agentLogs.data}->>'scoredAt' > ${requested}` : undefined,
       ),
     )
     .orderBy(sql`${agentLogs.createdAt} desc`)
@@ -492,9 +524,44 @@ async function scoreCreator(
       meta: { ...base, scoreSource: "cache", scoredAt: d.scoredAt },
     };
   }
+  const startedAt = new Date().toISOString(); // before the call: see scoredAt above
   const fresh = await evaluateCreatorForBidder(creator, goal);
   if (!fresh) return null;
-  return { result: fresh, meta: { ...base, scoreSource: "ai", scoredAt: new Date().toISOString() } };
+  return { result: fresh, meta: { ...base, scoreSource: "ai", scoredAt: startedAt } };
+}
+
+/**
+ * "Ask again" for one creator: the next run asks the AI for a fresh score instead of
+ * reusing an earlier one (e.g. to clear a red flag the AI got wrong).
+ *
+ * The request is a point in time: no score whose evaluation started before it is reused
+ * (scoreCreator). It is stamped as `rescoreRequestedAt` (the latest request) on every scored
+ * record for that creator that exists now, and appended to `rescoreRequests` on each, so
+ * every request stays on record. Nothing else on a record changes: scores and reasons are
+ * kept. No bid is placed and no rule changes: the fresh score goes through the same minimum
+ * score, cap, budget and wallet checks as any other. Returns how many records were stamped
+ * (0 = this user has no score for that creator).
+ */
+export async function requestFreshScore(userId: string, creatorHandle: string): Promise<number> {
+  const at = new Date().toISOString();
+  const rows = await db
+    .update(agentLogs)
+    .set({
+      data: sql`${agentLogs.data} || jsonb_build_object(
+        'rescoreRequestedAt', ${at}::text,
+        'rescoreRequests', coalesce(${agentLogs.data}->'rescoreRequests', '[]'::jsonb) || to_jsonb(${at}::text)
+      )`,
+    })
+    .where(
+      and(
+        eq(agentLogs.userId, userId),
+        eq(agentLogs.action, "creator_scored"),
+        sql`lower(${agentLogs.data}->>'creator') = lower(${creatorHandle})`,
+        sql`${agentLogs.data} ? 'scoreKey'`,
+      ),
+    )
+    .returning({ id: agentLogs.id });
+  return rows.length;
 }
 
 // ─── Decisions ───────────────────────────────────────────────────────────────
@@ -736,13 +803,17 @@ async function readProfile(reads: ProfileReads, p: typeof profiles.$inferSelect)
 
 // ─── Logging ─────────────────────────────────────────────────────────────────
 
+/** The run in progress (if any), so every log row it writes is tagged with its runId. */
+const runContext = new AsyncLocalStorage<{ runId: string }>();
+
 async function logAgentAction(
   userId: string,
   action: (typeof agentLogs.$inferInsert)["action"],
   data: Record<string, unknown> = {},
 ): Promise<void> {
+  const run = runContext.getStore();
   try {
-    await db.insert(agentLogs).values({ userId, action, data });
+    await db.insert(agentLogs).values({ userId, action, data: run ? { ...data, runId: run.runId } : data });
   } catch (err) {
     console.error("Failed to log agent action:", err);
   }

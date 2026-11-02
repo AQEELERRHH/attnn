@@ -338,6 +338,33 @@ export async function recordExternalPlacement(txHash: string, onlyIntentId?: str
   return recorded.length ? { recorded } : { recorded, reason };
 }
 
+// ─── Refunds the agent claimed itself ────────────────────────────────────────
+
+/**
+ * An outside agent claims its own refund (Attnn. holds no key for its wallet). The escrow's
+ * BidRefunded webhook normally marks the row; if that notification is ever missed, this
+ * catches up when the agent reads its bid: past the refund window, read the bid from the
+ * escrow and, only if the escrow's record (same bidder, creator, amount) says Refunded,
+ * mark the row refunded. Nothing else is ever inferred. Returns true if it changed the row.
+ */
+export async function syncExternalRefund(bid: BidRow, refundPeriodMs: number): Promise<boolean> {
+  if (bid.bidderUserId || !bid.onChainBidId || !bid.escrowAddress) return false;
+  if (bid.status !== "pending" && bid.status !== "counter_offered") return false;
+  if (bid.settlementTxHash || Date.now() < bid.createdAt.getTime() + refundPeriodMs) return false;
+  const onChain = await readEscrowBid(bid.escrowAddress, bid.onChainBidId);
+  const same =
+    lower(onChain.bidder) === lower(bid.bidderAddress) &&
+    lower(onChain.creator) === lower(bid.creatorAddress) &&
+    onChain.amount.toString() === bid.amountUsdc;
+  if (!same || onChain.status !== ONCHAIN_STATUS.Refunded) return false;
+  const updated = await db
+    .update(bids)
+    .set({ status: "refunded", settledAt: new Date(), failReason: null })
+    .where(and(eq(bids.id, bid.id), sql`${bids.status} in ('pending', 'counter_offered')`, isNull(bids.settlementTxHash)))
+    .returning({ id: bids.id });
+  return updated.length > 0;
+}
+
 // ─── Reading an intent ───────────────────────────────────────────────────────
 
 export interface ExternalBidView {
@@ -365,11 +392,21 @@ export async function loadIntent(id: string): Promise<IntentRow | null> {
 }
 
 export async function viewIntent(intent: IntentRow, refundPeriodMs: number): Promise<ExternalBidView> {
-  const [bid, creator] = await Promise.all([
-    intent.bidId ? db.query.bids.findFirst({ where: eq(bids.id, intent.bidId) }) : Promise.resolve(undefined),
+  const load = () => (intent.bidId ? db.query.bids.findFirst({ where: eq(bids.id, intent.bidId) }) : Promise.resolve(undefined));
+  const [first, creator] = await Promise.all([
+    load(),
     db.query.profiles.findFirst({ where: eq(profiles.userId, intent.creatorUserId), columns: { handle: true } }),
   ]);
-  const open = bid && (bid.status === "pending" || bid.status === "counter_offered");
+  let bid = first;
+  // Past the window, catch up on a refund the agent claimed if its webhook was missed.
+  if (bid) {
+    const synced = await syncExternalRefund(bid, refundPeriodMs).catch((err) => {
+      console.warn(`external bid ${bid!.id}: refund sync skipped`, err);
+      return false;
+    });
+    if (synced) bid = await load();
+  }
+  const open = !!bid && (bid.status === "pending" || bid.status === "counter_offered");
   return {
     id: intent.id,
     status: bid ? bid.status : "waiting",
@@ -381,7 +418,7 @@ export async function viewIntent(intent: IntentRow, refundPeriodMs: number): Pro
     onChainBidId: bid?.onChainBidId ?? null,
     placedTxHash: bid?.onChainTxHash ?? null,
     settledTxHash: bid?.settlementOnChainTxHash ?? null,
-    refundableAfter: open ? new Date(bid.createdAt.getTime() + refundPeriodMs).toISOString() : null,
+    refundableAfter: open && bid ? new Date(bid.createdAt.getTime() + refundPeriodMs).toISOString() : null,
     reply: bid?.status === "accepted" ? bid.reply : null,
     createdAt: intent.createdAt.toISOString(),
   };

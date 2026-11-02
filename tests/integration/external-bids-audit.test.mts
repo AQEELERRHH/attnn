@@ -36,6 +36,8 @@ const { clearEscrowCache } = await import("../../lib/escrow.ts");
 const { clearSettingsCache } = await import("../../lib/app-settings.ts");
 const { clearRegistryFeatureCache } = await import("../../lib/registration.ts");
 const { submitSettlement } = await import("../../lib/bids.ts");
+const { syncExternalRefund } = await import("../../lib/external-bids.ts");
+const readRoute = await import("../../app/api/v1/bids/[id]/route.ts");
 const createRoute = await import("../../app/api/v1/bids/route.ts");
 const confirmRoute = await import("../../app/api/v1/bids/[id]/confirm/route.ts");
 const webhook = await import("../../app/api/webhooks/circle-events/route.ts");
@@ -226,6 +228,38 @@ describe("external bid API: security audit", () => {
     assert.equal(res.status, 200);
     assert.equal((await externalRows()).length, 0);
     assert.equal((await db.select().from(externalBidIntents))[0]!.bidId, null, "still waiting");
+  });
+
+  test("missed refund webhook: the agent's status read catches up, only from the escrow's own record", async () => {
+    const { row, sent, intent } = await escrowedExternalBid();
+    const read = async () => {
+      const res = await readRoute.GET(
+        new NextRequest(`http://localhost:3000/api/v1/bids/${intent.id}`, { headers: { authorization: `Bearer ${intent.accessToken}` } }),
+        { params: Promise.resolve({ id: intent.id }) },
+      );
+      return (await res.json()) as { status: string };
+    };
+    // Inside the window: never touched, even if the escrow says refunded.
+    world.escrowBids.get(sent.onChainBidId)!.status = 3;
+    assert.equal((await read()).status, "pending");
+
+    // Past the window but still Pending on-chain: nothing inferred.
+    await db.update(bids).set({ createdAt: new Date(Date.now() - 4 * 24 * 3600 * 1000) }).where(eq(bids.id, row.id));
+    world.escrowBids.get(sent.onChainBidId)!.status = 0;
+    assert.equal((await read()).status, "pending");
+
+    // Past the window and Refunded on-chain (the agent claimed it, no webhook arrived).
+    world.escrowBids.get(sent.onChainBidId)!.status = 3;
+    assert.equal((await read()).status, "refunded");
+    assert.equal(world.calls("claimRefund").length, 0, "Attnn. sent nothing");
+  });
+
+  test("missed refund webhook: the catch-up never applies to a user's own bid", async () => {
+    const own = await seedEscrowedBid({ ageSeconds: 4 * 24 * 3600 });
+    world.escrowBids.get(own.onChainBidId!)!.status = 3;
+    const row = await db.query.bids.findFirst({ where: eq(bids.id, own.id) });
+    assert.equal(await syncExternalRefund(row!, 3 * 24 * 3600 * 1000), false);
+    assert.equal((await db.query.bids.findFirst({ where: eq(bids.id, own.id) }))!.status, "pending");
   });
 
   // ── 4. Verification ─────────────────────────────────────────────────────────

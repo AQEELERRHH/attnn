@@ -40,6 +40,9 @@ export const autoRefund = inngest.createFunction(
               isNotNull(bids.onChainBidId),
               isNull(bids.settlementTxHash),
               lt(bids.createdAt, claimableBefore),
+              // An outside agent's bid (external bid API) is refunded by that agent from its
+              // own wallet: Attnn. holds no key for it. The escrow's BidRefunded event marks it.
+              isNotNull(bids.bidderUserId),
             ),
           )
           .limit(100),
@@ -60,9 +63,11 @@ export const autoRefund = inngest.createFunction(
     for (const bid of refundable) {
       // The attempt number is in the step id so a failed claim is retried next hour
       // with a fresh step (and a fresh Circle idempotency key).
+      const bidderUserId = bid.bidderUserId;
+      if (!bidderUserId) continue; // excluded by the query; an outside agent claims its own refund
       const r = await step.run(`refund-${bid.id}-${bid.settlementAttempt}`, async () => {
         try {
-          const { txId } = await submitSettlement({ bidId: bid.id, action: "refund", actorUserId: bid.bidderUserId });
+          const { txId } = await submitSettlement({ bidId: bid.id, action: "refund", actorUserId: bidderUserId });
           return { bidId: bid.id, submitted: true, txId };
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
@@ -197,6 +202,11 @@ export const creatorAgentTriage = inngest.createFunction(
     // A re-bid already meets the creator's own counter price: countering again or
     // declining it would be absurd, so those outcomes just surface it in the inbox.
     if (bid.replacesBidId && (triageResult.decision === "counter_offer" || triageResult.decision === "reject")) {
+      triageResult.decision = "surface";
+    }
+    // An outside agent's bid (external bid API) is never countered: the agent has no way to
+    // answer a counter. The creator still accepts or declines it as usual.
+    if (!bid.bidderUserId && triageResult.decision === "counter_offer") {
       triageResult.decision = "surface";
     }
 
@@ -365,9 +375,11 @@ export const handleCounterOffer = inngest.createFunction(
   async ({ event, step }) => {
     const { bidId, bidderUserId, counterOfferAmount } = event.data as {
       bidId: string;
-      bidderUserId: string;
+      /** Null would be an outside agent's bid, which is never countered (guard below). */
+      bidderUserId: string | null;
       counterOfferAmount: string;
     };
+    if (!bidderUserId) return { skipped: true, reason: "An outside agent's bid: it answers counters itself, not through Attnn." };
 
     // The agent lease may be held by a run in progress: wait and try again (up to ~15
     // minutes) instead of using up Inngest's retries. Unanswered counters still refund.

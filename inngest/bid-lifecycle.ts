@@ -74,7 +74,8 @@ export const placeBid = inngest.createFunction(
       // failed). Ask Circle before claiming no USDC moved; if it can't answer, leave
       // the bid placing for the sweep rather than risk failing an escrowed bid.
       try {
-        const wallet = await walletByAddress(row.bidderUserId, row.bidderAddress);
+        // (An outside agent's bid never reaches this job: it is recorded already escrowed.)
+        const wallet = row.bidderUserId ? await walletByAddress(row.bidderUserId, row.bidderAddress) : null;
         const sent = wallet ? await findTransactionByRefId(wallet.circleWalletId, `place:${bidId}`, row.createdAt) : null;
         if (sent) {
           await db.update(bids).set({ bidTxHash: sent.txId }).where(and(eq(bids.id, bidId), eq(bids.status, "placing")));
@@ -93,7 +94,8 @@ export const placeBid = inngest.createFunction(
 
     const bid = await step.run("load-bid", async () => {
       const row = await db.query.bids.findFirst({ where: eq(bids.id, bidId) });
-      if (!row || row.status !== "placing" || !row.escrowAddress) return null;
+      // Attnn. only places bids from wallets it holds; an outside agent places its own.
+      if (!row || row.status !== "placing" || !row.escrowAddress || !row.bidderUserId) return null;
       const wallet = await walletByAddress(row.bidderUserId, row.bidderAddress);
       if (!wallet) return { missingWallet: true as const };
       return {
@@ -354,7 +356,7 @@ export const sweepInFlightBids = inngest.createFunction(
           // Before giving up, ask Circle whether placeBid was sent but its id never
           // got saved (e.g. a crash right after submitting).
           const full = await db.query.bids.findFirst({ where: eq(bids.id, row.id) });
-          const wallet = full
+          const wallet = full?.bidderUserId
             ? await walletByAddress(full.bidderUserId, full.bidderAddress)
             : null;
           const sent = wallet && full ? await findTransactionByRefId(wallet.circleWalletId, `place:${row.id}`, full.createdAt) : null;

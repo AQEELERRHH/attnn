@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: Attnn. Agent API
   version: 1.0.0
-  summary: Creator profiles for AI agents, paid per request with x402 (USDC on Arc).
+  summary: Creator profiles for AI agents (paid per request with x402) and bids from the agent's own wallet (USDC on Arc).
   description: |
     Attnn. is an agentic attention marketplace on Arc mainnet: bidders put USDC into an
     on-chain escrow to reach creators, creators earn it by replying, and unanswered bids are
@@ -21,13 +21,18 @@ info:
     Unknown handles return 404 before any payment is requested, so nobody pays for a miss.
     Signed-in Attnn. users read profiles for free.
 
+    Agents can also bid from their OWN wallet (Attnn. never holds it): pay for the creator's
+    profile from that wallet, POST /api/v1/bids, send the two returned calls (USDC approve,
+    escrow placeBid) yourself, then POST /api/v1/bids/{id}/confirm with the transaction hash.
+    See docs/AGENT-API.md.
+
     Live markets and on-chain data are also readable directly from the AttnnRegistry
     (0x024Bd6D6bdD990274Be4e99F919e7D71349782D8) and AttnnEscrow
     (0xFF00aA5414e205367aF5DD29927E23a1CCF3bAD8) contracts on Arc mainnet (chain 5042).
   contact:
     name: Attnn.
     url: https://attnn.xyz
-# No API keys: access is paid per request with x402 (see the Payment-Signature header).
+# No API keys: profile reads are paid per request with x402; a bid is read with its own access token.
 security: []
 servers:
   - url: https://attnn.xyz
@@ -116,8 +121,143 @@ paths:
                         network: { type: string }
                         transaction: { type: string, description: Circle Gateway settlement id. }
                         at: { type: string, format: date-time }
+  /api/v1/creators:
+    get:
+      operationId: listCreators
+      summary: Live creator markets an agent can bid on (free)
+      parameters:
+        - { name: tag, in: query, required: false, schema: { type: string }, description: Only creators with this topic (case-insensitive). }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+      responses:
+        "200":
+          description: Creators.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  creators:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        handle: { type: string }
+                        tags: { type: array, items: { type: string } }
+                        floor: { type: string, description: Lowest bid accepted, atomic USDC. }
+                        availability: { type: string, enum: [available, limited] }
+                        verified: { type: array, items: { type: string, enum: [x, linkedin] } }
+                        profile: { type: string, description: Path of the paid profile endpoint. }
+  /api/v1/bids:
+    post:
+      operationId: prepareBid
+      summary: Prepare a bid from your own wallet
+      description: >-
+        Requires a paid profile read (GET /api/c/{handle}) from the same wallet in the last 24 hours.
+        Returns the two calls to send from that wallet, in order. Nothing moves until you send them.
+      parameters:
+        - { name: Idempotency-Key, in: header, required: false, schema: { type: string, maxLength: 200 }, description: 'A retry with the same key returns the same bid and token. Keys are per wallet; reusing one for a different bid is refused (409).' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [handle, amount, bidder]
+              properties:
+                handle: { type: string }
+                amount: { type: string, description: 'Atomic USDC (6 decimals). At least the creator''s floor, at most "1000000000".' }
+                bidder: { type: string, description: The 0x address of the wallet you will bid from. }
+                message: { type: string, maxLength: 2000, description: Kept private by Attnn.; only its fingerprint goes on-chain. }
+      responses:
+        "201":
+          description: Bid prepared. (200 when returned again for the same Idempotency-Key.)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string, format: uuid }
+                  accessToken: { type: string, description: 'Send as "Authorization: Bearer <token>" to read or confirm this bid. Keep it secret.' }
+                  status: { type: string, enum: [waiting, recorded] }
+                  escrow: { type: string }
+                  amount: { type: string }
+                  messageHash: { type: string }
+                  calls:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        to: { type: string }
+                        data: { type: string }
+                        value: { type: string, example: "0" }
+                        description: { type: string }
+        "400": { description: Invalid input. }
+        "402": { description: Pay for this creator's profile from this wallet first. }
+        "404": { description: No such creator. }
+        "409": { description: "The creator isn't accepting bids, or the Idempotency-Key was already used for a different bid." }
+        "429": { description: Too many requests, or too many bids waiting to be placed. }
+        "503": { description: New bids are paused. }
+  /api/v1/bids/{id}:
+    get:
+      operationId: getBid
+      summary: A bid's status, and the creator's reply once paid
+      security: [{ bidToken: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The bid.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ExternalBid" }
+        "404": { description: Wrong id or token. }
+  /api/v1/bids/{id}/confirm:
+    post:
+      operationId: confirmBid
+      summary: Tell Attnn. the placeBid transaction (it reads it from Arc itself)
+      security: [{ bidToken: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [txHash]
+              properties:
+                txHash: { type: string, description: The placeBid transaction hash. }
+      responses:
+        "200":
+          description: Recorded (or already recorded).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ExternalBid" }
+        "404": { description: Wrong id or token. }
+        "409": { description: "That transaction didn't escrow this bid (yet), or the bid was already settled on-chain before it was recorded." }
 components:
+  securitySchemes:
+    bidToken:
+      type: http
+      scheme: bearer
+      description: The accessToken returned by POST /api/v1/bids for that bid.
   schemas:
+    ExternalBid:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        status: { type: string, enum: [waiting, pending, counter_offered, accepted, rejected, refunded, failed] }
+        creator: { type: object, properties: { handle: { type: [string, "null"] }, address: { type: string } } }
+        bidder: { type: string }
+        amount: { type: string }
+        messageHash: { type: string }
+        escrow: { type: string }
+        onChainBidId: { type: [string, "null"] }
+        placedTxHash: { type: [string, "null"] }
+        settledTxHash: { type: [string, "null"] }
+        refundableAfter: { type: [string, "null"], format: date-time, description: When you may call claimRefund on the escrow from your wallet. }
+        reply: { type: [string, "null"], description: "The creator's paid reply (status accepted only)." }
+        createdAt: { type: string, format: date-time }
     ProfileResponse:
       type: object
       properties:

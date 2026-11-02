@@ -1,4 +1,5 @@
 import { auth } from "@/lib/auth";
+import { outsideAgentName } from "@/lib/bid-display";
 import { onrampEnabled, onrampEnvironment } from "@/lib/onramp";
 import { agentWallet, mainWallet } from "@/lib/wallets";
 import { redirect } from "next/navigation";
@@ -62,7 +63,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   });
 
   const creatorIds = [...new Set(myBids.map((b) => b.creatorUserId))];
-  const bidderIds = [...new Set(myBids.map((b) => b.bidderUserId))];
+  // An outside agent's bid (external bid API) has no Attnn. bidder.
+  const bidderIds = [...new Set(myBids.map((b) => b.bidderUserId).filter((id): id is string => !!id))];
   const myOpenCreatorIds = [
     ...new Set(
       myBids
@@ -150,7 +152,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     bidTxHref: b.onChainTxHash ? txUrl(b.onChainTxHash) : null,
     settlementOnChainTxHash: b.settlementOnChainTxHash ?? null,
     settlementTxHref: b.settlementOnChainTxHash ? txUrl(b.settlementOnChainTxHash) : null,
-    agentName: agentNameByUser.get(b.bidderUserId) ?? null,
+    agentName: b.bidderUserId ? (agentNameByUser.get(b.bidderUserId) ?? null) : outsideAgentName(b.bidderAddress),
     creatorHandle: handleByUser.get(b.creatorUserId)?.handle ?? null,
     creatorAvatarUrl: handleByUser.get(b.creatorUserId)?.avatarUrl ?? null,
     bookRank: ranks.get(b.id) ?? null,

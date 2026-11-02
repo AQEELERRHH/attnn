@@ -27,6 +27,11 @@ export const LIMITS = {
   agentRun: { name: "agent-run", max: 10, windowMs: 60 * 60 * 1000 },
   // Decision History "Ask again" (a fresh AI score for one creator on the next run).
   agentRescore: { name: "agent-rescore", max: 30, windowMs: 60 * 60 * 1000 },
+  // External bid API (outside agents, no session): per requesting IP and per bidder wallet.
+  externalBidIp: { name: "external-bid-ip", max: 60, windowMs: 60 * 60 * 1000 },
+  externalBidWallet: { name: "external-bid-wallet", max: 30, windowMs: 60 * 60 * 1000 },
+  // Status reads and confirmations (cheap, but each may read Arc).
+  externalBidRead: { name: "external-bid-read", max: 600, windowMs: 60 * 60 * 1000 },
   profileWrite: { name: "profile-write", max: 60, windowMs: 60 * 60 * 1000 },
   upload: { name: "upload", max: 20, windowMs: 60 * 60 * 1000 },
   // Creator social verification (X / LinkedIn sign-in): starts per hour.

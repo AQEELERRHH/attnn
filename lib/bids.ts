@@ -532,7 +532,8 @@ export async function submitSettlement(params: {
   if (!bid) throw new BidError("Bid not found", 404);
 
   const actorIsCreator = bid.creatorUserId === params.actorUserId;
-  const actorIsBidder = bid.bidderUserId === params.actorUserId;
+  // An outside agent's bid has no Attnn. bidder (external bid API): nobody here can act as it.
+  const actorIsBidder = !!bid.bidderUserId && bid.bidderUserId === params.actorUserId;
   if ((action === "accept" || action === "reject") && !actorIsCreator) {
     throw new BidError("Only the creator can do that", 403);
   }
@@ -734,10 +735,9 @@ export async function finalizeSettlement(bidId: string): Promise<SettlementOutco
     // submitter time to finish, then look the transaction up by its op key.
     const reservedAt = Number(circleTxId.slice(RESERVATION_PREFIX.length));
     if (Date.now() - reservedAt < RESERVATION_STALE_MS) return "in_flight";
-    const wallet = await walletByAddress(
-      action === "refund" ? bid.bidderUserId : bid.creatorUserId,
-      action === "refund" ? bid.bidderAddress : bid.creatorAddress,
-    );
+    // A refund is only ever sent from a wallet Attnn. holds (never an outside agent's).
+    const owner = action === "refund" ? bid.bidderUserId : bid.creatorUserId;
+    const wallet = owner ? await walletByAddress(owner, action === "refund" ? bid.bidderAddress : bid.creatorAddress) : null;
     const sent = wallet
       ? await findTransactionByRefId(wallet.circleWalletId, settlementOpKey(bid.id, action, bid.settlementAttempt), bid.createdAt)
       : null;

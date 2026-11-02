@@ -198,9 +198,9 @@ export const bidderConfigsRelations = relations(bidderConfigs, ({ one }) => ({
 export const bids = pgTable("bids", {
   id: uuid("id").defaultRandom().primaryKey(),
   onChainBidId: text("on_chain_bid_id"),
-  bidderUserId: uuid("bidder_user_id")
-    .notNull()
-    .references(() => users.id, { onDelete: "cascade" }),
+  // Null for a bid an outside agent placed from its own wallet (external bid API,
+  // lib/external-bids.ts): it has no Attnn. account. bidderAddress is then its wallet.
+  bidderUserId: uuid("bidder_user_id").references(() => users.id, { onDelete: "cascade" }),
   creatorUserId: uuid("creator_user_id")
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
@@ -305,6 +305,42 @@ export const agentLogsRelations = relations(agentLogs, ({ one }) => ({
     references: [users.id],
   }),
 }));
+
+// ─── External bid intents ────────────────────────────────────────────────────
+
+/**
+ * A bid an outside agent asked to place from its OWN wallet (external bid API,
+ * lib/external-bids.ts). Attnn. never holds that wallet: the agent sends approve +
+ * placeBid itself. This row keeps the private message, its salt and the fingerprint the
+ * agent was told to send, so the escrowed bid can be matched back to its text. A `bids`
+ * row (bidder_user_id null) is created only once the bid is verified escrowed on Arc.
+ * Migration 0013, with Row Level Security like every other table.
+ */
+export const externalBidIntents = pgTable("external_bid_intents", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  /** The agent's wallet (lower-case). It proved it controls it by paying for the profile over x402. */
+  bidderAddress: text("bidder_address").notNull(),
+  creatorUserId: uuid("creator_user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  creatorAddress: text("creator_address").notNull(),
+  amountUsdc: text("amount_usdc").notNull(),
+  message: text("message"),
+  messageSalt: text("message_salt").notNull(),
+  /** keccak256(salt ‖ message): what placeBid must carry as messageHash. */
+  messageHash: text("message_hash").notNull(),
+  escrowAddress: text("escrow_address").notNull(),
+  /** "<bidder>:<Idempotency-Key>", so a retried request returns the same intent. */
+  requestKey: text("request_key").unique(),
+  /** Set once the bid is verified escrowed on Arc. */
+  bidId: uuid("bid_id")
+    .unique()
+    .references(() => bids.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  index("external_bid_intents_bidder_idx").on(t.bidderAddress, t.createdAt),
+  index("external_bid_intents_hash_idx").on(t.messageHash),
+]);
 
 // ─── Webhook Events ─────────────────────────────────────────────────────
 

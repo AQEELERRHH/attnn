@@ -15,7 +15,9 @@ const DAY = 24 * 60 * 60 * 1000;
 export interface MarketBid {
   id: string;
   creatorUserId: string;
-  bidderUserId: string;
+  /** Null for an outside agent's bid (external bid API); bidderAddress is then its wallet. */
+  bidderUserId: string | null;
+  bidderAddress: string;
   amountUsdc: string;
   status: BidStatus;
   createdAt: Date;
@@ -28,7 +30,8 @@ export interface MarketBid {
 
 export interface Fill {
   bidId: string;
-  bidderUserId: string;
+  bidderUserId: string | null;
+  bidderAddress: string;
   amountUsdc: string;
   settledAt: string; // ISO
   replyMs: number;
@@ -110,6 +113,7 @@ export function computeCreatorStats(bidsForCreator: MarketBid[], floorUsdc: stri
     fills: cleared30.map((b) => ({
       bidId: b.id,
       bidderUserId: b.bidderUserId,
+      bidderAddress: b.bidderAddress,
       amountUsdc: b.amountUsdc,
       settledAt: b.settledAt.toISOString(),
       replyMs: b.settledAt.getTime() - b.createdAt.getTime(),
@@ -159,6 +163,7 @@ const marketColumns = {
   id: true,
   creatorUserId: true,
   bidderUserId: true,
+  bidderAddress: true,
   amountUsdc: true,
   status: true,
   createdAt: true,

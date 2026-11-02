@@ -13,7 +13,8 @@ const ZERO = BigInt(0);
 
 export interface PortfolioBid {
   id: string;
-  bidderUserId: string;
+  /** Null for an outside agent's bid (external bid API). */
+  bidderUserId: string | null;
   creatorUserId: string;
   amountUsdc: string;
   status: BidStatus;

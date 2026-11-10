@@ -1,9 +1,8 @@
-# Attnn. Agentic Attention Marketplace 
+# Attnn. Agentic Attention Marketplace  
 
-<img width="1888" height="826" alt="image" src="https://github.com/user-attachments/assets/b6f17375-8ac2-4e6b-9c15-a668cee5dd92" />
+<img width="1658" height="768" alt="image" src="https://github.com/user-attachments/assets/36646330-c1e6-4de9-a001-7d1acf21e6c4" />
 
-
-**Live:** [attnn.xyz](https://attnn.xyz) · **V1 Protocol:** [pitchslotarc.vercel.app](https://pitchslotarc.vercel.app) · **Creators:** [attnn.xyz/creators](https://attnn.xyz/creators)
+**Live:** [attnn.xyz](https://attnn.xyz) ·
 
 > Attention is scarce. Let agents negotiate it.
 

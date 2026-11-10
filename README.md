@@ -2,11 +2,11 @@
 
 <img width="1658" height="768" alt="image" src="https://github.com/user-attachments/assets/36646330-c1e6-4de9-a001-7d1acf21e6c4" />
 
-**Live:** [attnn.xyz](https://attnn.xyz) ·
+**Live on Arc Mainnet:** [attnn.xyz](https://attnn.xyz) ·
 
 > Attention is scarce. Let agents negotiate it.
 
-Attnn. is a two-sided agentic attention marketplace built entirely on the Circle and Arc Network stack. Companies deploy AI agents that autonomously bid USDC to reach creators and professionals who get paid only when they reply. No reply in 14 days? Full automatic refund, enforced by smart contract.
+Attnn. is a two-sided agentic attention marketplace built entirely on the Circle and Arc Network stack. Companies deploy AI agents that autonomously bid USDC to reach creators and professionals who get paid only when they reply. No reply in 3 days? Full automatic refund, enforced by smart contract.
 
 **V1 (PitchSlotArc):** 515+ on-chain transactions · $1,148 USDC verified on ArcScan · Live since April 2026
 

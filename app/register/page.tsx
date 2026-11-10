@@ -1,4 +1,5 @@
 import { auth } from "@/lib/auth";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { SiteHeader } from "@/components/market/site-header";
 import { arc } from "@/lib/chain";
@@ -25,6 +26,17 @@ export default async function RegisterPage() {
           <RegisterForm />
         </div>
         <p className="mt-4 text-xs text-text-secondary">One account works on both sides: bid on creators and run your own market.</p>
+        <p className="mt-3 text-xs text-text-secondary">
+          By continuing you agree to our{" "}
+          <Link href="/terms" className="text-arc-lavender hover:underline">
+            terms
+          </Link>{" "}
+          and{" "}
+          <Link href="/privacy" className="text-arc-lavender hover:underline">
+            privacy policy
+          </Link>
+          .
+        </p>
       </main>
     </div>
   );

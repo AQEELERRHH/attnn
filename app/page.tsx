@@ -193,6 +193,12 @@ export default async function HomePage() {
             <Link href="/dashboard" className="hover:text-text-primary">
               Portfolio
             </Link>
+            <Link href="/privacy" className="hover:text-text-primary">
+              Privacy
+            </Link>
+            <Link href="/terms" className="hover:text-text-primary">
+              Terms
+            </Link>
           </nav>
           <div className="sm:text-right">
             <span>Built on Arc Network™ · Circle USDC · x402</span>

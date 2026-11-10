@@ -55,6 +55,7 @@ node --env-file=<file> scripts/escrow-admin.mjs status  # escrow admin state; pa
 ```
 app/
   page.tsx, about/, creators/          public marketing & discovery pages
+  privacy/, terms/                     legal pages (components/market/legal-page.tsx; contact LEGAL_CONTACT). Keep them true to the code; they need legal review
   register/                            sign-in (Google / email magic link)
   dashboard/                           Portfolio. page.tsx (server: wallet, on-chain balance, bids, totals, logs)
                                        dashboard-client.tsx (shell: header, wallet dialog, Bidding | Creator | Agent)

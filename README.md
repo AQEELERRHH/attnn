@@ -1,496 +1,135 @@
-# Attnn. Agentic Attention Marketplace  
+# Attnn. — the agentic attention marketplace
 
-<img width="1658" height="768" alt="image" src="https://github.com/user-attachments/assets/36646330-c1e6-4de9-a001-7d1acf21e6c4" />
+<img width="1658" height="768" alt="Attnn. homepage: live creator markets with bids in USDC" src="https://github.com/user-attachments/assets/36646330-c1e6-4de9-a001-7d1acf21e6c4" />
 
-**Live on Arc Mainnet:** [attnn.xyz](https://attnn.xyz) ·
+**Live on Arc mainnet: [attnn.xyz](https://attnn.xyz)**
 
 > Attention is scarce. Let agents negotiate it.
 
-Attnn. is a two-sided agentic attention marketplace built entirely on the Circle and Arc Network stack. Companies deploy AI agents that autonomously bid USDC to reach creators and professionals who get paid only when they reply. No reply in 3 days? Full automatic refund, enforced by smart contract.
+Attnn. is a market for replies. Bidders lock USDC in an escrow contract on [Arc](https://arc.network) to reach a creator or professional. The creator gets paid only by replying. No reply in **3 days**, and the bid goes back to the bidder automatically. A decline refunds at once.
 
-**V1 (PitchSlotArc):** 515+ on-chain transactions · $1,148 USDC verified on ArcScan · Live since April 2026
+AI agents work both sides: a **bidder agent** finds and bids on creators who fit a goal, and a **creator agent** triages incoming bids. The AI only scores. Fixed rules decide whether money moves and how much.
 
----
+Built on Circle and Arc: Developer-Controlled Wallets, USDC as gas, x402 nanopayments through Circle Gateway, and the Arc Onramp Kit.
 
-## Table of Contents
-
-- [How It Works](#how-it-works)
-- [Two-Sided Agentic Architecture](#two-sided-agentic-architecture)
-- [x402 Nanopayment Gate](#x402-nanopayment-gate)
-- [AISA AI Scoring](#aisa-ai-scoring)
-- [Circle and Arc Stack](#circle-and-arc-stack)
-- [Smart Contracts](#smart-contracts)
-- [Tech Stack](#tech-stack)
-- [Getting Started](#getting-started)
-- [Project Structure](#project-structure)
-- [Design Decisions](#design-decisions)
-- [Post-Hackathon Roadmap](#post-hackathon-roadmap)
-- [Traction](#traction)
+*V1 (PitchSlotArc): 515+ on-chain transactions and $1,148 USDC verified on ArcScan, live since April 2026.*
 
 ---
 
-## How It Works
-
-**For Creators and Professionals:**
-1. Sign in with Google: a Circle Agent Wallet is auto-provisioned (no MetaMask, no seed phrases)
-2. Fund wallet with testnet USDC from [faucet.circle.com](https://faucet.circle.com) (select Arc Testnet)
-3. Register your profile on-chain: handle, minimum bid, tags, bio
-4. Set an auto-accept threshold: bids scoring above it are accepted automatically
-5. Save an auto-reply template: your agent replies on your behalf
-6. Receive an AI-scored, ranked inbox. Accept and earn USDC instantly. Reject and the bidder is refunded.
-
-**For Companies and Bidders:**
-1. Sign in with Google: same wallet auto-provisioning
-2. Configure a bidder agent: goal, daily USDC budget, search tags
-3. Agent runs every 10 minutes autonomously discovers matching creators on-chain, scores each for fit, places USDC bids
-4. No manual work required the agent runs 24/7
-
-**The escrow guarantee:**
-- Bid placed → USDC locked in smart contract escrow
-- Creator replies → USDC released instantly to creator wallet
-- No reply in 3 days → full automatic refund to bidder
+**Contents:** [How it works](#how-it-works) · [Agents](#the-agents) · [Safety](#how-money-is-protected) · [For agent developers](#for-agent-developers) · [Contracts](#contracts) · [Tech stack](#tech-stack) · [Run it locally](#run-it-locally) · [Docs](#docs)
 
 ---
 
-## Two-Sided Agentic Architecture
+## How it works
 
-Attnn. has genuine agents on **both sides** of the marketplace. This is the core architectural distinction.
+**Creators and professionals**
 
-### Bidder Agent: Proactive
+1. Sign in with Google or an email link. A Circle wallet is created for you: no seed phrase, no browser extension.
+2. Open your market: handle, bio, tags, minimum bid (from $1) and an optional reply template. Verify with X or LinkedIn.
+3. Your market is registered on Arc, and bidders and their agents can find you.
+4. Bids arrive in your inbox, scored by your creator agent. Reply to collect, decline to refund, or counter for more.
 
-The bidder agent runs on a schedule every 10 minutes via Inngest cron. It does not wait for human input.
+**Bidders**
 
-```
-Every 10 minutes:
-1. Query AttnnRegistry contract for creators matching search tags
-2. For each candidate, call AISA to score fit against bidder goal (0-10)
-3. If score >= minFitScore and budget allows:
-   a. Call approve() on USDC contract (allows escrow to spend)
-   b. Wait 8s for Arc to settle
-   c. Call placeBid() on AttnnEscrow contract
-   d. Log bid_placed to agent_logs
-4. Stop when daily budget is exhausted
-```
+1. Sign in, then fund your wallet with USDC on Arc (or buy it by card through Circle).
+2. Bid by hand on any creator's market, or switch on the bidder agent with a goal, tags, a daily budget and a cap per creator.
+3. Your USDC sits in the escrow until the creator replies, declines or the 3 days run out.
 
-**Key properties:**
-- Discovers creators on-chain not from a database, from the Registry contract
-- AI scoring uses free-text goal ("find senior Solidity developers on Arc") not keyword matching
-- Executes real USDC transactions via Circle Developer-Controlled Wallets
-- Self-limiting via daily budget cap
-- Prevents self-bidding (skips creators whose userId matches the bidder's userId)
+**The escrow guarantee** (enforced by `AttnnEscrow` on Arc)
 
-### Creator Agent: Reactive
-
-The creator agent is triggered every time a bid arrives via Inngest event `attnn/bid.placed`. It triages the bid on the creator's behalf without any manual input.
-
-```
-On every new bid:
-1. Fetch bid details, creator profile, current queue depth
-2. Score the bid on 4 signals via AISA:
-   - Bid amount vs creator minimum bid (weight: 40%)
-   - Message quality and topic relevance to creator tags (weight: 30%)
-   - Queue depth adjustment if many bids pending, raise the bar
-   - Overall engagement potential (weight: 30%)
-3. Decision:
-   - Score >= 8 → auto-accept: call acceptBid() on-chain with AI-drafted reply
-   - Score 5-7 → surface: leave in inbox for manual review
-   - Score < 5 → auto-reject: call rejectBid() on-chain, USDC refunded
-```
-
-**Key properties:**
-- Reactive (event-driven), not proactive
-- Uses saved auto-reply template or AISA-drafted personalized reply
-- Executes real on-chain accept/reject transactions
-- Falls back to rule-based scoring if AISA is unavailable, protocol never breaks
-
-### Why This Makes Attnn. Fully Agentic
-
-| | Bidder Agent | Creator Agent |
-|---|---|---|
-| Type | Proactive (scheduled) | Reactive (event-driven) |
-| Trigger | Inngest cron every 10 min | Inngest event on bid arrival |
-| Decision making | AI scores creators for fit | AI triages incoming bids |
-| On-chain execution | Places bids via Circle Wallets | Accepts/rejects via Circle Wallets |
-| Human input required | None after setup | None after setup |
-| USDC settlement | Initiates escrow | Releases or refunds escrow |
-
-Both agents use Circle Developer-Controlled Wallets. Both settle in USDC. Both execute real on-chain transactions. The company sets strategy, the agents execute.
-
----
-
-## x402 Nanopayment Gate 
-
-<img width="1041" height="685" alt="image" src="https://github.com/user-attachments/assets/13365e62-0073-443b-b583-83619bf6d4c8" />
-
-
-Every creator profile at `attnn.vercel.app/api/c/{handle}` is a payable HTTP endpoint.
-
-### How It Works
-
-```
-External agent hits GET /api/c/xeenty (no payment header)
-→ HTTP 402 Payment Required
-→ PAYMENT-REQUIRED header (base64 encoded):
-  {
-    "x402Version": 2,
-    "accepts": [{
-      "scheme": "exact",
-      "network": "eip155:5042002",  // Arc Testnet
-      "asset": "0x3600...0000",      // USDC on Arc
-      "amount": "1000",              // $0.001 USDC (6 decimals)
-      "payTo": "0x569ab5...",        // Platform seller wallet
-      "extra": { "name": "GatewayWalletBatched", "verifyingContract": "0x00777..." }
-    }]
-  }
-
-Agent pays $0.001 USDC via EIP-3009 signed authorization
-→ HTTP 200
-→ Full profile JSON: handle, bio, tags, minBid, isActive
-```
-
-### Access Policy (Deliberate Design Decision)
-
-| Visitor Type | Access | Reason |
-|---|---|---|
-| Signed-in Attnn. user | Free | Already part of ecosystem, reducing friction for humans |
-| External AI agent | $0.001 USDC via x402 | Monetizing programmatic/machine access |
-| Non-signed-in human | 402 challenge | Must pay or sign in |
-
-This is a deliberate product decision: human users of Attnn. access creator profiles for free. External agents — recruiting bots, marketing agents, any AI from outside Attnn. pay per access. This creates a monetization layer for machine traffic without adding friction for human users.
-
-### Implementation
-
-Uses `@circle-fin/x402-batching` with `BatchFacilitatorClient` for EIP-3009 verification and Circle Gateway settlement. Real payment verification is live (`X402_MOCK=0`).
-
----
-
-## AISA AI Scoring
-
-All AI scoring in Attnn. uses [AISA](https://aisa.one) (OpenAI-compatible API, deepseek-v3 model).
-
-### Three Scoring Functions
-
-**1. `evaluateCreatorForBidder()` Bidder-side discovery scoring**
-Called by the bidder agent when evaluating candidate creators. Scores how well a creator matches the bidder's free-text goal.
-- Input: creator profile + bidder goal
-- Output: score (0-10), bidAmount recommendation, proceed (bool)
-- Used in: `lib/agent.ts`
-
-**2. `triageBidForCreator()` Creator-side triage scoring**
-Called by the creator agent when a new bid arrives. Scores the incoming bid on 4 signals.
-- Input: bid details + creator profile + queue depth
-- Output: decision (accept/surface/reject), score, reason, draftedReply
-- Used in: `inngest/functions.ts` (creatorAgentTriage)
-
-**3. `draftReply()` Auto-reply generation**
-Called when a bid is auto-accepted. Generates a personalized reply based on the bid message and creator context.
-- Input: bid message + creator handle + bio
-- Output: reply string (min 10 chars, satisfies contract requirement)
-- Used in: `lib/ai.ts` (called from triageBidForCreator)
-
-### Fallback Behavior
-All three functions have rule-based fallbacks that activate silently if AISA is unavailable. The protocol never breaks due to AI downtime:
-- evaluateCreatorForBidder → score 5, proceed: true
-- triageBidForCreator → score based on bid amount vs minimum bid ratio
-- draftReply → saved auto-reply template or default message
-
----
-
-## Circle and Arc Stack
-
-### What We Use and Why
-
-| Product | How Used | Why |
-|---|---|---|
-| **Arc Network** | Settlement layer for all bids, accepts, rejects, refunds | USDC as native gas no separate gas token needed |
-| **Circle Developer-Controlled Wallets** | Auto-provisioned for every user on Google sign-in | Eliminates MetaMask requirement non-crypto users onboard in seconds |
-| **USDC** | All bids denominated, escrowed, settled | Stable dollar value $5 bid is always $5, never changes |
-| **x402 + Circle Gateway** | Nanopayment gate on creator profile API | Any AI agent can pay $0.001 to access creator data without signing up |
-| **Circle Agent Marketplace** | Applied for listing of `/api/c/{handle}` endpoint | Discoverability for external AI agents |
-
-### Why Paymaster Is Not Needed
-
-Attnn. does not integrate Paymaster. This is intentional.
-
-Paymaster solves the problem of users needing a separate gas token. On Ethereum, you need ETH for gas Paymaster lets you use USDC instead. On Arc, USDC IS the native gas token. There is no separate gas token problem to solve. Every transaction on Attnn. bids, acceptances, rejections, refunds is already denominated and settled in USDC. This is one of the core reasons Arc was chosen as the settlement layer: the economic model is clean, predictable, and entirely dollar-denominated.
-
-### Wallet Architecture
-
-All wallets are EOA (Externally Owned Account) type Developer-Controlled Wallets. A fresh Circle SDK client is instantiated per API call (not cached at module level) to avoid stale entity-secret ciphertext on warm Vercel serverless functions this was a critical bug fix that unblocked production wallet provisioning.
-
----
-
-## Smart Contracts
-
-Deployed on Arc Testnet (Chain ID: 5042002)
-
-### AttnnRegistry `0x853C43338A3FAA52DE3AB79aEBc6AF2F51c41dA3`
-
-Creator registration and discovery.
-
-```solidity
-function registerCreator(string handle, uint256 minBid, string[] tags, string profileURI) external
-function getCreatorsByTag(string tag) external view returns (address[])
-function getCreatorCount() external view returns (uint256)
-function isActiveCreator(address creator) external view returns (bool)
-```
-
-Key design: any agent can query `getCreatorsByTag("web3")` (or, for big tags, `getCreatorsByTagPage("web3", offset, limit)`) and get matching creator wallet addresses directly from the contract. `minBidOf(creator)` gives a creator's floor, which the escrow enforces. Attnn.'s own bidder agent matches on creators' current (editable) tags and confirms each one with `isActiveCreator()` on Arc before bidding.
-
-### AttnnEscrow `0x7B43B155aCC2B191C121FB2fC724669a6F7Fbb86`
-
-Current deployment (3-day refund window). The original deployment `0x3066138a56f75206AeDd1A6E7d11c8244E278aB3` (14-day window) still holds some older bids; the app settles and refunds those in place but never sends new bids to it.
-
-Bid lifecycle management with trustless escrow.
-
-```solidity
-function placeBid(address creator, uint256 amount, string message, bool isPrivate) external returns (uint256 bidId)
-function acceptBid(uint256 bidId, string reply) external
-function rejectBid(uint256 bidId) external
-function claimRefund(uint256 bidId) external
-function getBidderBids(address bidder) external view returns (uint256[])
-function getCreatorBids(address creator) external view returns (uint256[])
-```
-
-Key design:
-- `placeBid` requires prior `approve()` call on USDC contract, the bidder wallet must authorize the escrow to spend USDC before bidding
-- `acceptBid` requires a reply string of minimum 10 characters, basic quality gate preventing empty acceptances
-- `claimRefund` enforces the 3-day window (`REFUND_PERIOD`) via `block.timestamp`
-- OpenZeppelin `ReentrancyGuard` on all state-changing functions
-- Built with Foundry, `via_ir = true` required in `foundry.toml`
-- 20 Foundry tests passing
-
-### V1 Protocol (PitchSlotArc)  `0x8cE043782da362f3e9caf5fd995061765a993138`
-515+ transactions · $1,148 USDC · Listed on ArcLens since April 2026
-
----
-
-## Tech Stack
-
-```
-Frontend:     Next.js 15 (App Router), TypeScript strict, Tailwind CSS, shadcn/ui
-Auth:         Auth.js v5, Google OAuth only, Drizzle adapter
-Database:     Supabase PostgreSQL, Drizzle ORM (10 tables)
-Blockchain:   Arc Testnet, Circle Developer-Controlled Wallets SDK v10.3.0, Viem, Foundry
-AI:           AISA (aisa.one), deepseek-v3, OpenAI-compatible
-Scheduling:   Inngest (4 functions: runActiveBidders, autoRefund, bidExpiryNotification, creatorAgentTriage)
-Payments:     Circle Gateway x402 batching (@circle-fin/x402-batching v3.0.4 + @x402/evm v2.19.0)
-Deployment:   Vercel (auto-deploy on push to main)
-```
-
----
-
-## Getting Started
-
-### Prerequisites
-- Node.js 20+
-- A Circle developer account ([developers.circle.com](https://developers.circle.com))
-- A Google OAuth app
-- A Supabase project
-
-### 1. Clone and Install
-
-```bash
-git clone https://github.com/AQEELERRHH/attnn.git
-cd attnn
-npm install
-```
-
-### 2. Environment Variables
-
-Copy `.env.example` to `.env.local` and fill in:
-
-```env
-# Database
-DATABASE_URL=postgresql://...
-
-# Auth
-NEXTAUTH_SECRET=...
-NEXTAUTH_URL=http://localhost:3000
-AUTH_TRUST_HOST=true
-GOOGLE_CLIENT_ID=...
-GOOGLE_CLIENT_SECRET=...
-
-# Circle
-CIRCLE_API_KEY=...
-CIRCLE_ENTITY_SECRET=...
-CIRCLE_WALLET_SET_ID=...
-
-# Arc Contracts
-ATTN_REGISTRY_CONTRACT=0x853C43338A3FAA52DE3AB79aEBc6AF2F51c41dA3
-ATTN_ESCROW_CONTRACT=0x7B43B155aCC2B191C121FB2fC724669a6F7Fbb86
-ARC_CHAIN_ID=5042002
-
-# AI
-AISA_API_URL=https://api.aisa.one/v1
-AISA_API_KEY=...
-AISA_MODEL=deepseek-chat
-
-# Inngest
-INNGEST_EVENT_KEY=...
-INNGEST_SIGNING_KEY=...
-
-# x402
-SELLER_ADDRESS=0x...  # Your platform wallet address
-X402_MOCK=0           # Set to 1 for local dev, 0 for production
-
-# USDC
-ATTN_USDC_ADDRESS=0x3600000000000000000000000000000000000000
-```
-
-### 3. Database Setup
-
-```bash
-npm run db:push
-```
-
-### 4. Run Development Server
-
-```bash
-npm run dev
-```
-
-Open [http://localhost:3000](http://localhost:3000)
-
-### 5. Sync Inngest
-
-After deploying to Vercel, go to [app.inngest.com](https://app.inngest.com) → Apps → Sync new app → enter `https://your-domain.vercel.app/api/inngest`
-
-### 6. Get Testnet USDC
-
-Visit [faucet.circle.com](https://faucet.circle.com), select Arc Testnet, paste your wallet address.
-
----
-
-## Project Structure
-
-```
-attnn/
-├── app/
-│   ├── api/
-│   │   ├── agent/          # Bidder agent run endpoint
-│   │   ├── bid/            # place, accept, reject routes
-│   │   ├── c/[handle]/     # x402-gated creator profile API
-│   │   ├── inngest/        # Inngest webhook endpoint
-│   │   ├── profile/        # create, activate, update
-│   │   └── wallet/         # provision, balance, send
-│   ├── about/              # About page with FAQ
-│   ├── c/[handle]/         # Public creator profile page
-│   ├── creators/           # Creator discovery page
-│   ├── dashboard/          # Main dashboard (creator/bidder/activity)
-│   └── page.tsx            # Landing page
-├── contracts/              # Foundry project
-│   ├── src/
-│   │   ├── AttnnRegistry.sol
-│   │   ├── AttnnEscrow.sol
-│   │   └── interfaces/
-│   └── test/
-├── inngest/
-│   └── functions.ts        # autoRefund, runActiveBidders, creatorAgentTriage, bidExpiryNotification
-├── lib/
-│   ├── agent.ts            # Bidder agent orchestration
-│   ├── ai.ts               # AISA scoring functions
-│   ├── arc.ts              # Arc viem client + ABIs + USDC utils
-│   ├── auth.ts             # Auth.js config
-│   ├── circle.ts           # Circle SDK wrapper + transferUSDC
-│   ├── db/                 # Drizzle schema + client
-│   ├── profiles.ts         # Profile lookup helper
-│   └── x402.ts             # Circle Gateway nanopayment gate
-└── public/
-```
-
----
-
-## Design Decisions
-
-### Why Arc?
-Arc uses USDC as the native gas token. Every transaction on Attnn. bids, accepts, rejects, refunds is denominated in USDC. No separate gas token. No price volatility in fees. The economics are clean and dollar-denominated for both crypto and non-crypto users.
-
-### Why Circle Developer-Controlled Wallets?
-The single biggest barrier to crypto adoption is wallet setup. Circle DCW eliminates it entirely sign in with Google, wallet exists. No MetaMask popup, no seed phrase backup, no "approve transaction" prompts. A Nigerian recruiter with no crypto knowledge can use Attnn. in 30 seconds.
-
-### Why Not Paymaster?
-Paymaster solves the "gas token mismatch" problem (needing ETH for gas on Ethereum). On Arc, this problem doesn't exist USDC is the gas token. Integrating Paymaster would be solving a problem we don't have.
-
-### x402 Access Policy
-Signed-in Attnn. users access creator profiles for free. External AI agents pay $0.001 USDC via x402. This removes friction for human users while monetizing programmatic machine access. The distinction is made server-side by checking for a valid Auth.js session.
-
-### USDC Approve Before PlaceBid
-The escrow contract uses `transferFrom` to pull USDC from the bidder wallet. This requires a prior `approve()` call on the USDC contract. The bid placement route calls `approve()`, waits 8 seconds for Arc to settle, then calls `placeBid()`. This was a critical fix without it, every bid transaction failed with `ESTIMATION_ERROR`.
-
-### On-Chain Bid ID Lookup
-After `placeBid()` executes via Circle SDK, the route polls `getBidderBids()` on the escrow contract to retrieve the actual on-chain bid ID. This ID is required for `acceptBid()` and `rejectBid()`. The 8-second wait allows Arc to finalize the transaction before querying.
-
-### Fresh SDK Client Per Call
-The Circle SDK client is instantiated fresh on every API call not cached at module level. On warm Vercel serverless functions, a cached client reuses a stale encrypted entity-secret ciphertext, causing all contract calls to fail silently with "Invalid credentials". Fresh instantiation per call solved this.
-
----
-
-## Post-Hackathon Roadmap 
-
-### Arc x402 Interoperability Note
-Attnn.'s x402 gate is correctly implemented and returns valid v2 402 responses with proper GatewayWalletBatched payment requirements. During testing, PayBox (an external AI agent payment infrastructure tool) successfully discovered and decoded the payment requirements but could not complete payment because PayBox currently settles only on Base and Solana not Arc Testnet.
-
-<img width="678" height="1080" alt="WhatsApp Image 2026-08-07 at 13 09 53" src="https://github.com/user-attachments/assets/16b4f607-f9f9-4b4a-8885-ae49c5bec21a" />
-
-<img width="540" height="896" alt="WhatsApp Image 2026-08-07 at 13 10 27" src="https://github.com/user-attachments/assets/75526c5c-a26b-4d14-9cc0-d3e8d8c3696d" />
-
-
-This surfaces a meaningful interoperability consideration: as the Arc ecosystem grows, agent payment infrastructure like PayBox, and other x402-compatible agents will need Arc support to participate in Arc-native payment flows. The Attnn. x402 gate is ready the broader agent payment rail ecosystem needs to catch up to Arc.
-
-For the current implementation, the intended payment path is Arc-native: agents with Circle Developer-Controlled Wallets funded on Arc Testnet can pay to access creator profiles. Cross-rail payability (Base/Solana → Arc) is a post-mainnet consideration.
-
-### x402 Payment for Signed-In Users
-Currently, signed-in Attnn. users get free profile access. Post-hackathon, we plan to charge a small fee ($0.001) even for signed-in users, using a direct Circle wallet transfer. The txId from the transfer becomes the payment proof in the x402 header. This requires fetching the transfer receipt, confirming it on Arc via viem, then returning the profile.
-
-### Full EIP-3009 External Agent Support
-The x402 gate uses BatchFacilitatorClient from @circle-fin/x402-batching/server for real payment verification and Circle Gateway settlement. The server-side implementation is complete, the 402 challenge is correct, verification and settlement code is in place. Post-hackathon: end-to-end testing with a funded external agent wallet, and documentation of the EIP-3009 signing process for third-party agent developers integrating with Attnn.
-
-### Naira and African Fiat On-Ramp
-For non-crypto users in Nigeria and across Africa, the mainnet roadmap includes fiat on-ramp integration via Circle Payments Network (CPN) Circle's native payment infrastructure that connects to local bank transfers and mobile money rails across Africa. Nigerian users would fund their Circle Agent Wallet with Naira through local payment methods supported by CPN, with USDC deposited directly into their wallet. No crypto exchange required. This makes Attnn. accessible to any professional or creator regardless of crypto experience.
-
-### Arc Mainnet Migration
-Arc mainnet launches September 16, 2026. Migration requires redeploying AttnnRegistry and AttnnEscrow to mainnet and updating contract addresses in environment variables. Application code requires no changes.
-
-### Creator Reputation Scoring On-Chain
-Add a reputation score to the AttnnRegistry contract based on acceptance rate, reply quality, and bid history. This score becomes an additional signal in the creator-agent triage scoring.
-
-### Circle Agent Marketplace
-Applied for listing on agents.circle.com. The /api/c/{handle} endpoint has been submitted to the Circle Agent Marketplace as a Social Intelligence service. The endpoint accepts $0.001 USDC via x402 GatewayWalletBatched and returns creator profile JSON upon verified payment.
-
-The submission is currently on Arc Testnet. The Circle Agent Marketplace acknowledgement does not restrict testnet submissions, and Circle's own Programmable Money Hackathon runs on Arc Testnet. When Arc mainnet launches (September 16, 2026) and contracts are redeployed, a resubmission will me made.
-
-OpenAPI spec: included in this repository as attnn_openapi.json.
-
----
-
-## Traction
-
-| Metric | Value |
+| What happens | Where the USDC goes |
 |---|---|
-| V1 on-chain transactions (PitchSlotArc) | 515+ |
-| V1 USDC through escrow | $1,148 |
-| V1 ArcLens listing | Since April 2026 |
-| Attnn. contract deployments | 2 (Registry + Escrow) |
-| Attnn. Foundry tests | 20 passing |
-| End-to-end loop status | Fully functional |
-| Inngest functions | 4 active |
-| Creator profiles registered | Growing |
+| Creator replies within 3 days | To the creator |
+| Creator declines | Straight back to the bidder |
+| No reply in 3 days | Back to the bidder, and only to the bidder |
 
----
+Bid messages and replies never go on-chain as text: the escrow stores only a salted fingerprint (`keccak256(salt ‖ text)`), so the chain proves which reply was paid for without publishing it.
 
-## Contract Addresses (Arc mainnet, chain 5042)
+## The agents
 
-Deployed 14 Oct 2026 (block 25927568) from `contracts/src` after the CertiK AI scan. Escrow v2: message/reply fingerprints only, $1 minimum, each creator's own floor enforced, 3-day refund window, pause for new bids only.
+### Bidder agent (proactive)
+
+Runs every 30 minutes, or on demand from the dashboard. Each run:
+
+1. Finds live creators whose tags match yours, and checks each one is registered on Arc.
+2. Pays **$0.001 over x402** to read each creator's profile (the same price any outside agent pays), from its own wallet through Circle Gateway.
+3. Scores each creator 0–10 against your goal with AISA (temperature 0, fixed rubric). Scores are cached for 7 days; "Ask again" asks for a fresh one.
+4. Bids **each creator's own floor** when the score clears your minimum, the AI didn't flag the creator, the floor is within your cap, and your daily budget and agent wallet cover it. At most 5 bids a run, highest score first.
+5. Records every decision (queued, skipped, blocked, failed) with the reason, shown in **Decision history** on the Agent tab.
+
+If the AI can't score a creator, the agent doesn't bid on them. It never guesses with your money.
+
+### Creator agent (reactive)
+
+Runs when a bid is escrowed. AISA scores the bid; the creator's settings decide:
+
+| Score | Action |
+|---|---|
+| At or above your auto-accept setting (8+, 9+, 10, or Off) | Accept with **your saved template**. With no template, it's surfaced to you with an AI draft to approve |
+| 8 and up, below your setting | Surfaced in your inbox |
+| 5–7 | Counter at 85% of your highest pending bid (when that's more), otherwise surfaced |
+| Below 5 | Declined, and the bidder is refunded |
+
+The agent never sends AI-written text on its own: an AI draft only goes out if you approve it. If AISA is down, a rule based on the bid amount takes over.
+
+## How money is protected
+
+- **The AI recommends, rules authorize.** The AI never sees prices and never sets an amount.
+- **Separate agent wallet.** The bidder agent spends only what you move into its wallet, never your main wallet.
+- **Daily allowance.** Sends, bids by hand and agent top-ups share one $500 per 24 hours allowance. Going over it, a new send address, or raising your agent's limits needs an emailed security code.
+- **Idempotent money moves.** Every Circle transaction has a stable key, so retries and double clicks can't pay twice. Statuses change only after Arc confirms.
+- **Pause switches.** An app-wide switch, and the escrow's own `pause()` (new bids only: replies, declines and refunds can never be paused, and the escrow admin can't move USDC).
+- **Reconciliation.** An hourly health check, a daily full escrow-versus-database audit, and sweeps that finish anything a job left half done.
+
+The full list, with your live limits, is on the dashboard's Spending policy card and on [attnn.xyz/about](https://attnn.xyz/about#agent-safety).
+
+## For agent developers
+
+<img width="1041" height="685" alt="An x402 402 Payment Required response from a creator profile" src="https://github.com/user-attachments/assets/13365e62-0073-443b-b583-83619bf6d4c8" />
+
+**Read a creator profile over x402.** `GET https://attnn.xyz/api/c/{handle}` answers `402 Payment Required` with an x402 v2 challenge: `exact` scheme, USDC on Arc, $0.001, `GatewayWalletBatched`. Pay with Circle's `GatewayClient` (EIP-3009) and get the profile JSON plus a `PAYMENT-RESPONSE` receipt. Signed-in people read free. Public receipts: `GET /api/x402/receipts`.
+
+**Bid from your own wallet.** Outside agents bid with keys they hold; Attnn. never holds them:
+
+1. Read the creator's profile over x402 (that payment proves you own the wallet).
+2. `POST /api/v1/bids` with `{handle, amount, bidder, message?}` and get back the `approve` and `placeBid` calldata.
+3. Send both transactions from your wallet, then `POST /api/v1/bids/{id}/confirm` with the transaction hash.
+4. Poll `GET /api/v1/bids/{id}` for the status and, once accepted, the reply. If there's no reply in 3 days, claim your refund from the escrow.
+
+Live markets: `GET /api/v1/creators?tag=…` (free). Full guide: [docs/AGENT-API.md](docs/AGENT-API.md) · spec: [docs/openapi.yaml](docs/openapi.yaml) · demos: `scripts/x402-demo.mjs`, `scripts/external-bid-demo.mjs`.
+
+## Contracts
+
+### Arc mainnet (chain 5042)
+
+Deployed 14 October 2026 (block 25927568) from `contracts/src`, after a CertiK AI scan. Escrow v2: fingerprints only, $1 minimum, each creator's floor enforced, 3-day refund window, pause for new bids only.
 
 | Contract | Address |
 |---|---|
 | AttnnRegistry | `0x024Bd6D6bdD990274Be4e99F919e7D71349782D8` |
 | AttnnEscrow | `0xFF00aA5414e205367aF5DD29927E23a1CCF3bAD8` |
 | Escrow admin (can pause new bids only) | `0xF326854e41AB46366E1b4711C2a8653ea2bfE253` |
-| USDC (Arc) | `0x3600000000000000000000000000000000000000` |
+| USDC | `0x3600000000000000000000000000000000000000` |
 
-## Contract Addresses (Arc Testnet)
+```solidity
+// AttnnEscrow (v2)
+function placeBid(address creator, uint256 amount, bytes32 messageHash) external returns (uint256 bidId);
+function acceptBid(uint256 bidId, bytes32 replyHash) external;   // creator only
+function rejectBid(uint256 bidId) external;                      // creator only, refunds now
+function claimRefund(uint256 bidId) external;                    // bidder only, after REFUND_PERIOD
+function getBid(uint256 bidId) external view returns (...);
+function getBidderBidsPage(address bidder, uint256 offset, uint256 limit) external view returns (uint256[] memory);
+
+// AttnnRegistry
+function registerCreator(string handle, uint256 minBid, string[] tags, string profileURI) external;
+function getCreatorsByTagPage(string tag, uint256 offset, uint256 limit) external view returns (address[] memory);
+function isActiveCreator(address creator) external view returns (bool);
+function minBidOf(address creator) external view returns (uint256);
+```
+
+Foundry project with 51 tests, including fuzzing, re-entrancy, pause and admin limits, and creator floors: `npm run test:contracts`.
+
+### Arc Testnet (chain 5042002)
 
 | Contract | Address |
 |---|---|
@@ -498,74 +137,80 @@ Deployed 14 Oct 2026 (block 25927568) from `contracts/src` after the CertiK AI s
 | AttnnEscrow | `0x7B43B155aCC2B191C121FB2fC724669a6F7Fbb86` |
 | AttnnEscrow (original, 14-day, legacy bids only) | `0x3066138a56f75206AeDd1A6E7d11c8244E278aB3` |
 | PitchSlotArc V1 | `0x8cE043782da362f3e9caf5fd995061765a993138` |
-| USDC (Arc Testnet) | `0x3600000000000000000000000000000000000000` |
-| Platform Seller Wallet | `0x569ab5cafeba4d38d2b95cd509ed97779e5ff9bf` |
+| USDC | `0x3600000000000000000000000000000000000000` |
 
----
-## Agentic Economy Track Alignment
+## Tech stack
 
-This section maps Attnn. against the Programmable Money Hackathon Agentic Economy track criteria.
+| Area | What |
+|---|---|
+| App | Next.js 15 (App Router), React 19, TypeScript strict, Tailwind, Radix/shadcn |
+| Auth | Auth.js v5: Google and email magic links (Resend), database sessions |
+| Database | Supabase Postgres with Drizzle ORM, Row Level Security on every table |
+| Chain | Arc mainnet and testnet, viem, Foundry |
+| Wallets | Circle Developer-Controlled Wallets (`@circle-fin/developer-controlled-wallets`) |
+| Payments | x402 v2 with Circle Gateway batching (`@circle-fin/x402-batching`), Arc Onramp Kit for cards |
+| AI | AISA (OpenAI-compatible), default model `deepseek-v4.1-flash` |
+| Jobs | Inngest: bid placement, settlement, refunds, agent runs, health checks |
+| Hosting | Vercel |
 
-### "Agents with clear decision logic tied to real signals"
+**Why Arc:** USDC is the gas token, so every fee and bid is in dollars and nobody needs a second token. That's also why Attnn. doesn't need a Paymaster.
 
-**Bidder agent:**
-- Queries AttnnRegistry contract on-chain for creators matching search tags real signal: on-chain data
-- AISA scores each creator 0-10 against free-text goal real signal: AI semantic evaluation
-- Only bids if score >= minFitScore AND daily budget allows clear deterministic gate
+**Why Circle wallets:** wallet setup is the biggest barrier for people new to crypto. With Developer-Controlled Wallets, signing in is enough. Attnn. holds the wallet keys; the escrow contract is what limits where escrowed USDC can go.
 
-**Creator agent:**
-- Scores incoming bid on 4 signals: bid amount vs minimum, message quality, tag relevance to creator profile, current queue depth all real signals
-- Score >= 8 → auto-accept with AI-drafted reply, 5-7 → surface to inbox, < 5 → auto-reject with refund
+## Run it locally
 
-### "Autonomous spending, payments or settlement flows using USDC"
+You'll need Node.js 20+, a Postgres database (Supabase works), a Circle developer account, and an AISA key. An Inngest account, Resend, Google OAuth and the X/LinkedIn apps are optional for local work.
 
-- Bidder agent places USDC bids every 10 minutes without any human input
-- Creator agent accepts/rejects bids on-chain, triggering USDC settlement or immediate refund
-- Auto-refund Inngest cron claims expired bids every hour (3 days after placing; 14 for bids still in the original escrow)
-- All flows execute via Circle Developer-Controlled Wallets no human signing at any step
+```bash
+git clone https://github.com/AQEELERRHH/attnn.git
+cd attnn
+npm install
+cp .env.example .env.local   # fill in the values; every variable is listed there
+npm run db:migrate           # applies the migrations in ./drizzle to DATABASE_URL
+npm run dev                  # http://localhost:3000
+npx inngest-cli@latest dev   # local Inngest, in a second terminal
+```
 
-### "Use of Agent Stack to connect agents to wallets, USDC payments and onchain actions"
+`ARC_NETWORK` picks the network (`testnet` by default). On testnet, get USDC from [faucet.circle.com](https://faucet.circle.com) (choose Arc Testnet). Set `X402_MOCK=1` locally to accept any x402 payment header. Switching to mainnet is covered step by step in [docs/MAINNET.md](docs/MAINNET.md).
 
-Attnn. uses the core Agent Stack components:
+**Checks** (CI runs all of them on every pull request):
 
-- **Circle Developer-Controlled Wallets** every agent action (bid placement, acceptance, rejection, refund) executes through wallets provisioned via the Circle SDK
-- **x402 nanopayments** creator profiles are payable x402 endpoints using `@circle-fin/x402-batching` with real `BatchFacilitatorClient` verification and Circle Gateway settlement
+```bash
+npx tsc --noEmit            # type-check
+npm run lint
+npm run test:unit           # pure rules, no database
+npm run test:integration    # money paths against a real local Postgres (TEST_DATABASE_URL); Circle, Arc and Inngest faked
+npm run test:contracts      # Foundry (first time: npm run setup:contracts)
+npm run build
+```
 
-**Why not the Circle CLI directly:** The Circle CLI is a terminal tool designed for agents consuming services. Attnn. is a web application running on Vercel serverless functions the CLI doesn't fit a stateless serverless environment. We use the underlying npm packages (`@circle-fin/x402-batching`, `@circle-fin/developer-controlled-wallets`) directly, which is the correct approach for a web application. External agents use the Circle CLI to pay to access Attnn.'s x402 endpoint. Attnn. itself builds the endpoint using the SDK.
+## Project layout
 
-### "Use of Nanopayments, Paymaster or App Kits where relevant"
+```
+app/                Next.js routes: market pages, dashboard, API (app/api), legal pages
+  api/v1/           external bid API for outside agents
+  api/c/[handle]/   x402-gated creator profile
+lib/                business logic: bids.ts (every money move), agent.ts, ai.ts, x402.ts, gateway.ts,
+                    external-bids.ts, withdrawals.ts, circle.ts, escrow.ts, db/schema.ts
+inngest/            background jobs: placement, settlement, refunds, agents, health checks
+components/market/  the market design system (reference page at /design)
+contracts/          Foundry: AttnnEscrow.sol, AttnnRegistry.sol, tests, deploy script
+drizzle/            SQL migrations
+tests/              unit and integration tests (see tests/README.md)
+docs/               AGENT-API.md, openapi.yaml, MAINNET.md, RUNBOOK.md
+scripts/            read-only checks, escrow admin helper, x402 and external-bid demos
+```
 
-- **Nanopayments** ✅ x402 gate on `/api/c/{handle}`. Any external AI agent pays $0.001 USDC via Circle Gateway GatewayWalletBatched. Real EIP-3009 verification in production.
-- **Paymaster** — not applicable Arc uses USDC as the native gas token. No separate gas token problem exists.
-- **App Kits** — not applicable Bridge Kit, Swap Kit, and Transfer Kit are for cross-chain token movement. Attnn.'s core primitive is escrow-based attention settlement on a single chain, handled by custom contracts.
+## Docs
 
-### Core Products Used
+- [docs/AGENT-API.md](docs/AGENT-API.md) and [docs/openapi.yaml](docs/openapi.yaml): integrate an outside agent
+- [docs/MAINNET.md](docs/MAINNET.md): switching networks safely
+- [docs/RUNBOOK.md](docs/RUNBOOK.md): pause switch, alerts and incidents
+- [PRODUCT_DECISIONS.md](PRODUCT_DECISIONS.md): why the product works the way it does
+- [tests/README.md](tests/README.md): how the test suites are set up
+- [Privacy](https://attnn.xyz/privacy) · [Terms](https://attnn.xyz/terms)
 
-| Product | Status | How |
-|---|---|---|
-| Arc Network | ✅ | All contracts deployed, USDC as native gas, sub-second finality |
-| USDC | ✅ | All bids, settlement, refunds everything dollar-denominated |
-| Circle Developer-Controlled Wallets | ✅ | Every user and agent action |
-| Circle Contracts | ✅ | AttnnRegistry + AttnnEscrow on Arc Testnet |
-| Nanopayments (x402) | ✅ | Creator profile API gate |
-| Agent Stack (SDK components) | ✅ | Wallets + x402 batching |
-| Circle Agent Marketplace | Applied | `/api/c/{handle}` submitted for listing |
-| Paymaster | N/A | Not needed on Arc |
-| App Kits | N/A | Not applicable to attention escrow use case |
-
-## Resources
-
-- [Arc Docs](https://docs.arc.network)
-- [Circle Developer Platform](https://developers.circle.com)
-- [Circle Agent Marketplace](https://agents.circle.com)
-- [Arc App Kits](https://docs.arc.io/app-kit)
-- [Circle x402 Batching](https://www.npmjs.com/package/@circle-fin/x402-batching)
-- [Inngest Docs](https://www.inngest.com/docs)
-- [AISA](https://aisa.one)
-- [ArcScan (Testnet)](https://testnet.arcscan.app)
-- [ArcLens](https://explorer.arc.network)
-
----
+**Resources:** [Arc docs](https://docs.arc.network) · [Circle developers](https://developers.circle.com) · [Circle x402 batching](https://www.npmjs.com/package/@circle-fin/x402-batching) · [Inngest](https://www.inngest.com/docs) · [AISA](https://aisa.one) · [ArcScan testnet](https://testnet.arcscan.app)
 
 ## License
 

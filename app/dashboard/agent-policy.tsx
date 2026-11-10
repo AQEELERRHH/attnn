@@ -1,4 +1,4 @@
-import { Check, ExternalLink, Lock, X } from "lucide-react";
+import { Check, ChevronDown, ExternalLink, Lock, X } from "lucide-react";
 import { Money, Num, Panel } from "@/components/market";
 import { shortAddress } from "@/lib/format";
 import { glossary } from "@/lib/glossary";
@@ -6,6 +6,7 @@ import type { AgentPolicyInfo, BidderConfigData } from "./types";
 
 /**
  * What the bidder agent can and can't do with the user's USDC, with live values.
+ * A short summary is always shown; the full list sits behind a native <details>.
  *
  * Every line here must stay true to the code: limits are enforced in
  * lib/agent.ts + lib/bids.ts (createBidIntent) before anything is sent, and the
@@ -19,9 +20,31 @@ export function AgentPolicy({ config, spent, policy }: { config: BidderConfigDat
   return (
     <Panel
       title="Spending policy"
-      description="What your agent can and can't do with your USDC. These limits apply to every bid. The AI only ranks creators; it never sets an amount."
+      description="The AI only ranks creators. Fixed rules decide whether to bid and how much, on every bid."
     >
-      <div className="grid gap-5 md:grid-cols-2">
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-[13px] sm:grid-cols-4">
+        <Fact label="Left today">
+          <Money atomic={left} /> <span className="text-text-secondary">of</span> <Money atomic={budget} />
+        </Fact>
+        <Fact label="Most per creator">
+          <Money atomic={cap} />
+        </Fact>
+        <Fact label="Minimum fit score">
+          <Num>{config.minFitScore}/10</Num>
+        </Fact>
+        <Fact label="Agent wallet">{policy.agentWallet ? <Money atomic={policy.agentWallet.usdc} /> : <span className="text-text-secondary">Not created</span>}</Fact>
+      </dl>
+      <p className="mt-3 text-[13px] text-text-secondary">
+        It spends only from its agent wallet, {policy.readPrice ? <>on bids into the escrow and <Money atomic={policy.readPrice} /> profile reads,</> : "only on bids into the escrow,"} and can never release your USDC
+        to a creator. No reply in {policy.refundDays} days refunds you.
+      </p>
+
+      <details className="group mt-4 border-t border-border pt-3">
+        <summary className="focus-ring flex cursor-pointer list-none items-center gap-1.5 rounded text-sm font-medium text-arc-lavender hover:underline [&::-webkit-details-marker]:hidden">
+          Read what your agent can and can&apos;t do
+          <ChevronDown aria-hidden className="h-4 w-4 transition-transform group-open:rotate-180" />
+        </summary>
+      <div className="mt-4 grid gap-5 md:grid-cols-2">
         <section aria-labelledby="policy-limits">
           <h3 id="policy-limits" className="eyebrow">
             Your limits
@@ -89,6 +112,7 @@ export function AgentPolicy({ config, spent, policy }: { config: BidderConfigDat
           <Rule kind="never">Release your escrowed USDC to a creator</Rule>
         </ul>
       </section>
+      </details>
 
       <p className="mt-5 flex flex-wrap gap-x-4 gap-y-1.5 border-t border-border pt-4 text-xs text-text-secondary">
         {policy.escrowAddress && policy.escrowHref && (
@@ -103,6 +127,15 @@ export function AgentPolicy({ config, spent, policy }: { config: BidderConfigDat
         )}
       </p>
     </Panel>
+  );
+}
+
+function Fact({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="min-w-0">
+      <dt className="eyebrow">{label}</dt>
+      <dd className="mt-1 text-text-primary">{children}</dd>
+    </div>
   );
 }
 

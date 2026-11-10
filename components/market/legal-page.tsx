@@ -3,7 +3,7 @@ import Link from "next/link";
 import { SiteHeader } from "./site-header";
 
 /** Where people write to about privacy, the terms or their account. One place to change it. */
-export const LEGAL_CONTACT = "hello@attnn.xyz";
+export const LEGAL_CONTACT = "asmau@attnn.xyz";
 
 /** Shared layout for /privacy and /terms: plain reading column, no sideways scroll at 320 px. */
 export function LegalPage({

@@ -278,7 +278,6 @@ Deployed 14 October 2026 (block 25927568) from `contracts/src`, after a CertiK A
 |---|---|
 | AttnnRegistry | `0x024Bd6D6bdD990274Be4e99F919e7D71349782D8` |
 | AttnnEscrow | `0xFF00aA5414e205367aF5DD29927E23a1CCF3bAD8` |
-| Escrow admin (can pause new bids only) | `0xF326854e41AB46366E1b4711C2a8653ea2bfE253` |
 | USDC | `0x3600000000000000000000000000000000000000` |
 
 ```solidity
@@ -384,7 +383,7 @@ scripts/            read-only checks, escrow admin helper, x402 and external-bid
 
 ## Accelerator and team
 
-Attnn. is part of the **Encode Club × Arc Programmable Money Accelerator** (2026), with Demo Day on 16 November 2026. Built in Kaduna, Nigeria.
+Attnn. is part of the **Encode Club × Arc Programmable Money Accelerator** (2026), with Demo Day on 16 November 2026.
 
 | Name | Role | Focus |
 |---|---|---|

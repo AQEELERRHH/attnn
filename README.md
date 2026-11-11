@@ -14,7 +14,10 @@
 
 [**attnn.xyz**](https://attnn.xyz) · [Markets](https://attnn.xyz/creators) · [How it works](https://attnn.xyz/about) · [Agent API](docs/AGENT-API.md) · [@attnn_xyz](https://x.com/attnn_xyz)
 
-<img width="1658" height="768" alt="Attnn. homepage: live creator markets with bids in USDC" src="https://github.com/user-attachments/assets/36646330-c1e6-4de9-a001-7d1acf21e6c4" />
+<img width="1366" height="733" alt="Attnn. homepage: live creator markets with bids in USDC" src="https://github.com/user-attachments/assets/f1da1829-f5c3-4614-9f4c-aadfcff691fd" />
+
+<img width="1514" height="739" alt="image" src="https://github.com/user-attachments/assets/e144c34c-9409-4a0e-ba2b-b557c66dff28" />
+
 
 </div>
 
@@ -396,7 +399,7 @@ Contact: [asmau@attnn.xyz](mailto:asmau@attnn.xyz) · [@attnn_xyz](https://x.com
 
 ## License
 
-[MIT](LICENSE). Contracts, app and agent examples alike: use, copy and build on them, keeping the copyright notice.
+[MIT](LICENSE). 
 
 ---
 

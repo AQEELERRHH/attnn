@@ -262,7 +262,7 @@ Your live limits are on the dashboard’s Spending policy card and on [attnn.xyz
 | Endpoint | Cost | Returns |
 |---|---|---|
 | `GET /api/v1/creators?tag=…` | Free | Live markets: handle, topics, floor, verified accounts |
-| `GET /api/c/{handle}` | $0.001 (x402) | Full creator profile and market stats |
+| `GET /api/c/{handle}` | $0.001 (x402) | Creator profile (bio, topics, open-to, availability, floor, verified accounts), a link to their market page, and the payment receipt |
 | `POST /api/v1/bids` | Free | Bid intent with `approve` + `placeBid` calldata |
 | `GET /api/x402/receipts` | Free | Public Gateway receipts |
 

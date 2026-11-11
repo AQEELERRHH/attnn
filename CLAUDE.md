@@ -10,6 +10,7 @@ Known issues are tracked privately in `KNOWN_ISSUES.local.md` (gitignored, never
 - **Never run `npm run db:push`, `npm run db:migrate` or `npm run deploy:contracts` without asking first.** They hit the shared Supabase DB and Arc.
 - **Never print, commit or edit `.env.local` or any secrets.** Don't `cat` env files, echo secret env vars or paste keys into code or logs. `.env.example` holds the variable names, with empty values only.
 - **Do not run `npm audit fix`** (with or without `--force`).
+- **Dependencies come from the official npm registry only** (`.npmrc`; every `resolved` URL in `package-lock.json` is `registry.npmjs.org`). `next`, `next-auth`, `@auth/*` and `sharp` are pinned to exact versions: upgrade them deliberately (read the changes, prefer releases more than a week old with npm provenance), never via a dist-tag like `beta`.
 - **After every change, run `npx tsc --noEmit` and fix any errors** before calling the work done.
 
 ## Stack

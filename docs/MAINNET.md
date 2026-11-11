@@ -43,14 +43,14 @@ here runs automatically; contract deploys and database changes need the owner's 
       `registry.minBidOf(creator)` (raising a floor doesn't touch bids already escrowed);
       (5) append-only bid histories → added paginated getters and per-account counts; the
       daily health check still reads every bid (fine at launch volumes, see section 6).
-- [x] **Escrow admin wallet**: `0xF326854e41AB46366E1b4711C2a8653ea2bfE253`, created by the
+- [x] **Escrow admin wallet** (its address is set in `ATTN_ESCROW_ADMIN` and shown by the escrow's `owner()`): created by the
       founder separately from Attnn. and Circle; no key in `.env` or on the server. Keep a little
       USDC in it for gas. Move the role to a hardware wallet or multisig later with the two-step
       handover.
 - [x] **Deployed 14 Oct 2026** (block 25927568, gas ≈ $0.05; practice run first, 51 Foundry tests
       green on the deploying machine): AttnnRegistry `0x024Bd6D6bdD990274Be4e99F919e7D71349782D8`
       (tx `0x3bb5b731…f4137aa37`), AttnnEscrow `0xFF00aA5414e205367aF5DD29927E23a1CCF3bAD8`
-      (tx `0x4102d7e0…c619b8ee1aea`), owner `0xF326854e41AB46366E1b4711C2a8653ea2bfE253`,
+      (tx `0x4102d7e0…c619b8ee1aea`), owner the escrow admin wallet,
       `MIN_BID` 1000000, `REFUND_PERIOD` 259200. The deployer key has no role afterwards.
 - [x] Source verified on https://explorer.arc.io (exact match, Standard JSON input, solc 0.8.30,
       optimizer 200, via-IR, cancun, MIT) for both contracts, so "Read/Write contract" can call

@@ -5,6 +5,7 @@ import { DrizzleAdapter } from "@auth/drizzle-adapter";
 import { db } from "./db/client";
 import { accounts, sessions, users, verificationTokens } from "./db/schema";
 import { LIMITS, hit } from "./rate-limit";
+import { SIGN_IN_FROM, sendSignInEmail } from "./signin-email";
 
 /** The requester's IP as Vercel reports it, or null outside a request. */
 async function requestIp(): Promise<string | null> {
@@ -49,22 +50,9 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           throw new Error("A sign-in link was just sent to this address. Check your inbox, or try again in a minute.");
         }
         const { Resend: ResendClient } = await import("resend");
-        const resend = new ResendClient(provider.apiKey);
-        await resend.emails.send({
-          from: provider.from ?? "Attnn. <hello@attnn.xyz>",
-          to: email,
-          subject: "Your Attnn. sign in link",
-          html: `
-            <div style="background:#0D0D1A;padding:40px;font-family:sans-serif;max-width:480px;margin:auto;border-radius:12px;">
-              <img src="https://attnn.xyz/attnn-logo.jpeg" alt="Attnn." style="width:48px;height:48px;border-radius:8px;margin-bottom:20px;" />
-              <h1 style="color:#F0EFF8;font-size:24px;margin-bottom:8px;">Sign in to Attnn.</h1>
-              <p style="color:#8888AA;font-size:14px;margin-bottom:24px;">Click the button below to sign in. This link expires in 1 hour and can be used once.</p>
-              <a href="${url}" style="background:#D4A837;color:#0D0D1A;padding:12px 28px;border-radius:6px;font-weight:700;font-size:14px;text-decoration:none;display:inline-block;">Sign in to Attnn.</a>
-              <p style="color:#555570;font-size:12px;margin-top:24px;">If you didn't request this email you can safely ignore it.</p>
-              <p style="color:#555570;font-size:12px;">Built on Arc Network™</p>
-            </div>
-          `,
-        });
+        // Throws when Resend refuses the email, so Auth.js reports the failure instead of
+        // "check your email" (see lib/signin-email.ts).
+        await sendSignInEmail(new ResendClient(provider.apiKey), { to: email, url, from: provider.from ?? SIGN_IN_FROM });
       },
     }),
   ],

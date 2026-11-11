@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Mail } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import { emailSignInOutcome } from "@/lib/signin-result";
 
 /** Where to land after sign-in: a same-site path from ?callbackUrl=, else the dashboard. */
 function safeCallbackUrl(): string {
@@ -28,11 +29,12 @@ export default function RegisterForm() {
     setEmailLoading(true);
     try {
       const res = await signIn("resend", { email, redirect: false, callbackUrl: safeCallbackUrl() });
-      if (res?.ok) {
+      const outcome = emailSignInOutcome(res);
+      if (outcome.sent) {
         setEmailSent(true);
         toast({ title: "Magic link sent!", description: "Check your email for the sign in link.", variant: "success" });
       } else {
-        toast({ title: "Failed to send magic link", variant: "destructive" });
+        toast({ title: outcome.title, description: outcome.description, variant: "destructive" });
       }
     } catch {
       toast({ title: "Something went wrong", variant: "destructive" });

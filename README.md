@@ -342,15 +342,15 @@ npx inngest-cli@latest dev   # local Inngest, in a second terminal
 
 `ARC_NETWORK` picks the network (`testnet` by default). On testnet, get USDC from [faucet.circle.com](https://faucet.circle.com) (choose Arc Testnet). Set `X402_MOCK=1` locally to accept any x402 payment header. Switching to mainnet is covered step by step in [docs/MAINNET.md](docs/MAINNET.md).
 
-**Checks** (CI runs all of them on every pull request):
+**Checks.** GitHub Actions CI runs the type-check, lint, unit, integration and contract tests on every pull request. The production build isn’t part of CI; Vercel builds every pull request for its preview deployment, and you can run it locally:
 
 ```bash
-npx tsc --noEmit            # type-check
-npm run lint
-npm run test:unit           # pure rules, no database
-npm run test:integration    # money paths against a real local Postgres; Circle, Arc and Inngest faked
-npm run test:contracts      # Foundry (first time: npm run setup:contracts)
-npm run build
+npm run typecheck           # type-check, app and tests (CI)
+npm run lint                # (CI)
+npm run test:unit           # pure rules, no database (CI)
+npm run test:integration    # money paths against a real local Postgres; Circle, Arc and Inngest faked (CI)
+npm run test:contracts      # Foundry; first time: npm run setup:contracts (CI)
+npm run build               # production build (Vercel preview, or locally)
 ```
 
 <details>

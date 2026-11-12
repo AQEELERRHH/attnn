@@ -47,6 +47,8 @@ export interface ChecklistInput {
   isTestnet: boolean;
   /** Formatted minimum, e.g. "$1.00". */
   minBidLabel: string;
+  /** Attnn. will cover this creator's first network fee (lib/sponsorship.ts). */
+  gasSponsored?: boolean;
 }
 
 export function onboardingRole(role: string | null | undefined): OnboardingRole {
@@ -106,7 +108,11 @@ export function computeChecklist(i: ChecklistInput): { role: OnboardingRole; ste
         ? "Confirming on Arc. This usually takes under a minute."
         : reg === "failed"
           ? "Going live didn't work. Open the Creator tab to see why and try again."
-          : "Registering your market on Arc lets people and agents bid on you. You pay a small network fee in USDC, so keep at least $1 in your wallet.",
+          : i.gasSponsored
+            ? i.profile?.verified === false
+              ? "Your market goes live on Arc as soon as you verify. Attnn. covers your first network fee, so you don't need to add USDC."
+              : "Registering your market on Arc lets people and agents bid on you. Attnn. covers your first network fee, so you don't need to add USDC."
+            : "Registering your market on Arc lets people and agents bid on you. You pay a small network fee in USDC, so keep at least $1 in your wallet.",
     done: reg === "active",
     state: reg === "registering" ? "waiting" : reg === "failed" ? "failed" : undefined,
   };

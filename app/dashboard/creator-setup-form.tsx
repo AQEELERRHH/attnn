@@ -117,14 +117,19 @@ export function CreatorSetupForm({
               : { title: "Registering on Arc", description: "Your market goes live as soon as Arc confirms it, usually within a minute." },
           );
           onComplete();
+        } else if (activateData.code === "VERIFY_REQUIRED") {
+          // The usual next step, not an error: the market card shows the verify buttons,
+          // and verifying puts the market live.
+          toast({ title: "Market saved", description: "Next, verify your X or LinkedIn. Your market goes live as soon as you do." });
+          onComplete();
         } else {
           // The profile row exists now, so close the form: the market card shows
-          // "Activate on Arc" and the reason stays visible in the toast.
+          // "Go live on Arc" and the reason stays visible in the toast.
           toast({
             title: "Profile saved, not registered yet",
             description:
               activateData.code === "INSUFFICIENT_FUNDS"
-                ? activateData.error + " Then press Activate on Arc."
+                ? activateData.error + " Then press Go live on Arc."
                 : "On-chain registration failed: " + (activateData.error ?? "Unknown error"),
             variant: "destructive",
           });

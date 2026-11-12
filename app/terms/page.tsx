@@ -66,7 +66,10 @@ export default function TermsPage() {
             to a new address, or raising your agent&apos;s limits needs a code we email you.
           </li>
           <li>Sending USDC to the wrong address or network can&apos;t be undone. Check the address before you send.</li>
-          <li>Network fees on Arc are paid in USDC from your wallet.</li>
+          <li>
+            Network fees on Arc are paid in USDC from your wallet. We may cover a new, verified creator&apos;s first fee by sending a small amount of USDC to their wallet, once per
+            person; we can stop doing this at any time.
+          </li>
         </ul>
       </LegalSection>
 

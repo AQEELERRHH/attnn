@@ -44,6 +44,7 @@ The **Money Health Check** job (Inngest) runs every hour, plus a full escrow che
 | The escrow's owner is not ATTN_ESCROW_ADMIN | The admin role moved to another address. | If you handed it over, update `ATTN_ESCROW_ADMIN` in Vercel. If not, treat the admin wallet as compromised. The new owner can only pause new bids; escrowed USDC is safe. |
 | An escrow ownership handover is open | Someone started handing the admin role to a new address. | If it wasn't you, cancel it now from the admin wallet: `scripts/escrow-admin.mjs cancel`. |
 | Accepted bid(s) show no reply, or one that doesn't match the fingerprint | The creator was paid (on Arc) for a reply fingerprint that matches none of the replies saved for that bid, so the bidder sees no reply. Rare: the creator accepted outside Attnn., or saved replies were lost. | Look at the bid's `reply_candidates` and Circle transactions. If the text can't be recovered, tell the bidder and the creator plainly and ask the creator to resend the reply. The alert repeats daily for that bid; note the bid id as known. |
+| Gas sponsor wallet is low | The wallet that pays new creators' first network fee (`GAS_SPONSOR_WALLET_ADDRESS`) is under max($1, ten top-ups). When it runs dry, new creators are asked to add USDC themselves; nothing else breaks. | Send USDC on Arc to that address. To stop sponsoring instead, empty `GAS_SPONSOR_WALLET_ID` in Vercel and redeploy. |
 | Failed settlement waiting for a retry | Circle or the chain refused an accept, decline or refund. The bid is still open and its USDC is still in escrow. | Read `fail_reason`. Usually the wallet is out of gas USDC; add $1 to that wallet. The creator can retry; auto-refund retries refunds hourly. |
 
 ## Money leaving a wallet (the daily allowance)
@@ -54,6 +55,14 @@ The **Money Health Check** job (Inngest) runs every hour, plus a full escrow che
 - Every send and agent top-up emails the account a notice. A user who gets one, or a code, they didn't ask for: treat it as a stolen session. Sign them out everywhere (`delete from sessions where user_id = '…';`) and pause bids if more accounts are affected.
 - A user who can't get a code: check Resend's logs for their address. Never read a code out to anyone, and never add rows to `withdrawal_addresses` by hand unless you've confirmed the user's identity outside the app.
 - What counted: `select created_at, kind, to_address, amount_usdc, status from withdrawals where user_id = '…' order by created_at desc;` plus their bids placed from the main wallet. `sending` = may have gone through, still counts; `failed` = Circle refused it, nothing moved.
+
+## Sponsored first network fee
+
+- **What it does**: a verified creator who presses Go live (or verifies X/LinkedIn, which goes live straight away) with less than $0.02 in their wallet gets one top-up (`GAS_SPONSOR_AMOUNT_USDC`, default $0.10) from the sponsor wallet; registration then runs from their own wallet. Code: `lib/sponsorship.ts`, `lib/go-live.ts`.
+- **Limits**: once per user, ever; a rolling 24-hour cap across everyone (`GAS_SPONSOR_DAILY_LIMIT_USDC`, default $5); only while verification is on. Past the cap, creators see "add a little USDC" and can come back tomorrow.
+- **Set up**: create a developer-controlled wallet (EOA) in the Circle Console on the same network as `ARC_NETWORK`, fund it with a few dollars of USDC, then set `GAS_SPONSOR_WALLET_ID` and `GAS_SPONSOR_WALLET_ADDRESS` in Vercel. Needs migration 0014.
+- **Turn off**: empty `GAS_SPONSOR_WALLET_ID`. Creators then need $1 again, as before.
+- **Who was covered**: `select u.email, g.amount_usdc, g.status, g.attempt, g.reserved_at, g.circle_tx_id from gas_sponsorships g join users u on u.id = g.user_id order by g.reserved_at desc;` `failed` = Circle refused it or it never reached Circle, nothing moved; the creator may try again.
 
 ## A user says their money is missing
 

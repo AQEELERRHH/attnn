@@ -11,6 +11,8 @@ import { ESCROW_MAX_BID, ESCROW_MIN_BID, REFUND_PERIOD_MS, formatUsd } from "@/l
 import { computeChecklist } from "@/lib/onboarding";
 import { escrowVersion } from "@/lib/escrow";
 import { getUsdcBalance } from "@/lib/activation";
+import { activeSponsorConfig } from "@/lib/go-live";
+import { sponsorshipUsed } from "@/lib/sponsorship";
 import { PROFILE_READ_PRICE, agentReadsEnabled } from "@/lib/gateway";
 import { spentToday } from "@/lib/agent";
 import { registrationState } from "@/lib/registration";
@@ -178,6 +180,10 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const isTestnet = arc.network === "testnet";
   const currentEscrow = escrowAddress();
   const escrowV2 = currentEscrow ? await escrowVersion(currentEscrow).then((v) => v === 2).catch(() => false) : false;
+  // Attnn. covers this creator's first network fee when going live (lib/sponsorship.ts):
+  // sponsorship is set up, they aren't live yet and haven't had it. A read error hides it.
+  const gasSponsored =
+    !profile?.isActive && activeSponsorConfig() !== null ? !(await sponsorshipUsed(userId).catch(() => true)) : false;
   const checklist = computeChecklist({
     role,
     hasWallet: !!wallet,
@@ -200,6 +206,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       : null,
     hasAgent: !!bidderCfg,
     isTestnet,
+    gasSponsored,
   });
 
   return (
@@ -210,9 +217,10 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         checklist,
         isTestnet,
         onrampWidgetUrl: onrampEnabled() ? onrampEnvironment().widgetBaseUrl : null,
+        gasSponsored,
       }}
       now={now}
-      verifyResult={{ verified: one(query.verified), error: one(query.verify_error) }}
+      verifyResult={{ verified: one(query.verified), error: one(query.verify_error), live: one(query.live) }}
       networkLabel={arc.chain.name}
       policy={{
         escrowAddress: escrowAddress(),

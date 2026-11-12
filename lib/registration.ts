@@ -19,6 +19,7 @@ import { profiles } from "./db/schema";
 import { publicClient, registryAbi } from "./arc";
 import { classifyTxState, describeTxFailure, executeContractCall, getTransactionStatus } from "./circle";
 import { inngest } from "./inngest";
+import { SPONSORING, resolveSponsorship } from "./sponsorship";
 
 export type RegistrationState = "active" | "registering" | "failed" | "none";
 
@@ -143,6 +144,7 @@ export async function refreshRegistration(userId: string): Promise<RegistrationS
   if (state !== "registering") return state;
 
   const txId = profile.onChainTx!;
+  if (txId === SPONSORING) return afterSponsorship(userId);
   if (txId.startsWith(RESERVED)) {
     const age = Date.now() - Number(txId.slice(RESERVED.length));
     if (age > STALE_RESERVATION_MS) {
@@ -168,6 +170,41 @@ export async function refreshRegistration(userId: string): Promise<RegistrationS
     // behind. Stay "registering"; the next check will see it.
   }
   return "registering";
+}
+
+/**
+ * The creator's sponsored top-up (lib/sponsorship.ts) is on its way. Once it has
+ * landed, frees the registration slot and submits the registration from the creator's
+ * own wallet; whoever frees the slot first submits it, so it's sent once.
+ */
+async function afterSponsorship(userId: string): Promise<RegistrationState> {
+  const sponsorship = await resolveSponsorship(userId);
+  if (sponsorship === "in_flight") return "registering";
+  if (sponsorship === "failed") return "failed"; // resolveSponsorship freed the slot with a message
+
+  const [handedOver] = await db
+    .update(profiles)
+    .set({ onChainTx: null })
+    .where(and(eq(profiles.userId, userId), eq(profiles.onChainTx, SPONSORING)))
+    .returning({ id: profiles.id });
+  if (!handedOver) {
+    const now = await db.query.profiles.findFirst({ where: eq(profiles.userId, userId) });
+    return now ? registrationState(now) : "none";
+  }
+  try {
+    return await submitRegistration(userId);
+  } catch (err) {
+    console.error("registration: couldn't submit after the sponsored top-up", err instanceof Error ? err.message : err);
+    // submitRegistration marks a failed send itself; anything that stopped it before
+    // sending (an RPC error, say) would leave the market silently "not live", so say so.
+    await db
+      .update(profiles)
+      .set({ registrationError: "Your market couldn't be registered just now" })
+      .where(
+        and(eq(profiles.userId, userId), eq(profiles.isActive, false), isNull(profiles.onChainTx), isNull(profiles.registrationError)),
+      );
+    return "failed";
+  }
 }
 
 /** User ids of every profile with a registration in flight (for the sweep). */

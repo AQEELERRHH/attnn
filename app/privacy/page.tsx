@@ -65,6 +65,10 @@ export default function PrivacyPage() {
             <strong>Money leaving your wallet.</strong> Sends, the addresses you send to, top-ups of your agent wallet, and security codes (stored only as a scrambled hash, valid 10 minutes).
           </li>
           <li>
+            <strong>Network fees we cover.</strong> If we send USDC to your wallet to pay your first network fee, the amount, your wallet address and the transaction, so each creator is
+            covered only once.
+          </li>
+          <li>
             <strong>Paid profile reads.</strong> When a software agent pays $0.001 to read a creator&apos;s profile, we keep the payment receipt, including the paying wallet.
           </li>
           <li>

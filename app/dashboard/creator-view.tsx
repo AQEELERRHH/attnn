@@ -44,6 +44,7 @@ export function CreatorView({
   now,
   isTestnet,
   onrampWidgetUrl = null,
+  gasSponsored = false,
   photoRequest = 0,
 }: {
   profile: ProfileData | null;
@@ -55,6 +56,8 @@ export function CreatorView({
   isTestnet: boolean;
   /** Circle Onramp widget origin when card funding is on, else null. */
   onrampWidgetUrl?: string | null;
+  /** Attnn. covers this creator's first network fee (lib/sponsorship.ts), so no "add USDC" step first. */
+  gasSponsored?: boolean;
   /** Bumped by the checklist's "Add photo" to open the photo dialog. */
   photoRequest?: number;
 }) {
@@ -72,7 +75,7 @@ export function CreatorView({
   }, [wallet]);
 
   if (!profile || editing) {
-    if (!profile && !editing && wallet && funded === false) {
+    if (!profile && !editing && wallet && funded === false && !gasSponsored) {
       return (
         <FundWalletCard
           isTestnet={isTestnet}
@@ -106,6 +109,7 @@ export function CreatorView({
       summary={summary}
       now={now}
       photoRequest={photoRequest}
+      gasSponsored={gasSponsored}
       onEdit={() => setEditing(true)}
     />
   );
@@ -117,6 +121,7 @@ function CreatorMarketDesk({
   summary,
   now,
   photoRequest,
+  gasSponsored,
   onEdit,
 }: {
   profile: ProfileData;
@@ -124,6 +129,7 @@ function CreatorMarketDesk({
   summary: PortfolioSummary;
   now: number;
   photoRequest: number;
+  gasSponsored: boolean;
   onEdit: () => void;
 }) {
   const router = useRouter();
@@ -165,14 +171,19 @@ function CreatorMarketDesk({
         toast(
           data.status === "active"
             ? { title: "Registered on Arc", description: "Your market is live.", variant: "success" }
-            : { title: "Registering on Arc", description: "Your market goes live as soon as Arc confirms it, usually within a minute." },
+            : {
+                title: "Registering on Arc",
+                description: data.sponsored
+                  ? "Attnn. is covering your network fee. Your market goes live as soon as Arc confirms it, usually within a minute."
+                  : "Your market goes live as soon as Arc confirms it, usually within a minute.",
+              },
         );
         router.refresh();
       } else {
-        toast({ title: "Activation failed", description: data.error ?? "Try again", variant: "destructive" });
+        toast({ title: "Couldn't go live yet", description: data.error ?? "Try again", variant: "destructive" });
       }
     } catch {
-      toast({ title: "Activation failed", description: "Network error", variant: "destructive" });
+      toast({ title: "Couldn't go live yet", description: "Network error", variant: "destructive" });
     } finally {
       setActivating(false);
     }
@@ -238,7 +249,7 @@ function CreatorMarketDesk({
                 disabled={activating || needsVerification}
                 title={needsVerification ? "Verify your X or LinkedIn first" : undefined}
               >
-                {activating ? "Registering…" : profile.registration === "failed" ? "Retry registration" : "Activate on Arc"}
+                {activating ? "Registering…" : profile.registration === "failed" ? "Retry registration" : "Go live on Arc"}
               </Button>
             )}
             {profile.isActive && (
@@ -258,15 +269,18 @@ function CreatorMarketDesk({
         )}
         {profile.registration === "failed" && (
           <p role="alert" className="mt-3 text-[13px] text-arc-coral">
-            Registration didn&apos;t go through: {profile.registrationError}. Check your wallet has at least $1 USDC, then press Retry registration.
+            Registration didn&apos;t go through: {profile.registrationError}.{" "}
+            {gasSponsored ? "Press Retry registration to try again." : "Check your wallet has at least $1 USDC, then press Retry registration."}
           </p>
         )}
         {profile.registration === "none" && !needsVerification && (
           <p className="mt-3 text-[13px] text-arc-gold">
-            Not live yet. Add at least $1 USDC to your wallet, then press Activate on Arc. It covers the small network fees for registering and replying.
+            {gasSponsored
+              ? "Not live yet. Press Go live on Arc. Attnn. covers your first network fee, so you don't need to add USDC."
+              : "Not live yet. Add at least $1 USDC to your wallet, then press Go live on Arc. It covers the small network fees for registering and replying."}
           </p>
         )}
-        <VerifiedAccounts profile={profile} />
+        <VerifiedAccounts profile={profile} gasSponsored={gasSponsored} />
         <AutoAcceptSetting stored={profile.autoAcceptThreshold} hasTemplate={!!profile.autoReplyTemplate} />
       </Panel>
 
@@ -381,7 +395,7 @@ function CreatorMarketDesk({
  * only the public id, name and handle. At least one is needed to go live, and a live
  * market can't unlink its last one.
  */
-function VerifiedAccounts({ profile }: { profile: ProfileData }) {
+function VerifiedAccounts({ profile, gasSponsored }: { profile: ProfileData; gasSponsored: boolean }) {
   const router = useRouter();
   const [busy, setBusy] = React.useState<SocialProvider | null>(null);
   if (profile.verifyProviders.length === 0) return null;
@@ -447,6 +461,17 @@ function VerifiedAccounts({ profile }: { profile: ProfileData }) {
           : "Shown on your market page. "}
         You sign in on X or LinkedIn itself. Attnn. only sees your public name and handle; it can&apos;t post or read your messages.
       </p>
+      {none && !profile.isActive && (
+        // Consent for going live straight after verifying (/api/verify/<provider>/callback).
+        <p className="mt-2 text-[13px] text-text-secondary">
+          When you verify, your market goes live on Arc straight away: @{profile.handle} is recorded on the Arc registry and
+          can&apos;t be changed after that, and people and agents can start bidding.{" "}
+          {gasSponsored
+            ? "Attnn. covers your first network fee, so you don't need to add USDC."
+            : "Registering costs a small network fee in USDC from your wallet."}{" "}
+          You can pause your market at any time.
+        </p>
+      )}
     </div>
   );
 }

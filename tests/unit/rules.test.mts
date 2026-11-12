@@ -128,6 +128,14 @@ describe("onboarding checklist", () => {
     const creator = computeChecklist({ ...base, role: "creator", profile: { registration: "active", avatarUrl: null }, received: [{ status: "accepted" }] });
     assert.ok(creator.complete, "the photo is optional");
   });
+
+  test("the go-live step mentions the $1 only when Attnn. isn't covering the fee", () => {
+    const detail = (i: Partial<ChecklistInput>) =>
+      computeChecklist({ ...base, role: "creator", profile: { registration: "none", avatarUrl: null, verified: false }, ...i }).steps.find((s) => s.id === "registered")!.detail;
+    assert.match(detail({}), /at least \$1/);
+    assert.match(detail({ gasSponsored: true }), /as soon as you verify.*covers your first network fee/);
+    assert.doesNotMatch(detail({ gasSponsored: true }), /\$1/);
+  });
 });
 
 describe("request origin", () => {

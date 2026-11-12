@@ -537,3 +537,34 @@ export const socialVerifications = pgTable(
     uniqueIndex("social_verifications_provider_account_uq").on(t.provider, t.providerAccountId),
   ],
 );
+
+/**
+ * Gas sponsorship for going live (lib/sponsorship.ts): Attnn.'s sponsor wallet sends a
+ * new, verified creator a small USDC top-up so registering on Arc (and their first
+ * replies) needs no deposit. One row per user, ever: `user_id` is unique, so nobody is
+ * sponsored twice. A failed top-up (no USDC moved) may be retried with a new attempt.
+ */
+export const gasSponsorships = pgTable(
+  "gas_sponsorships",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** The creator's main wallet the top-up went to. */
+    walletAddress: text("wallet_address").notNull(),
+    /** The Circle wallet that paid (kept, so an in-flight top-up resolves even if settings change). */
+    sponsorWalletId: text("sponsor_wallet_id").notNull(),
+    /** Atomic USDC (6 decimals). */
+    amountUsdc: text("amount_usdc").notNull(),
+    /** 1, 2, …: a failed top-up's retry gets a new Circle idempotency key. */
+    attempt: integer("attempt").notNull().default(1),
+    status: text("status").$type<"reserved" | "sent" | "complete" | "failed">().notNull(),
+    circleTxId: text("circle_tx_id"),
+    error: text("error"),
+    /** When this attempt was reserved: the daily cap counts from here. */
+    reservedAt: timestamp("reserved_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("gas_sponsorships_user_uq").on(t.userId), index("gas_sponsorships_reserved_idx").on(t.reservedAt)],
+);

@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { isSocialProvider } from "@/lib/social-verify-rules";
 import { VERIFY_COOKIE, VerificationError, exchangeAndIdentify, openState, redirectUriFor, saveVerification } from "@/lib/social-verify";
 import { backToDashboard, publicOrigin } from "@/lib/verify-routing";
+import { goLive } from "@/lib/go-live";
 
 /**
  * The provider sends the creator back here. Checks, in order: a signed-in session; the
@@ -14,7 +15,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ provider: string }> }) {
   const { provider } = await params;
-  const done = (result: { verified?: string; error?: string }) => {
+  const done = (result: { verified?: string; error?: string; live?: string }) => {
     const res = backToDashboard(req, result);
     res.cookies.set(VERIFY_COOKIE, "", { path: "/api/verify", maxAge: 0 });
     res.headers.set("Cache-Control", "no-store");
@@ -48,7 +49,19 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ prov
   try {
     const identity = await exchangeAndIdentify(provider, code, state.verifier, redirectUriFor(provider, publicOrigin(req)));
     await saveVerification(state.userId, provider, identity);
-    return done({ verified: provider });
+    // Verifying is the creator's go-ahead (the verify step says so): put the market
+    // live now, the same way the Go live button does. Never blocks the verification.
+    let live: string | undefined;
+    try {
+      const result = await goLive(state.userId);
+      if (result.ok) live = result.status === "registering" ? "going" : undefined;
+      else if (result.code === "INSUFFICIENT_FUNDS") live = "funds";
+      else if (result.code === "SPONSOR_FAILED") live = "retry";
+    } catch (err) {
+      console.error("verify/callback: going live failed (the creator can press Go live)", err instanceof Error ? err.message : err);
+      live = "retry";
+    }
+    return done({ verified: provider, live });
   } catch (err) {
     if (err instanceof VerificationError) return done({ error: err.code });
     console.error("verify/callback:", err);

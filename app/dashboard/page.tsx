@@ -1,7 +1,7 @@
 import { auth } from "@/lib/auth";
 import { outsideAgentName } from "@/lib/bid-display";
 import { onrampEnabled, onrampEnvironment } from "@/lib/onramp";
-import { agentWallet, mainWallet } from "@/lib/wallets";
+import { agentWallet, feesSponsored, gasStationEnabled, mainWallet } from "@/lib/wallets";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db/client";
 import { profiles, bidderConfigs, bids, agentLogs, users } from "@/lib/db/schema";
@@ -11,10 +11,12 @@ import { ESCROW_MAX_BID, ESCROW_MIN_BID, REFUND_PERIOD_MS, formatUsd } from "@/l
 import { computeChecklist } from "@/lib/onboarding";
 import { escrowVersion } from "@/lib/escrow";
 import { getUsdcBalance } from "@/lib/activation";
+import { activeSponsorConfig } from "@/lib/go-live";
+import { sponsorshipUsed } from "@/lib/sponsorship";
 import { PROFILE_READ_PRICE, agentReadsEnabled } from "@/lib/gateway";
 import { spentToday } from "@/lib/agent";
 import { registrationState } from "@/lib/registration";
-import { enabledProviders, listVerifications } from "@/lib/social-verify";
+import { enabledProviders, listVerifications, verificationRequired } from "@/lib/social-verify";
 import { computeCreatorStats, loadMarketBids } from "@/lib/market";
 import { bookRanks, computeBidderTotals, computeCreatorTotals } from "@/lib/portfolio";
 import { RUN_ACTIONS, groupRuns } from "@/lib/decision-history";
@@ -178,6 +180,16 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const isTestnet = arc.network === "testnet";
   const currentEscrow = escrowAddress();
   const escrowV2 = currentEscrow ? await escrowVersion(currentEscrow).then((v) => v === 2).catch(() => false) : false;
+  // Attnn. covers this creator's network fee for going live, so the dashboard doesn't ask
+  // them to add USDC first: Circle Gas Station pays for their smart wallet (or for the
+  // one they'll get, if they have none yet), or else the one-time top-up
+  // (lib/sponsorship.ts) is set up and they haven't had it. A read error hides it.
+  const gasSponsored = profile?.isActive
+    ? false
+    : wallet
+      ? (verificationRequired() && feesSponsored(wallet)) ||
+        (activeSponsorConfig() !== null && !(await sponsorshipUsed(userId).catch(() => true)))
+      : (verificationRequired() && gasStationEnabled()) || (activeSponsorConfig() !== null && !(await sponsorshipUsed(userId).catch(() => true)));
   const checklist = computeChecklist({
     role,
     hasWallet: !!wallet,
@@ -200,6 +212,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       : null,
     hasAgent: !!bidderCfg,
     isTestnet,
+    gasSponsored,
   });
 
   return (
@@ -210,9 +223,10 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         checklist,
         isTestnet,
         onrampWidgetUrl: onrampEnabled() ? onrampEnvironment().widgetBaseUrl : null,
+        gasSponsored,
       }}
       now={now}
-      verifyResult={{ verified: one(query.verified), error: one(query.verify_error) }}
+      verifyResult={{ verified: one(query.verified), error: one(query.verify_error), live: one(query.live) }}
       networkLabel={arc.chain.name}
       policy={{
         escrowAddress: escrowAddress(),

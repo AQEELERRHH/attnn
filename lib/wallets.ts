@@ -32,6 +32,32 @@ export type WalletRow = typeof wallets.$inferSelect;
  */
 export const AGENT_WALLET_GAS_RESERVE = BigInt(50_000);
 
+/**
+ * Circle Gas Station (sponsored network fees) is on: CIRCLE_GAS_STATION=1, set only
+ * once Gas Station is enabled for this network in the Circle Console with its rules.
+ * While on, new users' MAIN wallets are created as smart contract wallets (SCA),
+ * whose fees Circle pays; agent wallets stay ordinary wallets (EOA), because they sign
+ * the x402 profile-read payments and Circle Gateway expects an EOA signature.
+ * Existing wallets never change type.
+ */
+export function gasStationEnabled(): boolean {
+  return process.env.CIRCLE_GAS_STATION === "1";
+}
+
+/** The account type a new main wallet is created as. */
+export function newMainWalletType(): "EOA" | "SCA" {
+  return gasStationEnabled() ? "SCA" : "EOA";
+}
+
+/**
+ * Circle pays this wallet's network fees: it's a smart contract wallet and Gas
+ * Station is on. With Gas Station switched off again, an SCA wallet pays its own
+ * fees from its USDC like any other, so the usual balance rules apply to it.
+ */
+export function feesSponsored(wallet: Pick<WalletRow, "accountType">): boolean {
+  return wallet.accountType === "SCA" && gasStationEnabled();
+}
+
 export async function walletOf(userId: string, purpose: WalletPurpose): Promise<WalletRow | undefined> {
   return db.query.wallets.findFirst({ where: and(eq(wallets.userId, userId), eq(wallets.purpose, purpose), onThisNetwork()) });
 }
@@ -53,7 +79,8 @@ export async function walletByAddress(userId: string, address: string): Promise<
 export async function ensureAgentWallet(userId: string): Promise<WalletRow> {
   const existing = await agentWallet(userId);
   if (existing) return existing;
-  const provisioned = await provisionUserWallet(userId, "Attnn agent wallet");
+  // Always an ordinary wallet: it signs x402 payments (see gasStationEnabled).
+  const provisioned = await provisionUserWallet(userId, "Attnn agent wallet", "EOA");
   await db
     .insert(wallets)
     .values({
@@ -63,6 +90,7 @@ export async function ensureAgentWallet(userId: string): Promise<WalletRow> {
       blockchain: provisioned.blockchain,
       state: "active",
       purpose: "agent",
+      accountType: provisioned.accountType,
     })
     .onConflictDoNothing();
   const row = await agentWallet(userId);

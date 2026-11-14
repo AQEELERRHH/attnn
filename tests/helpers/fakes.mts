@@ -51,7 +51,7 @@ export const world = {
   escrowBids: new Map<string, EscrowBid>(),
   refundPeriodSeconds: BigInt(3 * 24 * 3600),
   activeCreators: new Set<string>(),
-  receipts: new Map<string, { status: "success" | "reverted"; logs: unknown[] }>(),
+  receipts: new Map<string, { status: "success" | "reverted"; logs: unknown[]; blockNumber?: bigint }>(),
   events: [] as { name: string; data: unknown }[],
   /** Throws from inngest.send when set. */
   failInngest: false,
@@ -85,6 +85,12 @@ export const world = {
   signingKeys: new Map<string, Hex>(),
   /** When true, USDC balanceOf reads fail (an RPC outage). */
   failBalanceReads: false,
+  /** Makes every escrow getBid read fail (RPC outage). */
+  failBidReads: false,
+  /** Makes reads at a past block fail (a node that pruned old state); latest reads still work. */
+  failHistoricalReads: false,
+  /** Wallets created through provisionUserWallet, in order, with the type asked for. */
+  provisioned: [] as { walletId: string; address: string; accountType: "EOA" | "SCA" }[],
   /** Every EIP-712 request that reached "Circle" signing, as sent (JSON string). */
   signed: [] as { walletId: string; typedData: string }[],
 
@@ -113,6 +119,9 @@ export const world = {
     this.signingKeys.clear();
     this.signed.length = 0;
     this.failBalanceReads = false;
+    this.failBidReads = false;
+    this.failHistoricalReads = false;
+    this.provisioned.length = 0;
   },
 
   /** Circle calls made for a given contract function. */
@@ -126,7 +135,22 @@ export const world = {
     if (!tx) throw new Error(`no tx ${txId}`);
     tx.state = "COMPLETE";
     tx.txHash = `0x${txId.replace(/-/g, "").padEnd(64, "0")}`;
-    this.receipts.set(tx.txHash, { status: "success", logs });
+    this.receipts.set(tx.txHash, { status: "success", logs, blockNumber: BigInt(900) });
+    // As on Arc: a settlement that succeeded changes the escrow's record of the bid.
+    applySettlement(tx);
+  },
+
+  /**
+   * COMPLETE with a successful receipt, but the escrow is unchanged: what a smart
+   * contract wallet's call looks like when the bundle transaction carrying it
+   * succeeded and the call inside reverted (ERC-4337).
+   */
+  completeWithoutEffect(txId: string, logs: unknown[] = []) {
+    const tx = this.txs.find((t) => t.id === txId);
+    if (!tx) throw new Error(`no tx ${txId}`);
+    tx.state = "COMPLETE";
+    tx.txHash = `0x${txId.replace(/-/g, "").padEnd(64, "0")}`;
+    this.receipts.set(tx.txHash, { status: "success", logs, blockNumber: BigInt(900) });
   },
 
   /** Marks a Circle transaction FAILED (nothing happened on-chain). */
@@ -163,6 +187,21 @@ function submit(params: { walletId: string; contractAddress: string; functionNam
     throw new Error("circle timeout");
   }
   return { txId: tx.id, state: tx.state };
+}
+
+const SETTLED_STATUS: Record<string, number> = { acceptBid: 1, rejectBid: 2, claimRefund: 3 };
+
+/** A completed accept / reject / refund: the escrow bid leaves Pending (only from Pending). */
+function applySettlement(tx: FakeTx) {
+  const status = SETTLED_STATUS[tx.functionName];
+  if (status === undefined) return;
+  const b = world.escrowBids.get(String(tx.args[0]));
+  if (!b || b.status !== 0) return;
+  b.status = status;
+  if (tx.functionName === "acceptBid") {
+    if (versionOf(tx.contractAddress) === 2) b.replyHash = tx.args[1] as Hex;
+    else b.reply = String(tx.args[1] ?? "");
+  }
 }
 
 /** The escrow generation at this address. */
@@ -207,6 +246,7 @@ function mine(tx: FakeTx) {
   tx.state = "COMPLETE";
   tx.txHash = `0x${tx.id.replace(/-/g, "").padEnd(64, "0")}`;
   world.receipts.set(tx.txHash, { status: ok ? "success" : "reverted", logs });
+  if (ok) applySettlement(tx);
 }
 
 /** A BidPlaced log as the escrow would emit it (for placeBid receipts). */
@@ -276,7 +316,8 @@ export function escrowBid(bid: Omit<EscrowBid, "status" | "reply" | "message" | 
 }
 
 const fakePublicClient = {
-  async readContract({ functionName, args, address }: { functionName: string; args?: readonly unknown[]; address: string }) {
+  async readContract({ functionName, args, address, blockNumber }: { functionName: string; args?: readonly unknown[]; address: string; blockNumber?: bigint }) {
+    if (blockNumber !== undefined && world.failHistoricalReads) throw new Error("fake chain: missing trie node (state pruned)");
     switch (functionName) {
       case "balanceOf":
         if (world.failBalanceReads) throw new Error("fake chain: RPC unavailable");
@@ -284,6 +325,7 @@ const fakePublicClient = {
       case "allowance":
         return world.allowance.get(`${lower(String(args![0]))}:${lower(String(args![1]))}`) ?? BigInt(0);
       case "getBid": {
+        if (world.failBidReads) throw new Error("fake chain: RPC unavailable");
         const b = world.escrowBids.get(String(args![0]));
         const zero = "0x0000000000000000000000000000000000000000";
         const v2 = versionOf(address) === 2;
@@ -391,8 +433,12 @@ export async function installFakes(): Promise<void> {
           message,
         } as never);
       },
-      provisionUserWallet: async () => {
-        throw new Error("fake circle: provisionUserWallet not used in tests");
+      provisionUserWallet: async (_userId: string, _name: string, accountType: "EOA" | "SCA" = "EOA") => {
+        const n = world.provisioned.length + 1;
+        const wallet = { walletId: `w-new-${n}`, address: `0xa${String(n).padStart(39, "0")}`, accountType };
+        world.provisioned.push(wallet);
+        world.walletAddress.set(wallet.walletId, wallet.address);
+        return { walletId: wallet.walletId, address: wallet.address, blockchain: "ARC-TESTNET", accountType };
       },
     },
   });

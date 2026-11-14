@@ -48,10 +48,10 @@ export function DashboardClient({
   networkLabel,
   policy,
   onboarding,
-  verifyResult = { verified: null, error: null },
+  verifyResult = { verified: null, error: null, live: null },
 }: {
-  /** Result of a social-account verification, from the callback's redirect query. */
-  verifyResult?: { verified: string | null; error: string | null };
+  /** Result of a social-account verification, from the callback's redirect query (live: going live afterwards). */
+  verifyResult?: { verified: string | null; error: string | null; live?: string | null };
   wallet: WalletData | null;
   profile: ProfileData | null;
   bidderConfig: BidderConfigData | null;
@@ -73,6 +73,8 @@ export function DashboardClient({
     isTestnet: boolean;
     /** Circle Onramp widget origin when card funding is configured (ONRAMP_API_KEY), else null. */
     onrampWidgetUrl: string | null;
+    /** Attnn. covers this creator's first network fee (lib/sponsorship.ts). */
+    gasSponsored: boolean;
   };
 }) {
   const router = useRouter();
@@ -118,7 +120,17 @@ export function DashboardClient({
     if (verifyResult.error) {
       toast({ title: "Account not verified", description: verifyErrorMessage(verifyResult.error) ?? undefined, variant: "destructive" });
     } else if (isSocialProvider(verifyResult.verified)) {
-      toast({ title: `${PROVIDER_LABEL[verifyResult.verified]} account verified`, description: "It now shows on your market page.", variant: "success" });
+      const label = PROVIDER_LABEL[verifyResult.verified];
+      const live = verifyResult.live;
+      toast(
+        live === "going"
+          ? { title: `${label} account verified`, description: "Your market is going live on Arc. This usually takes under a minute.", variant: "success" }
+          : live === "funds"
+            ? { title: `${label} account verified`, description: "To go live, add a little USDC to your wallet for the network fee, then press Go live." }
+            : live === "retry"
+              ? { title: `${label} account verified`, description: "Your market couldn't go live just now. Press Go live to try again." }
+              : { title: `${label} account verified`, description: "It now shows on your market page.", variant: "success" },
+      );
     }
     router.replace("/dashboard", { scroll: false });
     // Runs once per redirect back from the provider.
@@ -308,7 +320,7 @@ export function DashboardClient({
             <BidderView bids={placed} summary={summary} bidderConfig={bidderConfig} now={now} onOpenAgent={() => setView("agent")} />
           )}
           {view === "creator" && (
-            <CreatorView profile={profile} wallet={wallet} bids={received} summary={summary} now={now} isTestnet={onboarding.isTestnet} onrampWidgetUrl={onboarding.onrampWidgetUrl} photoRequest={photoRequest} />
+            <CreatorView profile={profile} wallet={wallet} bids={received} summary={summary} now={now} isTestnet={onboarding.isTestnet} onrampWidgetUrl={onboarding.onrampWidgetUrl} gasSponsored={onboarding.gasSponsored} photoRequest={photoRequest} />
           )}
           {view === "agent" && <AgentConsole config={bidderConfig} bids={placed} logs={logs} history={history} summary={summary} now={now} policy={policy} />}
         </div>

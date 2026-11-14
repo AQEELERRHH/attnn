@@ -24,6 +24,7 @@ import { escrowAdmin, matchesFingerprint, readEscrowBid } from "./escrow";
 import { escrowAddress, knownEscrowAddresses } from "./chain";
 import { formatUsd } from "./bid-rules";
 import { appSwitchPaused } from "./app-settings";
+import { sponsorConfig } from "./sponsorship";
 import { classifyOpenRows, findOrphans, loadClosedRows, loadOpenRows, type OnChainEntry } from "./reconcile";
 
 export interface HealthReport {
@@ -78,8 +79,35 @@ export async function quickHealthCheck(now = Date.now()): Promise<HealthReport> 
 
   if (await appSwitchPaused()) notes.push("New bids are PAUSED (app_settings.bids_paused = true).");
   await checkEscrowAdmin(problems, notes);
+  await checkSponsorWallet(problems, notes);
 
   return { problems, notes };
+}
+
+/**
+ * The gas sponsor wallet (lib/sponsorship.ts), when set up. Low means new creators will
+ * soon be asked to fund their own network fee again, so it's an alert. Below
+ * max($1, ten top-ups).
+ */
+async function checkSponsorWallet(problems: string[], notes: string[]): Promise<void> {
+  const cfg = sponsorConfig();
+  if (!cfg) return;
+  const low = cfg.amount * BigInt(10) > BigInt(1_000_000) ? cfg.amount * BigInt(10) : BigInt(1_000_000);
+  try {
+    const balance = await publicClient.readContract({
+      address: USDC_ADDRESS as `0x${string}`,
+      abi: usdcAbi,
+      functionName: "balanceOf",
+      args: [cfg.walletAddress as `0x${string}`],
+    });
+    if (balance < low) {
+      problems.push(
+        `Gas sponsor wallet is low: ${formatUsd(balance)} left (alert below ${formatUsd(low)}). Top it up with USDC on Arc (docs/RUNBOOK.md).`,
+      );
+    }
+  } catch (err) {
+    notes.push(`Couldn't read the gas sponsor wallet's balance: ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
 
 /**

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sameOrigin, serverError } from "@/lib/http-guard";
 import { LIMITS, limitOrNull } from "@/lib/rate-limit";
-import { mainWallet } from "@/lib/wallets";
+import { mainWallet, newMainWalletType } from "@/lib/wallets";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db/client";
 import { wallets } from "@/lib/db/schema";
@@ -35,8 +35,9 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // Provision via Circle SDK
-    const provisioned = await provisionUserWallet(userId, userName);
+    // Provision via Circle SDK: a smart contract wallet while Circle Gas Station is on
+    // (Circle then pays its network fees), an ordinary wallet otherwise.
+    const provisioned = await provisionUserWallet(userId, userName, newMainWalletType());
 
     // Store in database. Two tabs provisioning at once: the unique (user, purpose)
     // index keeps the first; the other gets that wallet back.
@@ -49,6 +50,7 @@ export async function POST(req: NextRequest) {
         blockchain: provisioned.blockchain,
         state: "active",
         purpose: "main",
+        accountType: provisioned.accountType,
       })
       .onConflictDoNothing()
       .returning();

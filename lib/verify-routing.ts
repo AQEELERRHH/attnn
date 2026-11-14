@@ -17,11 +17,15 @@ export function publicOrigin(req: NextRequest): string {
   return req.nextUrl.origin;
 }
 
-/** Back to the Creator tab with ?verified=<provider> or ?verify_error=<code>. */
-export function backToDashboard(req: NextRequest, result: { verified?: string; error?: string }): NextResponse {
+/**
+ * Back to the Creator tab with ?verified=<provider> or ?verify_error=<code>, plus
+ * ?live=going|funds|retry when verifying started (or couldn't start) going live.
+ */
+export function backToDashboard(req: NextRequest, result: { verified?: string; error?: string; live?: string }): NextResponse {
   const url = new URL("/dashboard", publicOrigin(req));
   url.searchParams.set("view", "creator");
   if (result.verified) url.searchParams.set("verified", result.verified);
   if (result.error) url.searchParams.set("verify_error", result.error);
+  if (result.live) url.searchParams.set("live", result.live);
   return NextResponse.redirect(url, { status: 303 });
 }

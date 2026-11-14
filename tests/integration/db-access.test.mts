@@ -6,6 +6,7 @@
  * Builds the schema from the real migrations with those default grants in place, then
  * proves, as each role:
  *   - external_bid_intents (private bid messages, migration 0013): no privileges at all;
+ *   - gas_sponsorships (who Attnn. paid a network fee for, migration 0014): the same;
  *   - bids (now with bids from outside agents): RLS returns no rows and refuses writes;
  *   - the table owner (how the app connects) still reads and writes both.
  */
@@ -75,6 +76,15 @@ describe("database access for Supabase's public API roles", () => {
       const write = await as(role, "insert into external_bid_intents (bidder_address, creator_user_id, creator_address, amount_usdc, message_salt, message_hash, escrow_address) values ('0x1', '00000000-0000-0000-0000-00000000000c', '0x2', '1', '0x3', '0x4', '0x5')");
       assert.ok("error" in write && /permission denied/.test(write.error), JSON.stringify(write));
       const wipe = await as(role, "delete from external_bid_intents returning id");
+      assert.ok("error" in wipe && /permission denied/.test(wipe.error), JSON.stringify(wipe));
+    });
+
+    test(`${role}: no privileges at all on gas_sponsorships`, async () => {
+      const read = await as(role, "select * from gas_sponsorships");
+      assert.ok("error" in read && /permission denied/.test(read.error), JSON.stringify(read));
+      const write = await as(role, "insert into gas_sponsorships (user_id, wallet_address, sponsor_wallet_id, amount_usdc, status) values ('00000000-0000-0000-0000-00000000000c', '0x1', 'w', '1', 'failed')");
+      assert.ok("error" in write && /permission denied/.test(write.error), JSON.stringify(write));
+      const wipe = await as(role, "delete from gas_sponsorships returning id");
       assert.ok("error" in wipe && /permission denied/.test(wipe.error), JSON.stringify(wipe));
     });
 

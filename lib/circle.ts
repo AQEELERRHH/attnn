@@ -51,11 +51,19 @@ export interface ProvisionedWallet {
   walletId: string;
   address: string;
   blockchain: string;
+  accountType: "EOA" | "SCA";
 }
 
+/**
+ * Creates a Circle developer-controlled wallet on the current Arc network.
+ * "EOA" (default): an ordinary wallet that pays its own network fees.
+ * "SCA": a smart contract wallet (ERC-4337) whose fees Circle Gas Station can pay;
+ * used for new users' main wallets when lib/wallets.ts says so.
+ */
 export async function provisionUserWallet(
   _userId: string,
   _name: string,
+  accountType: "EOA" | "SCA" = "EOA",
 ): Promise<ProvisionedWallet> {
   const client = getSDK();
   const wsId = await getOrCreateWalletSet();
@@ -66,15 +74,20 @@ export async function provisionUserWallet(
     walletSetId: wsId,
     blockchains: [arc.circleBlockchain],
     count: 1,
+    accountType,
   });
 
   const wallet = data?.wallets?.[0];
   if (!wallet) throw new Error("Failed to create wallet");
+  // Never record a wallet as sponsorable unless Circle says it is one.
+  const created = (wallet as { accountType?: string }).accountType;
+  if (created && created !== accountType) throw new Error(`Circle created a ${created} wallet, expected ${accountType}`);
 
   return {
     walletId: wallet.id!,
     address: wallet.address!,
     blockchain: wallet.blockchain!,
+    accountType,
   };
 }
 

@@ -1,7 +1,7 @@
 import { auth } from "@/lib/auth";
 import { outsideAgentName } from "@/lib/bid-display";
 import { onrampEnabled, onrampEnvironment } from "@/lib/onramp";
-import { agentWallet, mainWallet } from "@/lib/wallets";
+import { agentWallet, feesSponsored, gasStationEnabled, mainWallet } from "@/lib/wallets";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db/client";
 import { profiles, bidderConfigs, bids, agentLogs, users } from "@/lib/db/schema";
@@ -180,10 +180,16 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const isTestnet = arc.network === "testnet";
   const currentEscrow = escrowAddress();
   const escrowV2 = currentEscrow ? await escrowVersion(currentEscrow).then((v) => v === 2).catch(() => false) : false;
-  // Attnn. covers this creator's first network fee when going live (lib/sponsorship.ts):
-  // sponsorship is set up, they aren't live yet and haven't had it. A read error hides it.
-  const gasSponsored =
-    !profile?.isActive && activeSponsorConfig() !== null ? !(await sponsorshipUsed(userId).catch(() => true)) : false;
+  // Attnn. covers this creator's network fee for going live, so the dashboard doesn't ask
+  // them to add USDC first: Circle Gas Station pays for their smart wallet (or for the
+  // one they'll get, if they have none yet), or else the one-time top-up
+  // (lib/sponsorship.ts) is set up and they haven't had it. A read error hides it.
+  const gasSponsored = profile?.isActive
+    ? false
+    : wallet
+      ? feesSponsored(wallet) ||
+        (activeSponsorConfig() !== null && !(await sponsorshipUsed(userId).catch(() => true)))
+      : gasStationEnabled() || (activeSponsorConfig() !== null && !(await sponsorshipUsed(userId).catch(() => true)));
   const checklist = computeChecklist({
     role,
     hasWallet: !!wallet,

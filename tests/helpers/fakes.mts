@@ -85,6 +85,10 @@ export const world = {
   signingKeys: new Map<string, Hex>(),
   /** When true, USDC balanceOf reads fail (an RPC outage). */
   failBalanceReads: false,
+  /** Makes every escrow getBid read fail (RPC outage). */
+  failBidReads: false,
+  /** Wallets created through provisionUserWallet, in order, with the type asked for. */
+  provisioned: [] as { walletId: string; address: string; accountType: "EOA" | "SCA" }[],
   /** Every EIP-712 request that reached "Circle" signing, as sent (JSON string). */
   signed: [] as { walletId: string; typedData: string }[],
 
@@ -113,6 +117,8 @@ export const world = {
     this.signingKeys.clear();
     this.signed.length = 0;
     this.failBalanceReads = false;
+    this.failBidReads = false;
+    this.provisioned.length = 0;
   },
 
   /** Circle calls made for a given contract function. */
@@ -122,6 +128,21 @@ export const world = {
 
   /** Marks a Circle transaction COMPLETE on-chain with a successful receipt and these logs. */
   complete(txId: string, logs: unknown[] = []) {
+    const tx = this.txs.find((t) => t.id === txId);
+    if (!tx) throw new Error(`no tx ${txId}`);
+    tx.state = "COMPLETE";
+    tx.txHash = `0x${txId.replace(/-/g, "").padEnd(64, "0")}`;
+    this.receipts.set(tx.txHash, { status: "success", logs });
+    // As on Arc: a settlement that succeeded changes the escrow's record of the bid.
+    applySettlement(tx);
+  },
+
+  /**
+   * COMPLETE with a successful receipt, but the escrow is unchanged: what a smart
+   * contract wallet's call looks like when the bundle transaction carrying it
+   * succeeded and the call inside reverted (ERC-4337).
+   */
+  completeWithoutEffect(txId: string, logs: unknown[] = []) {
     const tx = this.txs.find((t) => t.id === txId);
     if (!tx) throw new Error(`no tx ${txId}`);
     tx.state = "COMPLETE";
@@ -163,6 +184,21 @@ function submit(params: { walletId: string; contractAddress: string; functionNam
     throw new Error("circle timeout");
   }
   return { txId: tx.id, state: tx.state };
+}
+
+const SETTLED_STATUS: Record<string, number> = { acceptBid: 1, rejectBid: 2, claimRefund: 3 };
+
+/** A completed accept / reject / refund: the escrow bid leaves Pending (only from Pending). */
+function applySettlement(tx: FakeTx) {
+  const status = SETTLED_STATUS[tx.functionName];
+  if (status === undefined) return;
+  const b = world.escrowBids.get(String(tx.args[0]));
+  if (!b || b.status !== 0) return;
+  b.status = status;
+  if (tx.functionName === "acceptBid") {
+    if (versionOf(tx.contractAddress) === 2) b.replyHash = tx.args[1] as Hex;
+    else b.reply = String(tx.args[1] ?? "");
+  }
 }
 
 /** The escrow generation at this address. */
@@ -207,6 +243,7 @@ function mine(tx: FakeTx) {
   tx.state = "COMPLETE";
   tx.txHash = `0x${tx.id.replace(/-/g, "").padEnd(64, "0")}`;
   world.receipts.set(tx.txHash, { status: ok ? "success" : "reverted", logs });
+  if (ok) applySettlement(tx);
 }
 
 /** A BidPlaced log as the escrow would emit it (for placeBid receipts). */
@@ -284,6 +321,7 @@ const fakePublicClient = {
       case "allowance":
         return world.allowance.get(`${lower(String(args![0]))}:${lower(String(args![1]))}`) ?? BigInt(0);
       case "getBid": {
+        if (world.failBidReads) throw new Error("fake chain: RPC unavailable");
         const b = world.escrowBids.get(String(args![0]));
         const zero = "0x0000000000000000000000000000000000000000";
         const v2 = versionOf(address) === 2;
@@ -391,8 +429,12 @@ export async function installFakes(): Promise<void> {
           message,
         } as never);
       },
-      provisionUserWallet: async () => {
-        throw new Error("fake circle: provisionUserWallet not used in tests");
+      provisionUserWallet: async (_userId: string, _name: string, accountType: "EOA" | "SCA" = "EOA") => {
+        const n = world.provisioned.length + 1;
+        const wallet = { walletId: `w-new-${n}`, address: `0xa${String(n).padStart(39, "0")}`, accountType };
+        world.provisioned.push(wallet);
+        world.walletAddress.set(wallet.walletId, wallet.address);
+        return { walletId: wallet.walletId, address: wallet.address, blockchain: "ARC-TESTNET", accountType };
       },
     },
   });

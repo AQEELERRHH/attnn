@@ -15,7 +15,7 @@
  */
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { replyError, type ReplySource } from "./reply-rules";
-import { agentWallet, mainWallet, walletByAddress } from "./wallets";
+import { agentWallet, feesSponsored, mainWallet, walletByAddress } from "./wallets";
 import { parseEventLogs, type Hex } from "viem";
 import { db } from "./db/client";
 import { bids, profiles } from "./db/schema";
@@ -140,7 +140,9 @@ export async function createBidIntent(input: BidIntentInput): Promise<BidRow> {
   }
 
   // Fail fast on an underfunded wallet instead of burning a reverted transaction.
-  // Arc gas is also paid in USDC, so the wallet needs a little more than the bid.
+  // Arc gas is also paid in USDC, so the wallet needs a little more than the bid,
+  // unless Circle Gas Station pays this wallet's fees (lib/wallets.ts).
+  const paysOwnFees = !feesSponsored(bidderWallet);
   try {
     const balance = await publicClient.readContract({
       address: USDC_ADDRESS,
@@ -148,9 +150,9 @@ export async function createBidIntent(input: BidIntentInput): Promise<BidRow> {
       functionName: "balanceOf",
       args: [bidderWallet.address as Hex],
     });
-    if (balance <= amount) {
+    if (paysOwnFees ? balance <= amount : balance < amount) {
       throw new BidError(
-        `Not enough USDC: your ${input.fromAgentWallet ? "agent wallet" : "wallet"} has ${formatUsd(balance)}, this bid needs ${formatUsd(amount)} plus a little for network fees`,
+        `Not enough USDC: your ${input.fromAgentWallet ? "agent wallet" : "wallet"} has ${formatUsd(balance)}, this bid needs ${formatUsd(amount)}${paysOwnFees ? " plus a little for network fees" : ""}`,
       );
     }
   } catch (err) {
@@ -807,7 +809,23 @@ export async function finalizeSettlement(bidId: string): Promise<SettlementOutco
         replyFields = pickReply(hash, bid);
       }
     }
-    if (receipt.status !== "success") {
+    // A transaction can succeed on Arc while the call inside it did nothing: a smart
+    // contract wallet's call is carried inside a bundle transaction (ERC-4337), whose
+    // receipt is "success" even when the wallet's own call reverted. So the escrow
+    // itself must show the bid settled this way, read at the block the transaction
+    // landed in (no node lag), before the row says so.
+    let tookEffect = receipt.status === "success";
+    if (tookEffect && bid.escrowAddress && bid.onChainBidId) {
+      try {
+        const atBlock = await readEscrowBid(bid.escrowAddress, bid.onChainBidId, receipt.blockNumber ?? undefined);
+        tookEffect = CHAIN_FINAL[atBlock.status] === FINAL_STATUS[action];
+      } catch (err) {
+        // Can't confirm right now: check again on the next pass, never finalize unseen.
+        console.warn(`finalizeSettlement ${bid.id}: escrow read failed, retrying later`, err instanceof Error ? err.message : err);
+        return "in_flight";
+      }
+    }
+    if (!tookEffect) {
       await db
         .update(bids)
         .set({
@@ -815,7 +833,7 @@ export async function finalizeSettlement(bidId: string): Promise<SettlementOutco
           settlementSubmittedAt: null,
           settlementAction: null,
           settlementAttempt: sql`${bids.settlementAttempt} + 1`,
-          failReason: `${action} reverted on-chain`,
+          failReason: receipt.status === "success" ? `${action} didn't take effect on-chain` : `${action} reverted on-chain`,
           ...CLEAR_REPLY(action),
         })
         .where(and(eq(bids.id, bid.id), eq(bids.settlementTxHash, circleTxId)));

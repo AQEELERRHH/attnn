@@ -102,6 +102,10 @@ export const wallets = pgTable("wallets", {
   // "legacy": an unused duplicate set aside by hand (never picked as main/agent,
   // still found by walletByAddress for anything already tied to it).
   purpose: text("purpose").$type<"main" | "agent" | "legacy">().default("main").notNull(),
+  // "EOA": an ordinary wallet that pays its own network fees (every wallet before 0015).
+  // "SCA": a smart contract wallet (ERC-4337), whose fees Circle Gas Station can pay.
+  // Fixed when the wallet is created; see lib/wallets.ts.
+  accountType: text("account_type").$type<"EOA" | "SCA">().default("EOA").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),

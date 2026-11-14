@@ -4,9 +4,11 @@
  * verifies X or LinkedIn (`/api/verify/<provider>/callback`).
  *
  * Order of checks: profile → already live → verified (when verification is on) → wallet
- * → registration already on its way → enough USDC for the network fee. A creator who is
- * short of USDC gets the one-time sponsored top-up when it's set up (lib/sponsorship.ts);
- * otherwise the old rule stands ($1 in the wallet first).
+ * → registration already on its way → network fee. Who pays the fee:
+ *   - a smart contract wallet while Circle Gas Station is on: Circle (no balance needed);
+ *   - otherwise the creator's own USDC; a creator who is short gets the one-time
+ *     sponsored top-up when it's set up (lib/sponsorship.ts), or else the old rule
+ *     stands ($1 in the wallet first).
  */
 import { eq } from "drizzle-orm";
 import { db } from "./db/client";
@@ -15,7 +17,7 @@ import { ACTIVATION_FUNDS_MESSAGE, ACTIVATION_MIN_USDC, getUsdcBalance } from ".
 import { refreshRegistration, registrationState, submitRegistration, type RegistrationState } from "./registration";
 import { hasVerification, verificationRequired } from "./social-verify";
 import { VERIFY_REQUIRED_MESSAGE } from "./social-verify-rules";
-import { mainWallet } from "./wallets";
+import { feesSponsored, mainWallet } from "./wallets";
 import { inngest } from "./inngest";
 import { REGISTRATION_GAS_MIN, SPONSOR_FAILED_MESSAGE, sponsorActivation, sponsorConfig, type SponsorConfig } from "./sponsorship";
 
@@ -53,6 +55,9 @@ export async function goLive(userId: string): Promise<GoLiveResult> {
 
   // Already on its way (a top-up or the registration itself): report, don't resend.
   if (registrationState(profile) === "registering") return { ok: true, status: await refreshRegistration(userId) };
+
+  // Circle Gas Station pays this wallet's fees: no balance check, no top-up.
+  if (feesSponsored(wallet)) return { ok: true, status: await submitRegistration(userId), sponsored: true };
 
   const sponsor = activeSponsorConfig();
   const minimum = sponsor ? REGISTRATION_GAS_MIN : ACTIVATION_MIN_USDC;

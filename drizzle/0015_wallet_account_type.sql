@@ -1,0 +1,1 @@
+ALTER TABLE "wallets" ADD COLUMN "account_type" text DEFAULT 'EOA' NOT NULL;

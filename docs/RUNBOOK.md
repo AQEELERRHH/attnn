@@ -56,6 +56,14 @@ The **Money Health Check** job (Inngest) runs every hour, plus a full escrow che
 - A user who can't get a code: check Resend's logs for their address. Never read a code out to anyone, and never add rows to `withdrawal_addresses` by hand unless you've confirmed the user's identity outside the app.
 - What counted: `select created_at, kind, to_address, amount_usdc, status from withdrawals where user_id = '…' order by created_at desc;` plus their bids placed from the main wallet. `sending` = may have gone through, still counts; `failed` = Circle refused it, nothing moved.
 
+## Circle Gas Station (smart wallets, fees paid by Circle)
+
+- **What it does**: while `CIRCLE_GAS_STATION=1`, new users' main wallets are smart contract wallets and Circle pays their network fees (registering, replying, bidding, sending, as the Gas Station rules allow). Circle bills the card on the Circle account. Agent wallets and every existing wallet are unchanged. Code: `lib/wallets.ts`.
+- **Before switching it on**: run migration 0015; in the Circle Console enable Gas Station for the network (`ARC-TESTNET` first, then `ARC`), add billing and set the rules (limit sponsorship to the USDC, registry and escrow contracts, with per-wallet and daily limits if offered). Then set `CIRCLE_GAS_STATION=1` in Vercel and redeploy. Test on testnet first: sign up a new user, go live with an empty wallet, receive and accept a bid, send USDC out.
+- **Turn off**: empty `CIRCLE_GAS_STATION` and redeploy. New users get ordinary wallets again. Smart wallets already created keep working but pay their own fees, so their creators need USDC (or the one-time top-up) again.
+- **Watch**: Gas Station spend in the Circle Console. A settlement whose transaction succeeded but didn't change the escrow is released with "didn't take effect on-chain" and can be retried; repeated ones mean the smart wallet's calls are reverting.
+- **Which wallets are smart**: `select u.email, w.purpose, w.address, w.created_at from wallets w join users u on u.id = w.user_id where w.account_type = 'SCA' order by w.created_at desc;`
+
 ## Sponsored first network fee
 
 - **What it does**: a verified creator who presses Go live (or verifies X/LinkedIn, which goes live straight away) with less than $0.02 in their wallet gets one top-up (`GAS_SPONSOR_AMOUNT_USDC`, default $0.10) from the sponsor wallet; registration then runs from their own wallet. Code: `lib/sponsorship.ts`, `lib/go-live.ts`.

@@ -56,8 +56,13 @@ export async function goLive(userId: string): Promise<GoLiveResult> {
   // Already on its way (a top-up or the registration itself): report, don't resend.
   if (registrationState(profile) === "registering") return { ok: true, status: await refreshRegistration(userId) };
 
-  // Circle Gas Station pays this wallet's fees: no balance check, no top-up.
-  if (feesSponsored(wallet)) return { ok: true, status: await submitRegistration(userId), sponsored: true };
+  // Circle Gas Station pays this wallet's fees: no balance check, no top-up. Like the
+  // top-up, only while creator verification is switched on: free activation is only
+  // ever for a creator who has proved who they are. With verification off, a smart
+  // wallet goes live on the usual balance rules.
+  if (verificationRequired() && feesSponsored(wallet)) {
+    return { ok: true, status: await submitRegistration(userId), sponsored: true };
+  }
 
   const sponsor = activeSponsorConfig();
   const minimum = sponsor ? REGISTRATION_GAS_MIN : ACTIVATION_MIN_USDC;

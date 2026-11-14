@@ -16,7 +16,7 @@ import { sponsorshipUsed } from "@/lib/sponsorship";
 import { PROFILE_READ_PRICE, agentReadsEnabled } from "@/lib/gateway";
 import { spentToday } from "@/lib/agent";
 import { registrationState } from "@/lib/registration";
-import { enabledProviders, listVerifications } from "@/lib/social-verify";
+import { enabledProviders, listVerifications, verificationRequired } from "@/lib/social-verify";
 import { computeCreatorStats, loadMarketBids } from "@/lib/market";
 import { bookRanks, computeBidderTotals, computeCreatorTotals } from "@/lib/portfolio";
 import { RUN_ACTIONS, groupRuns } from "@/lib/decision-history";
@@ -187,9 +187,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const gasSponsored = profile?.isActive
     ? false
     : wallet
-      ? feesSponsored(wallet) ||
+      ? (verificationRequired() && feesSponsored(wallet)) ||
         (activeSponsorConfig() !== null && !(await sponsorshipUsed(userId).catch(() => true)))
-      : gasStationEnabled() || (activeSponsorConfig() !== null && !(await sponsorshipUsed(userId).catch(() => true)));
+      : (verificationRequired() && gasStationEnabled()) || (activeSponsorConfig() !== null && !(await sponsorshipUsed(userId).catch(() => true)));
   const checklist = computeChecklist({
     role,
     hasWallet: !!wallet,

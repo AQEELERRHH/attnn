@@ -816,8 +816,15 @@ export async function finalizeSettlement(bidId: string): Promise<SettlementOutco
     // landed in (no node lag), before the row says so.
     let tookEffect = receipt.status === "success";
     if (tookEffect && bid.escrowAddress && bid.onChainBidId) {
+      const escrow = bid.escrowAddress;
+      const onChainBidId = bid.onChainBidId;
       try {
-        const atBlock = await readEscrowBid(bid.escrowAddress, bid.onChainBidId, receipt.blockNumber ?? undefined);
+        // At the receipt's block when the node still has that state; otherwise (pruned
+        // state, e.g. confirmed hours later by the sweep) the latest state answers the
+        // same question, because a settled bid never goes back to Pending.
+        const atBlock = await readEscrowBid(escrow, onChainBidId, receipt.blockNumber ?? undefined).catch(() =>
+          readEscrowBid(escrow, onChainBidId),
+        );
         tookEffect = CHAIN_FINAL[atBlock.status] === FINAL_STATUS[action];
       } catch (err) {
         // Can't confirm right now: check again on the next pass, never finalize unseen.

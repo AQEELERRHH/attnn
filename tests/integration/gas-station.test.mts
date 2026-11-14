@@ -149,6 +149,20 @@ describe("Circle Gas Station", () => {
       assert.equal(world.txs.length, 0);
     });
 
+    test("verification switched off (no X/LinkedIn keys): no free go-live for a smart wallet", async () => {
+      process.env.CIRCLE_GAS_STATION = "1";
+      await makeSmart("w-creator-main");
+      delete process.env.X_CLIENT_ID;
+      try {
+        const res = await post(activate, "/api/profile/activate");
+        assert.equal(res.status, 400);
+        assert.equal(res.body.code, "INSUFFICIENT_FUNDS", "the usual balance rules, not a sponsored registration");
+        assert.equal(world.txs.length, 0);
+      } finally {
+        process.env.X_CLIENT_ID = "x-client";
+      }
+    });
+
     test("an ordinary wallet still needs USDC with Gas Station on", async () => {
       process.env.CIRCLE_GAS_STATION = "1";
       const res = await post(activate, "/api/profile/activate");
@@ -194,6 +208,25 @@ describe("Circle Gas Station", () => {
       world.failBidReads = false;
       assert.equal(await finalizeSettlement(bid.id), "settled");
       assert.equal((await row(bid.id)).status, "accepted");
+    });
+
+    test("a node that no longer has the old block's state: the latest state decides", async () => {
+      const bid = await seedEscrowedBid();
+      const { txId } = await submitSettlement({ bidId: bid.id, action: "accept", actorUserId: ids.creator, reply: REPLY });
+      const tx = world.txs.find((t) => t.id === txId)!;
+      world.complete(txId, [bidAcceptedLog(ESCROW, BigInt(bid.onChainBidId!), addr.creatorMain, tx.args[1] as `0x${string}`)]);
+      world.failHistoricalReads = true;
+      assert.equal(await finalizeSettlement(bid.id), "settled", "never stuck confirming forever");
+      assert.equal((await row(bid.id)).status, "accepted");
+    });
+
+    test("old state gone and the call changed nothing: still not recorded", async () => {
+      const bid = await seedEscrowedBid();
+      const { txId } = await submitSettlement({ bidId: bid.id, action: "accept", actorUserId: ids.creator, reply: REPLY });
+      world.completeWithoutEffect(txId);
+      world.failHistoricalReads = true;
+      assert.equal(await finalizeSettlement(bid.id), "failed");
+      assert.equal((await row(bid.id)).status, "pending");
     });
 
     test("if the escrow shows a different settlement, that is what's recorded", async () => {

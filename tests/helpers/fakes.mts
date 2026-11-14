@@ -51,7 +51,7 @@ export const world = {
   escrowBids: new Map<string, EscrowBid>(),
   refundPeriodSeconds: BigInt(3 * 24 * 3600),
   activeCreators: new Set<string>(),
-  receipts: new Map<string, { status: "success" | "reverted"; logs: unknown[] }>(),
+  receipts: new Map<string, { status: "success" | "reverted"; logs: unknown[]; blockNumber?: bigint }>(),
   events: [] as { name: string; data: unknown }[],
   /** Throws from inngest.send when set. */
   failInngest: false,
@@ -87,6 +87,8 @@ export const world = {
   failBalanceReads: false,
   /** Makes every escrow getBid read fail (RPC outage). */
   failBidReads: false,
+  /** Makes reads at a past block fail (a node that pruned old state); latest reads still work. */
+  failHistoricalReads: false,
   /** Wallets created through provisionUserWallet, in order, with the type asked for. */
   provisioned: [] as { walletId: string; address: string; accountType: "EOA" | "SCA" }[],
   /** Every EIP-712 request that reached "Circle" signing, as sent (JSON string). */
@@ -118,6 +120,7 @@ export const world = {
     this.signed.length = 0;
     this.failBalanceReads = false;
     this.failBidReads = false;
+    this.failHistoricalReads = false;
     this.provisioned.length = 0;
   },
 
@@ -132,7 +135,7 @@ export const world = {
     if (!tx) throw new Error(`no tx ${txId}`);
     tx.state = "COMPLETE";
     tx.txHash = `0x${txId.replace(/-/g, "").padEnd(64, "0")}`;
-    this.receipts.set(tx.txHash, { status: "success", logs });
+    this.receipts.set(tx.txHash, { status: "success", logs, blockNumber: BigInt(900) });
     // As on Arc: a settlement that succeeded changes the escrow's record of the bid.
     applySettlement(tx);
   },
@@ -147,7 +150,7 @@ export const world = {
     if (!tx) throw new Error(`no tx ${txId}`);
     tx.state = "COMPLETE";
     tx.txHash = `0x${txId.replace(/-/g, "").padEnd(64, "0")}`;
-    this.receipts.set(tx.txHash, { status: "success", logs });
+    this.receipts.set(tx.txHash, { status: "success", logs, blockNumber: BigInt(900) });
   },
 
   /** Marks a Circle transaction FAILED (nothing happened on-chain). */
@@ -313,7 +316,8 @@ export function escrowBid(bid: Omit<EscrowBid, "status" | "reply" | "message" | 
 }
 
 const fakePublicClient = {
-  async readContract({ functionName, args, address }: { functionName: string; args?: readonly unknown[]; address: string }) {
+  async readContract({ functionName, args, address, blockNumber }: { functionName: string; args?: readonly unknown[]; address: string; blockNumber?: bigint }) {
+    if (blockNumber !== undefined && world.failHistoricalReads) throw new Error("fake chain: missing trie node (state pruned)");
     switch (functionName) {
       case "balanceOf":
         if (world.failBalanceReads) throw new Error("fake chain: RPC unavailable");

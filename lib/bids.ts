@@ -793,46 +793,32 @@ export async function finalizeSettlement(bidId: string): Promise<SettlementOutco
   let replyFields: ReplyFields | null = null;
   {
     const receipt = await publicClient.getTransactionReceipt({ hash: status.txHash as Hex });
-    if (action === "accept" && receipt.status === "success" && bid.escrowAddress) {
-      const version = await escrowVersion(bid.escrowAddress);
-      const accepted = parseEventLogs({ abi: escrowAbiFor(version), eventName: "BidAccepted", logs: receipt.logs as never }).find(
-        (l) => lower(l.address) === lower(bid.escrowAddress!) && l.args.bidId.toString() === bid.onChainBidId,
-      );
-      const args = accepted?.args as { reply?: string; replyHash?: Hex } | undefined;
-      if (version === 1) {
-        // The reply the bidder paid for is the one in the BidAccepted log.
-        if (args?.reply !== undefined) replyFields = { reply: args.reply || null, replyCandidates: null };
-      } else {
-        // Keep only a reply whose fingerprint is the one the creator was paid for. No log
-        // (shouldn't happen for our own accept): read the fingerprint from the escrow.
-        const hash = args?.replyHash ?? (bid.onChainBidId ? (await readEscrowBid(bid.escrowAddress, bid.onChainBidId)).replyHash : null);
-        replyFields = pickReply(hash, bid);
-      }
-    }
-    // A transaction can succeed on Arc while the call inside it did nothing: a smart
-    // contract wallet's call is carried inside a bundle transaction (ERC-4337), whose
-    // receipt is "success" even when the wallet's own call reverted. So the escrow
-    // itself must show the bid settled this way, read at the block the transaction
-    // landed in (no node lag), before the row says so.
+    // Proof that THIS transaction settled the bid: its own receipt carries the escrow's
+    // BidAccepted / BidRejected / BidRefunded event for this bid. A "success" receipt
+    // alone isn't enough: a smart contract wallet's call rides inside a bundle
+    // transaction (ERC-4337) that succeeds even when the call inside reverted, and the
+    // escrow showing the bid settled doesn't say who settled it. A reverted call's
+    // events are discarded, so the event is only there if our call took effect.
     let tookEffect = receipt.status === "success";
     if (tookEffect && bid.escrowAddress && bid.onChainBidId) {
-      const escrow = bid.escrowAddress;
-      const onChainBidId = bid.onChainBidId;
-      try {
-        // At the receipt's block when the node still has that state; otherwise (pruned
-        // state, e.g. confirmed hours later by the sweep) the latest state answers the
-        // same question, because a settled bid never goes back to Pending.
-        const atBlock = await readEscrowBid(escrow, onChainBidId, receipt.blockNumber ?? undefined).catch(() =>
-          readEscrowBid(escrow, onChainBidId),
-        );
-        tookEffect = CHAIN_FINAL[atBlock.status] === FINAL_STATUS[action];
-      } catch (err) {
-        // Can't confirm right now: check again on the next pass, never finalize unseen.
-        console.warn(`finalizeSettlement ${bid.id}: escrow read failed, retrying later`, err instanceof Error ? err.message : err);
-        return "in_flight";
+      const version = await escrowVersion(bid.escrowAddress);
+      const own = parseEventLogs({
+        abi: escrowAbiFor(version),
+        eventName: SETTLEMENT_EVENT[FINAL_STATUS[action] as keyof typeof SETTLEMENT_EVENT],
+        logs: receipt.logs as never,
+      }).find((l) => lower(l.address) === lower(bid.escrowAddress!) && (l.args as { bidId: bigint }).bidId.toString() === bid.onChainBidId);
+      tookEffect = !!own;
+      if (own && action === "accept") {
+        const args = own.args as { reply?: string; replyHash?: Hex };
+        // The reply the bidder paid for: v1 carries the text in the event; v2 only its
+        // fingerprint, so keep only a saved reply whose fingerprint matches.
+        replyFields = version === 1 ? { reply: args.reply || null, replyCandidates: null } : pickReply(args.replyHash ?? null, bid);
       }
     }
     if (!tookEffect) {
+      // Our call didn't settle it. Release it; if another transaction settled the bid,
+      // reconcileFromEscrow records what the escrow holds (its status, its settling
+      // transaction and, for an accept, the reply that was actually paid for).
       await db
         .update(bids)
         .set({

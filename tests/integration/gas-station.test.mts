@@ -171,12 +171,11 @@ describe("Circle Gas Station", () => {
     });
   });
 
-  describe("settlements are recorded only when the escrow shows them", () => {
-    test("an accept that succeeded on Arc but changed nothing in the escrow is not recorded", async () => {
+  describe("a settlement counts only if this transaction's own receipt shows it", () => {
+    test("an accept whose call did nothing (bundle succeeded, no event on the receipt) is not recorded", async () => {
       const bid = await seedEscrowedBid();
       const { txId } = await submitSettlement({ bidId: bid.id, action: "accept", actorUserId: ids.creator, reply: REPLY });
-      const tx = world.txs.find((t) => t.id === txId)!;
-      world.completeWithoutEffect(txId, [bidAcceptedLog(ESCROW, BigInt(bid.onChainBidId!), addr.creatorMain, tx.args[1] as `0x${string}`)]);
+      world.completeWithoutEffect(txId);
       assert.equal(await finalizeSettlement(bid.id), "failed");
       const r = await row(bid.id);
       assert.equal(r.status, "pending", "no earnings for a reply that wasn't paid");
@@ -195,60 +194,63 @@ describe("Circle Gas Station", () => {
       assert.equal((await row(bid.id)).status, "pending");
     });
 
-    test("an escrow that can't be read means check again later, never settled", async () => {
+    test("another transaction accepted the bid first: the escrow's paid-for reply is shown, never ours (v2)", async () => {
       const bid = await seedEscrowedBid();
       const { txId } = await submitSettlement({ bidId: bid.id, action: "accept", actorUserId: ids.creator, reply: REPLY });
-      const tx = world.txs.find((t) => t.id === txId)!;
-      world.complete(txId, [bidAcceptedLog(ESCROW, BigInt(bid.onChainBidId!), addr.creatorMain, tx.args[1] as `0x${string}`)]);
-      world.failBidReads = true;
-      assert.equal(await finalizeSettlement(bid.id), "in_flight");
-      const r = await row(bid.id);
-      assert.equal(r.status, "pending");
-      assert.equal(r.settlementTxHash, txId, "the settlement stays in flight");
-      world.failBidReads = false;
+      // Someone else's accept landed first, with a reply whose fingerprint we never saved.
+      const onChain = world.escrowBids.get(bid.onChainBidId!)!;
+      onChain.status = 1;
+      onChain.replyHash = `0x${"ab".repeat(32)}`;
+      world.completeWithoutEffect(txId); // ours then did nothing
       assert.equal(await finalizeSettlement(bid.id), "settled");
-      assert.equal((await row(bid.id)).status, "accepted");
+      const r = await row(bid.id);
+      assert.equal(r.status, "accepted", "the escrow's fact is recorded");
+      assert.equal(r.reply, null, "no reply shown that the bidder didn't pay for");
     });
 
-    test("a node that no longer has the old block's state: the latest state decides", async () => {
+    test("the reviewer's case: a legacy v1 bid accepted first by another transaction shows the reply actually paid for", async () => {
+      const LEGACY = "0x1e9a000000000000000000000000000000000003";
+      process.env.ATTN_LEGACY_ESCROW_CONTRACTS = LEGACY;
+      const { clearSettingsCache } = await import("../../lib/app-settings.ts");
+      try {
+        world.escrowVersions.set(LEGACY, 1);
+        clearSettingsCache();
+        const bid = await seedEscrowedBid({ escrow: LEGACY });
+        const { txId } = await submitSettlement({ bidId: bid.id, action: "accept", actorUserId: ids.creator, reply: REPLY });
+        const paid = "The reply that was actually paid for, sent by the other transaction, long enough to pass the reply rules easily.";
+        const onChain = world.escrowBids.get(bid.onChainBidId!)!;
+        onChain.status = 1;
+        onChain.reply = paid;
+        world.completeWithoutEffect(txId);
+        assert.equal(await finalizeSettlement(bid.id), "settled");
+        const r = await row(bid.id);
+        assert.equal(r.status, "accepted");
+        assert.equal(r.reply, paid, "the escrow's reply, not the one Attnn. had saved");
+      } finally {
+        process.env.ATTN_LEGACY_ESCROW_CONTRACTS = "none";
+        clearSettingsCache();
+      }
+    });
+
+    test("an event for a different bid on the same receipt doesn't count", async () => {
       const bid = await seedEscrowedBid();
+      const other = await seedEscrowedBid({ amount: BigInt(7_000_000) });
       const { txId } = await submitSettlement({ bidId: bid.id, action: "accept", actorUserId: ids.creator, reply: REPLY });
       const tx = world.txs.find((t) => t.id === txId)!;
-      world.complete(txId, [bidAcceptedLog(ESCROW, BigInt(bid.onChainBidId!), addr.creatorMain, tx.args[1] as `0x${string}`)]);
-      world.failHistoricalReads = true;
-      assert.equal(await finalizeSettlement(bid.id), "settled", "never stuck confirming forever");
-      assert.equal((await row(bid.id)).status, "accepted");
-    });
-
-    test("old state gone and the call changed nothing: still not recorded", async () => {
-      const bid = await seedEscrowedBid();
-      const { txId } = await submitSettlement({ bidId: bid.id, action: "accept", actorUserId: ids.creator, reply: REPLY });
-      world.completeWithoutEffect(txId);
-      world.failHistoricalReads = true;
+      world.completeWithoutEffect(txId, [bidAcceptedLog(ESCROW, BigInt(other.onChainBidId!), addr.creatorMain, tx.args[1] as `0x${string}`)]);
       assert.equal(await finalizeSettlement(bid.id), "failed");
       assert.equal((await row(bid.id)).status, "pending");
     });
 
-    test("if the escrow shows a different settlement, that is what's recorded", async () => {
+    test("a settlement our own receipt shows is recorded as before, with its reply", async () => {
       const bid = await seedEscrowedBid();
       const { txId } = await submitSettlement({ bidId: bid.id, action: "accept", actorUserId: ids.creator, reply: REPLY });
-      world.escrowBids.get(bid.onChainBidId!)!.status = 3; // refunded by another transaction
-      world.completeWithoutEffect(txId);
-      assert.equal(await finalizeSettlement(bid.id), "settled");
-      const r = await row(bid.id);
-      assert.equal(r.status, "refunded");
-      assert.equal(r.reply, null);
-    });
-
-    test("a settlement the escrow shows is recorded as before", async () => {
-      const bid = await seedEscrowedBid();
-      const { txId } = await submitSettlement({ bidId: bid.id, action: "accept", actorUserId: ids.creator, reply: REPLY });
-      const tx = world.txs.find((t) => t.id === txId)!;
-      world.complete(txId, [bidAcceptedLog(ESCROW, BigInt(bid.onChainBidId!), addr.creatorMain, tx.args[1] as `0x${string}`)]);
+      world.complete(txId);
       assert.equal(await finalizeSettlement(bid.id), "settled");
       const r = await row(bid.id);
       assert.equal(r.status, "accepted");
       assert.equal(r.reply, REPLY);
+      assert.ok(r.settlementOnChainTxHash);
     });
   });
 

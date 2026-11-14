@@ -351,12 +351,14 @@ describe("sponsored first network fee", () => {
 
   test("settings that can't be read switch sponsorship off, and the amount can't exceed $1", () => {
     assert.ok(sponsorConfig());
-    for (const [amount, limit] of [["5", undefined], ["abc", undefined], ["0", undefined], ["0.10", "0.05"], ["-1", undefined]] as const) {
+    for (const [amount, limit] of [["5", undefined], ["abc", undefined], ["0", undefined], ["0.01", undefined], ["0.019999", undefined], ["0.10", "0.05"], ["-1", undefined]] as const) {
       process.env.GAS_SPONSOR_AMOUNT_USDC = amount;
       if (limit) process.env.GAS_SPONSOR_DAILY_LIMIT_USDC = limit;
       else delete process.env.GAS_SPONSOR_DAILY_LIMIT_USDC;
       assert.equal(sponsorConfig(), null, `${amount} / ${limit}`);
     }
+    process.env.GAS_SPONSOR_AMOUNT_USDC = "0.02"; // exactly the registration minimum is enough
+    assert.equal(sponsorConfig()!.amount, BigInt(20_000));
     process.env.GAS_SPONSOR_AMOUNT_USDC = "0.25";
     assert.equal(sponsorConfig()!.amount, BigInt(250_000));
     process.env.GAS_SPONSOR_WALLET_ADDRESS = "not-an-address";

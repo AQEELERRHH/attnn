@@ -75,9 +75,11 @@ export function sponsorConfig(): SponsorConfig | null {
   const limitSet = process.env.GAS_SPONSOR_DAILY_LIMIT_USDC?.trim();
   const amount = amountSet ? dollars(amountSet) : DEFAULT_AMOUNT;
   const dailyLimit = limitSet ? dollars(limitSet) : DEFAULT_DAILY_LIMIT;
-  // A setting we can't read switches sponsorship off rather than guessing an amount.
-  if (amount === null || dailyLimit === null || amount > MAX_AMOUNT || dailyLimit < amount) {
-    console.warn("sponsorship: GAS_SPONSOR_AMOUNT_USDC / GAS_SPONSOR_DAILY_LIMIT_USDC are invalid; sponsorship is off");
+  // A setting we can't read, or a top-up too small to pay for registering (it would use
+  // up the creator's one top-up and still fail), switches sponsorship off rather than
+  // guessing an amount.
+  if (amount === null || dailyLimit === null || amount < REGISTRATION_GAS_MIN || amount > MAX_AMOUNT || dailyLimit < amount) {
+    console.warn("sponsorship: GAS_SPONSOR_AMOUNT_USDC / GAS_SPONSOR_DAILY_LIMIT_USDC are invalid (amount must be $0.02 to $1); sponsorship is off");
     return null;
   }
   return { walletId, walletAddress: walletAddress.toLowerCase(), amount, dailyLimit };

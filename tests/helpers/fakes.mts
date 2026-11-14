@@ -129,15 +129,18 @@ export const world = {
     return this.txs.filter((t) => t.functionName === functionName);
   },
 
-  /** Marks a Circle transaction COMPLETE on-chain with a successful receipt and these logs. */
-  complete(txId: string, logs: unknown[] = []) {
+  /**
+   * Marks a Circle transaction COMPLETE on-chain with a successful receipt. As on Arc,
+   * a settlement changes the escrow's record of the bid and its receipt carries the
+   * escrow's event; pass `logs` to give the receipt exactly those logs instead.
+   */
+  complete(txId: string, logs?: unknown[]) {
     const tx = this.txs.find((t) => t.id === txId);
     if (!tx) throw new Error(`no tx ${txId}`);
     tx.state = "COMPLETE";
     tx.txHash = `0x${txId.replace(/-/g, "").padEnd(64, "0")}`;
-    this.receipts.set(tx.txHash, { status: "success", logs, blockNumber: BigInt(900) });
-    // As on Arc: a settlement that succeeded changes the escrow's record of the bid.
-    applySettlement(tx);
+    const event = applySettlement(tx);
+    this.receipts.set(tx.txHash, { status: "success", logs: logs ?? (event ? [event] : []), blockNumber: BigInt(900) });
   },
 
   /**
@@ -191,17 +194,44 @@ function submit(params: { walletId: string; contractAddress: string; functionNam
 
 const SETTLED_STATUS: Record<string, number> = { acceptBid: 1, rejectBid: 2, claimRefund: 3 };
 
-/** A completed accept / reject / refund: the escrow bid leaves Pending (only from Pending). */
-function applySettlement(tx: FakeTx) {
+/**
+ * A completed accept / reject / refund: the escrow bid leaves Pending (only from
+ * Pending) and the escrow emits its event, which is returned for the receipt. A bid
+ * already settled is left alone and nothing is emitted (the call would revert).
+ */
+function applySettlement(tx: FakeTx): unknown | null {
   const status = SETTLED_STATUS[tx.functionName];
-  if (status === undefined) return;
+  if (status === undefined) return null;
   const b = world.escrowBids.get(String(tx.args[0]));
-  if (!b || b.status !== 0) return;
+  if (!b || b.status !== 0) return null;
   b.status = status;
+  const v2 = versionOf(tx.contractAddress) === 2;
   if (tx.functionName === "acceptBid") {
-    if (versionOf(tx.contractAddress) === 2) b.replyHash = tx.args[1] as Hex;
+    if (v2) b.replyHash = tx.args[1] as Hex;
     else b.reply = String(tx.args[1] ?? "");
   }
+  return settlementLog(tx.contractAddress, tx.functionName, BigInt(String(tx.args[0])), b, v2);
+}
+
+/** The escrow's BidAccepted / BidRejected / BidRefunded log for a settled bid. */
+function settlementLog(escrow: string, fn: string, bidId: bigint, b: EscrowBid, v2: boolean) {
+  const by = fn === "claimRefund" ? { name: "bidder", type: "address", indexed: true } : { name: "creator", type: "address", indexed: true };
+  const name = fn === "acceptBid" ? "BidAccepted" : fn === "rejectBid" ? "BidRejected" : "BidRefunded";
+  const extra = fn === "acceptBid" ? [{ name: v2 ? "replyHash" : "reply", type: v2 ? "bytes32" : "string", indexed: false }] : [];
+  const event = { type: "event", name, inputs: [{ name: "bidId", type: "uint256", indexed: true }, by, ...extra] } as const;
+  const who = (fn === "claimRefund" ? b.bidder : b.creator) as Hex;
+  return {
+    address: escrow as Hex,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- event shape is built at runtime
+    topics: (encodeEventTopics as any)({ abi: [event], eventName: name, args: { bidId, [by.name]: who } }),
+    data: extra.length ? encodeAbiParameters([{ type: extra[0]!.type }], [v2 ? b.replyHash : b.reply] as never) : "0x",
+    blockHash: `0x${"1".repeat(64)}`,
+    blockNumber: BigInt(900),
+    logIndex: 1,
+    transactionHash: `0x${"4".repeat(64)}`,
+    transactionIndex: 0,
+    removed: false,
+  };
 }
 
 /** The escrow generation at this address. */
@@ -243,10 +273,13 @@ function mine(tx: FakeTx) {
       logs.push(bidPlacedLog(tx.contractAddress, BigInt(id), owner, creator, BigInt(amount)));
     }
   }
+  if (ok) {
+    const event = applySettlement(tx);
+    if (event) logs.push(event);
+  }
   tx.state = "COMPLETE";
   tx.txHash = `0x${tx.id.replace(/-/g, "").padEnd(64, "0")}`;
   world.receipts.set(tx.txHash, { status: ok ? "success" : "reverted", logs });
-  if (ok) applySettlement(tx);
 }
 
 /** A BidPlaced log as the escrow would emit it (for placeBid receipts). */

@@ -4,7 +4,7 @@ import * as React from "react";
 import { useRequestId } from "@/app/dashboard/use-request-id";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { BadgeCheck, Lock, ThumbsDown, ThumbsUp } from "lucide-react";
+import { BadgeCheck, Check, Copy, Lock, ThumbsDown, ThumbsUp } from "lucide-react";
 import {
   BidTicket,
   Change,
@@ -145,34 +145,37 @@ export function CreatorMarket(props: CreatorMarketProps) {
       aria-selected={tab === id}
       onClick={() => setTab(id)}
       className={cn(
-        "focus-ring -mb-px h-10 border-b-2 px-3 text-sm font-medium",
+        "focus-ring relative -mb-px inline-flex h-11 items-center gap-2 border-b-2 px-1 text-sm font-medium transition-colors",
         tab === id ? "border-arc-gold text-text-primary" : "border-transparent text-text-secondary hover:text-text-primary",
       )}
     >
-      {label} <Num className="text-xs text-text-secondary">{count}</Num>
+      {label}
+      <Num className={cn("rounded px-1.5 py-px text-[11px]", tab === id ? "bg-arc-gold/15 text-arc-gold" : "bg-arc-bg-3 text-text-secondary")}>{count}</Num>
     </button>
   );
 
   const avail = details.availabilityStatus ? AVAILABILITY[details.availabilityStatus] : null;
+  const rated = ratingShare(stats.ratingsUp, stats.ratingsDown);
 
   return (
-    <main className="mx-auto max-w-[1320px] px-4 pb-16 pt-5 sm:px-6">
+    <main className="mx-auto max-w-[1320px] px-4 pb-6 pt-5 sm:px-6">
       <nav aria-label="Breadcrumb" className="mb-4 flex items-center gap-2 text-[13px] text-text-secondary">
-        <Link href="/creators" className="hover:text-text-primary">
+        <Link href="/creators" className="focus-ring rounded transition-colors hover:text-text-primary">
           Markets
         </Link>
-        <span aria-hidden>/</span>
+        <span aria-hidden className="text-text-dim">/</span>
         <span className="text-text-primary">@{handle}</span>
       </nav>
 
       {/* Market header */}
-      <Panel>
-        <div className="flex flex-wrap items-center gap-6">
-          <div className="flex min-w-0 flex-[1_1_300px] items-center gap-3.5">
-            <CreatorAvatar handle={handle} src={props.avatarUrl} size={56} />
+      <section aria-label={`@${handle} market`} className="panel relative overflow-hidden">
+        <span aria-hidden className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-arc-gold/50 to-transparent" />
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-4 px-5 py-5 sm:px-6">
+          <div className="flex min-w-0 flex-[1_1_320px] items-center gap-4">
+            <CreatorAvatar handle={handle} src={props.avatarUrl} size={64} />
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2.5">
-                <h1 className="font-display text-2xl font-bold tracking-tight">@{handle}</h1>
+                <h1 className="truncate text-[28px] font-semibold leading-tight tracking-[-0.035em]">@{handle}</h1>
                 {paused ? (
                   <StatusChip tone="danger" dot>
                     {props.registeredOnChain ? "Not accepting bids" : "Not registered yet"}
@@ -184,90 +187,109 @@ export function CreatorMarket(props: CreatorMarketProps) {
                 )}
                 {!stats.hasHistory && <StatusChip tone="neutral">New market</StatusChip>}
               </div>
-              {props.verifications.length > 0 && (
-                <ul aria-label="Verified accounts" className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-xs text-text-secondary">
-                  {props.verifications.map((v) => {
-                    const href = verificationHref(v);
-                    return (
-                      <li key={v.provider} className="inline-flex items-center gap-1">
-                        <BadgeCheck aria-hidden className="h-3.5 w-3.5 text-green" />
-                        <span className="sr-only">Verified:</span>
-                        {href ? (
-                          <a href={href} target="_blank" rel="noopener noreferrer" className="focus-ring rounded text-arc-lavender hover:underline">
-                            {verificationLabel(v)}
-                          </a>
-                        ) : (
-                          verificationLabel(v)
-                        )}
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-              {props.tags.length > 0 && (
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {props.tags.map((t) => (
-                    <Tag key={t}>{t}</Tag>
-                  ))}
-                </div>
-              )}
+              <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2">
+                {props.verifications.length > 0 && (
+                  <ul aria-label="Verified accounts" className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-text-secondary">
+                    {props.verifications.map((v) => {
+                      const href = verificationHref(v);
+                      return (
+                        <li key={v.provider} className="inline-flex items-center gap-1">
+                          <BadgeCheck aria-hidden className="h-3.5 w-3.5 text-green" />
+                          <span className="sr-only">Verified:</span>
+                          {href ? (
+                            <a href={href} target="_blank" rel="noopener noreferrer" className="focus-ring rounded text-text-primary hover:underline">
+                              {verificationLabel(v)}
+                            </a>
+                          ) : (
+                            verificationLabel(v)
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+                {props.tags.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {props.tags.map((t) => (
+                      <Tag key={t}>{t}</Tag>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
-          <StatInline
-            className="flex-[999_1_620px]"
-            items={[
-              { label: "Floor", value: <Money atomic={stats.floorUsdc} /> },
-              { label: "Top bid", value: <Money atomic={stats.topBidUsdc} tone="gold" /> },
-              {
-                label: "Last cleared",
-                value: <Money atomic={stats.lastClearedUsdc} />,
-                sub: stats.prevClearedUsdc ? (
-                  <Change value={formatChange(BigInt(stats.lastClearedUsdc!), BigInt(stats.prevClearedUsdc))} />
-                ) : undefined,
-              },
-              { label: "7d volume", value: <Money atomic={stats.hasHistory ? stats.volume7dUsdc : null} /> },
-              { label: "Reply rate", value: <Num>{stats.replyRate === null ? "—" : `${Math.round(stats.replyRate * 100)}%`}</Num> },
-              { label: "Median reply", value: <Num>{formatDuration(stats.medianReplyMs)}</Num> },
-              {
-                label: "Rated worth it",
-                value: <Num>{ratingShare(stats.ratingsUp, stats.ratingsDown) === null ? "—" : `${Math.round(ratingShare(stats.ratingsUp, stats.ratingsDown)! * 100)}%`}</Num>,
-                sub:
-                  stats.ratingsUp + stats.ratingsDown > 0 ? (
-                    <span className="text-xs text-text-secondary" title="Bidder ratings of paid replies, last 30 days">
-                      (<Num>{stats.ratingsUp + stats.ratingsDown}</Num>)
-                    </span>
-                  ) : undefined,
-              },
-              {
-                label: "Auto-replies",
-                value: (
-                  <Num title="Paid replies sent from a template or written by the creator's AI agent, last 30 days">
-                    {stats.repliesKnown ? `${stats.autoReplies} of ${stats.repliesKnown}` : "—"}
-                  </Num>
-                ),
-              },
-              { label: "Open bids", value: <Num>{stats.openBids}</Num> },
-            ]}
-          />
+          <dl className="grid flex-[1_1_360px] grid-cols-2 gap-px overflow-hidden rounded-lg border border-border bg-border min-[440px]:grid-cols-3 max-[439px]:[&>*:last-child]:col-span-2">
+            <div className="min-w-0 bg-arc-bg-0 px-4 py-3">
+              <dt className="eyebrow">Floor</dt>
+              <dd className="mt-1 text-xl font-medium tracking-[-0.02em]">
+                <Money atomic={stats.floorUsdc} />
+              </dd>
+            </div>
+            <div className="min-w-0 bg-arc-bg-0 px-4 py-3">
+              <dt className="eyebrow">Top bid</dt>
+              <dd className="mt-1 text-xl font-medium tracking-[-0.02em]">
+                <Money atomic={stats.topBidUsdc} tone="gold" />
+              </dd>
+            </div>
+            <div className="min-w-0 bg-arc-bg-0 px-4 py-3">
+              <dt className="eyebrow">Last cleared</dt>
+              <dd className="mt-1 flex flex-wrap items-baseline gap-x-1.5 text-xl font-medium tracking-[-0.02em]">
+                <Money atomic={stats.lastClearedUsdc} tone={stats.lastClearedUsdc ? "success" : "default"} />
+                {stats.prevClearedUsdc && <Change value={formatChange(BigInt(stats.lastClearedUsdc!), BigInt(stats.prevClearedUsdc))} />}
+              </dd>
+            </div>
+          </dl>
         </div>
-      </Panel>
+        <StatInline
+          className="border-t border-border bg-arc-bg-0/40 px-5 py-4 sm:px-6 [&_dd]:text-base"
+          items={[
+            { label: "7d volume", value: <Money atomic={stats.hasHistory ? stats.volume7dUsdc : null} /> },
+            { label: "Reply rate", value: <Num>{stats.replyRate === null ? "—" : `${Math.round(stats.replyRate * 100)}%`}</Num> },
+            { label: "Median reply", value: <Num>{formatDuration(stats.medianReplyMs)}</Num> },
+            {
+              label: "Rated worth it",
+              value: <Num>{rated === null ? "—" : `${Math.round(rated * 100)}%`}</Num>,
+              sub:
+                stats.ratingsUp + stats.ratingsDown > 0 ? (
+                  <span className="text-xs text-text-secondary" title="Bidder ratings of paid replies, last 30 days">
+                    (<Num>{stats.ratingsUp + stats.ratingsDown}</Num>)
+                  </span>
+                ) : undefined,
+            },
+            {
+              label: "Auto-replies",
+              value: (
+                <Num title="Paid replies sent from a template or written by the creator's AI agent, last 30 days">
+                  {stats.repliesKnown ? `${stats.autoReplies} of ${stats.repliesKnown}` : "—"}
+                </Num>
+              ),
+            },
+            { label: "Open bids", value: <Num className={stats.openBids > 0 ? "text-arc-gold" : undefined}>{stats.openBids}</Num> },
+          ]}
+        />
+      </section>
 
-      <div className="mt-5 flex flex-wrap items-start gap-5">
+      <div className="mt-4 flex flex-wrap items-start gap-4">
         {/* Main column */}
-        <div className="flex min-w-0 flex-[999_1_640px] flex-col gap-5">
-          <Panel title="Attention price" description="Cleared bids over the last 30 days. The dashed line is the creator's floor.">
+        <div className="flex min-w-0 flex-[999_1_640px] flex-col gap-4">
+          <Panel
+            title="Attention price"
+            description="Cleared bids over the last 30 days. The dashed line is the creator's floor."
+            actions={<span className="num rounded-md border border-border px-2 py-0.5 text-[11px] text-text-secondary">30D</span>}
+          >
             <PriceChart points={props.fills.map((f) => ({ at: f.settledAt, amountUsdc: f.amountUsdc }))} floorUsdc={stats.floorUsdc} now={now} />
           </Panel>
 
           <Panel padded={false}>
-            <div role="tablist" aria-label="Bids" className="flex gap-1 border-b border-border px-4 pt-3">
+            <div role="tablist" aria-label="Bids" className="flex gap-6 border-b border-border px-5">
               {tabBtn("book", "Order book", props.book.length)}
               {tabBtn("fills", "Recent fills", props.fills.length)}
             </div>
             {tab === "book" ? (
               <>
                 <OrderBook bids={props.book} floorUsdc={stats.floorUsdc} now={now} />
-                <p className="border-t border-border px-5 py-3 text-xs text-text-secondary">
+                <p className="flex items-center gap-2 border-t border-border bg-arc-bg-0/40 px-5 py-3 text-xs text-text-secondary">
+                  <Lock aria-hidden className="h-3.5 w-3.5 flex-none text-arc-gold" />
                   Every open bid is USDC escrowed on Arc. If the creator doesn&apos;t reply within 3 days, the bidder gets a full refund.
                 </p>
               </>
@@ -297,16 +319,23 @@ export function CreatorMarket(props: CreatorMarketProps) {
             )}
           </Panel>
 
-          <section aria-label="About this creator" className="grid grid-cols-[repeat(auto-fit,minmax(240px,1fr))] gap-5">
-            <Panel title="Agent endpoint" description="External agents can read this market over x402.">
-              <code className="num block overflow-x-auto whitespace-nowrap rounded-md border border-border bg-arc-bg-0 px-2.5 py-2 text-xs text-arc-lavender">
-                GET attnn.xyz{props.apiPath}
-              </code>
+          <section aria-label="About this creator" className="grid grid-cols-[repeat(auto-fit,minmax(240px,1fr))] gap-4">
+            <Panel
+              className={details.unlocked ? "col-span-full" : undefined}
+              title={
+                <span className="flex items-center gap-2">
+                  Agent endpoint
+                  <span className="num rounded-md border border-arc-gold/30 bg-arc-gold/[0.07] px-1.5 py-px text-[11px] font-normal text-arc-gold">$0.001 · x402</span>
+                </span>
+              }
+              description="External agents can read this market over x402."
+            >
+              <EndpointField path={props.apiPath} />
             </Panel>
             {details.unlocked && (
               <>
                 <Panel title="About">
-                  <p className="text-[13px] text-text-secondary">{details.bio || "No bio yet."}</p>
+                  <p className="text-[13px] leading-relaxed text-text-secondary">{details.bio || "No bio yet."}</p>
                   {avail && (
                     <p className="mt-3">
                       <StatusChip tone={avail.tone} dot>
@@ -332,7 +361,7 @@ export function CreatorMarket(props: CreatorMarketProps) {
         </div>
 
         {/* Right rail */}
-        <aside aria-label="Place a bid" className="flex min-w-0 max-w-[420px] flex-[1_1_340px] flex-col gap-5">
+        <aside aria-label="Place a bid" className="flex min-w-0 max-w-[420px] flex-[1_1_340px] flex-col gap-4 lg:sticky lg:top-20">
           <BidTicket
             floorUsdc={stats.floorUsdc}
             openBidAmounts={props.book.map((b) => b.amountUsdc)}
@@ -343,10 +372,7 @@ export function CreatorMarket(props: CreatorMarketProps) {
             disabledReason={disabledReason ?? (viewer.signedIn ? null : "Sign in to place a bid.")}
           />
           {!viewer.signedIn && (
-            <Link
-              href={`/register?callbackUrl=/c/${handle}`}
-              className="focus-ring -mt-2 inline-flex h-11 items-center justify-center rounded-lg border border-arc-lavender font-medium text-text-primary hover:bg-arc-bg-2"
-            >
+            <Link href={`/register?callbackUrl=/c/${handle}`} className="focus-ring btn-secondary -mt-1 h-11">
               Sign in to bid
             </Link>
           )}
@@ -355,28 +381,64 @@ export function CreatorMarket(props: CreatorMarketProps) {
             <Panel
               title={
                 <span className="flex items-center gap-2">
-                  <Lock aria-hidden className="h-4 w-4 text-arc-lavender" /> Private details
+                  <Lock aria-hidden className="h-4 w-4 text-text-secondary" /> Private details
                 </span>
               }
               description="Availability, bio and what they're open to."
             >
               <p className="text-[13px] text-text-secondary">
-                Free when you&apos;re signed in. AI agents can pay <Num>$0.001</Num> USDC over x402 at the endpoint above.
+                Free when you&apos;re signed in. AI agents can pay <Num className="text-text-primary">$0.001</Num> USDC over x402 at the endpoint above.
               </p>
             </Panel>
           )}
 
           <Panel title="How this market settles">
-            <ol className="flex list-decimal flex-col gap-1.5 pl-4 text-[13px] text-text-secondary">
-              <li>Your bid&apos;s USDC moves into escrow on Arc.</li>
-              <li>The creator&apos;s agent scores it: accept, review or decline.</li>
-              <li>Reply → USDC is released to the creator.</li>
-              <li>No reply in 3 days → full refund to you.</li>
+            <ol className="relative flex flex-col gap-3 text-[13px] text-text-secondary">
+              {[
+                { t: "Your bid's USDC moves into escrow on Arc.", c: "bg-arc-gold" },
+                { t: "The creator's agent scores it: accept, review or decline.", c: "bg-arc-lavender" },
+                { t: "Reply → USDC is released to the creator.", c: "bg-green" },
+                { t: "No reply in 3 days → full refund to you.", c: "bg-arc-coral" },
+              ].map((s, i) => (
+                <li key={s.t} className="flex gap-3">
+                  <Num className="flex h-5 w-5 flex-none items-center justify-center rounded border border-border-bright bg-arc-bg-0 text-[11px] text-text-primary">
+                    {i + 1}
+                  </Num>
+                  <span className="flex-1 leading-snug">{s.t}</span>
+                  <span aria-hidden className={cn("mt-1.5 h-1.5 w-1.5 flex-none rounded-full", s.c)} />
+                </li>
+              ))}
             </ol>
           </Panel>
         </aside>
       </div>
     </main>
+  );
+}
+
+/** The x402 endpoint, with a copy button. */
+function EndpointField({ path }: { path: string }) {
+  const [copied, setCopied] = React.useState(false);
+  const text = `GET attnn.xyz${path}`;
+  return (
+    <div className="flex items-center gap-2 rounded-md border border-border bg-arc-bg-0 py-1.5 pl-2.5 pr-1.5">
+      <code className="num min-w-0 flex-1 overflow-x-auto whitespace-nowrap text-xs text-text-primary [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <span className="text-green">GET</span> attnn.xyz{path}
+      </code>
+      <button
+        type="button"
+        onClick={() => {
+          void navigator.clipboard?.writeText(text).then(() => {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1500);
+          });
+        }}
+        className="focus-ring inline-flex h-7 flex-none items-center gap-1 rounded px-2 text-[11px] text-text-secondary transition-colors hover:bg-arc-bg-3 hover:text-text-primary"
+      >
+        {copied ? <Check aria-hidden className="h-3.5 w-3.5 text-green" /> : <Copy aria-hidden className="h-3.5 w-3.5" />}
+        {copied ? "Copied" : "Copy"}
+      </button>
+    </div>
   );
 }
 

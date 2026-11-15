@@ -64,13 +64,13 @@ export default async function AgentPage({ params }: { params: Promise<{ agentNam
           <div className="flex flex-wrap items-center gap-4">
             <span
               aria-hidden
-              className="flex h-14 w-14 flex-none items-center justify-center rounded-xl border border-border-bright bg-arc-bg-3 font-display text-2xl font-extrabold text-arc-gold"
+              className="flex h-14 w-14 flex-none items-center justify-center rounded-xl border border-border-bright bg-arc-bg-3 font-display text-2xl font-semibold text-arc-gold"
             >
               {config.agentName.charAt(0).toUpperCase()}
             </span>
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2.5">
-                <h1 className="font-display text-2xl font-bold tracking-tight">{config.agentName}</h1>
+                <h1 className="font-display text-2xl font-semibold tracking-tight">{config.agentName}</h1>
                 <StatusChip tone={config.isActive ? "success" : "muted"} dot>
                   {config.isActive ? "Running" : "Paused"}
                 </StatusChip>

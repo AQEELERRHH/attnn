@@ -1,7 +1,11 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
+import { Geist, Geist_Mono } from "next/font/google";
 import { Toaster } from "@/components/ui/toaster";
 import { Providers } from "./providers";
 import "./globals.css";
+
+const sans = Geist({ subsets: ["latin"], variable: "--font-sans", display: "swap" });
+const mono = Geist_Mono({ subsets: ["latin"], variable: "--font-mono", display: "swap" });
 
 export const metadata: Metadata = {
   icons: {
@@ -23,10 +27,15 @@ export const metadata: Metadata = {
   },
 };
 
+export const viewport: Viewport = {
+  themeColor: "#090908",
+  colorScheme: "dark",
+};
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className="dark" suppressHydrationWarning>
-      <body className="min-h-screen bg-arc-bg-0 text-text-primary font-body antialiased">
+    <html lang="en" className={`dark ${sans.variable} ${mono.variable}`} suppressHydrationWarning>
+      <body className="min-h-screen bg-arc-bg-0 font-body text-text-primary antialiased">
         <Providers>{children}</Providers>
         <Toaster />
       </body>

@@ -26,7 +26,7 @@ export function SecurityCodeField({
 }) {
   return (
     <div className={className}>
-      <label htmlFor={id} className="mb-1 block text-xs text-arc-lavender">
+      <label htmlFor={id} className="mb-1.5 block text-xs font-medium text-text-secondary">
         Code from your email
       </label>
       <input

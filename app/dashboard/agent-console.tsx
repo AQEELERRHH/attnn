@@ -138,7 +138,7 @@ export function AgentConsole({
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2.5">
-              <h2 className="font-display text-xl font-bold tracking-tight">{config.agentName || "Your bidder agent"}</h2>
+              <h2 className="text-[22px] font-semibold tracking-[-0.03em]">{config.agentName || "Your bidder agent"}</h2>
               {config.isActive ? (
                 <StatusChip tone="success" dot>
                   Running · every 30 min

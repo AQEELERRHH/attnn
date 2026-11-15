@@ -126,11 +126,12 @@ export function GettingStarted({
   const pct = total ? Math.round((done / total) * 100) : 0;
 
   return (
-    <section aria-labelledby="gs-title" className="panel-raised mb-5 p-5">
+    <section aria-labelledby="gs-title" className="panel-raised relative mb-5 overflow-hidden p-5">
+      <span aria-hidden className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-arc-gold/70 via-arc-gold/20 to-transparent" />
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
           <div className="eyebrow text-arc-gold">Get started</div>
-          <h2 id="gs-title" className="mt-1 font-display text-lg font-bold">
+          <h2 id="gs-title" className="mt-1 text-lg font-semibold tracking-[-0.02em]">
             <Num>{done}</Num> of <Num>{total}</Num> done
           </h2>
           <div
@@ -163,11 +164,11 @@ export function GettingStarted({
                 <span
                   aria-hidden
                   className={cn(
-                    "mt-0.5 flex h-6 w-6 flex-none items-center justify-center rounded-full border text-[11px]",
+                    "mt-0.5 flex h-6 w-6 flex-none items-center justify-center rounded-md border text-[11px]",
                     s.state === "failed"
-                      ? "border-arc-coral/60 text-arc-coral"
+                      ? "border-arc-coral/60 bg-arc-coral/10 text-arc-coral"
                       : isNext
-                        ? "border-arc-gold text-arc-gold"
+                        ? "border-arc-gold/70 bg-arc-gold/10 text-arc-gold"
                         : "border-border-bright text-text-secondary",
                   )}
                 >

@@ -71,7 +71,7 @@ export function FundWalletCard({
   return (
     <Panel raised>
       <div className="eyebrow text-arc-gold">Open your creator market</div>
-      <h2 className="mt-2 font-display text-2xl font-bold">Add USDC to your wallet</h2>
+      <h2 className="mt-2 font-display text-2xl font-semibold">Add USDC to your wallet</h2>
       <p className="mt-2 max-w-[65ch] text-sm text-text-secondary">
         Add at least $1 USDC to go live. Your wallet pays the tiny network fees on Arc (in USDC) for registering your market and replying to
         bids. USDC is a digital dollar: 1 USDC is always worth $1.

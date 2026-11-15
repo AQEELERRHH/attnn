@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Copy, ExternalLink, Wallet } from "lucide-react";
+import { Copy, ExternalLink } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Money } from "@/components/market";
@@ -112,11 +112,12 @@ export function WalletDialog({
       <DialogTrigger asChild>
         <button
           type="button"
-          className="focus-ring inline-flex h-9 items-center gap-2 rounded-lg border border-border-bright bg-arc-bg-2 px-3 text-xs text-text-secondary hover:text-text-primary"
+          className="focus-ring inline-flex h-9 items-center gap-2 rounded-lg border border-border-bright bg-arc-bg-1 pl-1.5 pr-3 text-xs text-text-secondary transition-colors hover:border-text-primary/25 hover:text-text-primary"
         >
-          <Wallet aria-hidden className="h-3.5 w-3.5" />
+          <AddressOrb address={address} />
           <span className="num hidden sm:inline">{shortAddress(address)}</span>
-          <Money atomic={balanceUsdc} tone="gold" />
+          <span aria-hidden className="hidden h-3.5 w-px bg-border-bright sm:block" />
+          <Money atomic={balanceUsdc} tone="gold" className="font-medium" />
           <span className="sr-only">Open wallet</span>
         </button>
       </DialogTrigger>
@@ -126,9 +127,13 @@ export function WalletDialog({
           <DialogDescription>Your USDC wallet on Arc. It pays for your bids and the tiny USDC network fees, and creator earnings land here.</DialogDescription>
         </DialogHeader>
 
-        <div className="rounded-lg border border-border bg-arc-bg-0 p-4">
-          <div className="eyebrow">USDC balance</div>
-          <Money atomic={balanceUsdc} tone="gold" className="mt-1 block text-2xl font-medium" />
+        <div className="relative overflow-hidden rounded-lg border border-border bg-arc-bg-0 p-4">
+          <span aria-hidden className="absolute inset-x-4 top-0 h-px bg-gradient-to-r from-transparent via-arc-gold/50 to-transparent" />
+          <div className="flex items-center justify-between">
+            <div className="eyebrow">USDC balance</div>
+            <AddressOrb address={address} size={22} />
+          </div>
+          <Money atomic={balanceUsdc} tone="gold" className="mt-1.5 block text-[32px] font-medium leading-none tracking-[-0.03em]" />
           {balanceUsdc === null && <p className="mt-1 text-xs text-text-secondary">Couldn&apos;t read the balance from Arc. Try again shortly.</p>}
           <p className="num mt-3 break-all text-xs text-text-secondary">{address}</p>
           <div className="mt-3 flex flex-wrap gap-2">
@@ -155,16 +160,16 @@ export function WalletDialog({
         </div>
 
         <form onSubmit={send} className="flex flex-col gap-3">
-          <h3 className="font-display text-sm font-bold">Send USDC</h3>
+          <h3 className="text-sm font-semibold">Send USDC</h3>
           <div>
-            <label htmlFor="send-to" className="mb-1 block text-xs text-arc-lavender">
+            <label htmlFor="send-to" className="mb-1.5 block text-xs font-medium text-text-secondary">
               Recipient address
             </label>
             <input id="send-to" value={to} onChange={(e) => setTo(e.target.value)} placeholder="0x…" autoComplete="off" className={`${field} num`} />
             {to.trim() !== "" && !validTo && <p className="mt-1 text-xs text-arc-coral">Enter a full 0x address (42 characters).</p>}
           </div>
           <div>
-            <label htmlFor="send-amount" className="mb-1 block text-xs text-arc-lavender">
+            <label htmlFor="send-amount" className="mb-1.5 block text-xs font-medium text-text-secondary">
               Amount (USDC)
             </label>
             <input
@@ -193,7 +198,7 @@ export function WalletDialog({
           </div>
           {codeSentTo && (
             <div>
-              <label htmlFor="send-code" className="mb-1 block text-xs text-arc-lavender">
+              <label htmlFor="send-code" className="mb-1.5 block text-xs font-medium text-text-secondary">
                 Code from your email
               </label>
               <input
@@ -224,5 +229,19 @@ export function WalletDialog({
         </form>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** A small gradient orb derived from the wallet address, so a wallet is recognisable at a glance. */
+function AddressOrb({ address, size = 22 }: { address: string; size?: number }) {
+  const hex = address.replace(/^0x/, "").toLowerCase();
+  const a = parseInt(hex.slice(0, 6) || "0", 16) % 360;
+  const b = parseInt(hex.slice(-6) || "0", 16) % 360;
+  return (
+    <span
+      aria-hidden
+      className="inline-block flex-none rounded-full ring-1 ring-inset ring-white/15"
+      style={{ width: size, height: size, background: `conic-gradient(from ${a}deg, hsl(${a} 80% 60%), hsl(${b} 75% 45%), hsl(${(a + 120) % 360} 70% 55%), hsl(${a} 80% 60%))` }}
+    />
   );
 }

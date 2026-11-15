@@ -44,7 +44,15 @@ export function OrderBook({
   );
 
   const columns: MarketColumn<OrderBookBid>[] = [
-    { key: "rank", label: "#", render: (_b, i) => <Num className="text-text-secondary">{i + 1}</Num> },
+    {
+      key: "rank",
+      label: "#",
+      render: (_b, i) => (
+        <Num className={cn("inline-flex h-5 min-w-5 items-center justify-center rounded px-1 text-xs", i === 0 ? "bg-arc-gold/15 text-arc-gold" : "text-text-secondary")}>
+          {i + 1}
+        </Num>
+      ),
+    },
     {
       key: "agent",
       label: "Bidder agent",
@@ -64,7 +72,11 @@ export function OrderBook({
         const pct = top > BigInt(0) ? Number((BigInt(b.amountUsdc) * BigInt(90)) / top) : 0;
         return (
           <span className="relative block">
-            <span aria-hidden className="absolute inset-y-[-6px] right-0 rounded bg-arc-gold/[0.08]" style={{ width: `${pct}%` }} />
+            <span
+              aria-hidden
+              className="absolute inset-y-[-6px] right-[-6px] rounded-[4px] bg-gradient-to-l from-arc-gold/[0.18] to-arc-gold/[0.02]"
+              style={{ width: `calc(${pct}% + 6px)` }}
+            />
             <Money atomic={b.amountUsdc} tone="gold" className="relative font-medium" />
           </span>
         );
@@ -76,7 +88,7 @@ export function OrderBook({
       align: "right",
       render: (b) => {
         const pct = Number(((BigInt(b.amountUsdc) - floor) * BigInt(100)) / floor);
-        return <Num className="text-arc-lavender">{pct > 0 ? `+${pct}%` : `${pct}%`}</Num>;
+        return <Num className={pct > 0 ? "text-green" : "text-text-secondary"}>{pct > 0 ? `+${pct}%` : `${pct}%`}</Num>;
       },
     },
     { key: "placed", label: "Placed", render: (b) => <Num className="text-text-secondary">{timeAgo(b.createdAt, now)}</Num> },
@@ -85,14 +97,14 @@ export function OrderBook({
       label: "Refund",
       render: (b) => {
         const r = refundCountdown(b.createdAt, now);
-        return <Num className={cn(r.due ? "text-arc-coral" : "text-arc-coral/90")}>{r.label}</Num>;
+        return <Num className={cn(r.due ? "text-arc-coral" : "text-arc-coral/85")}>{r.label}</Num>;
       },
     },
     {
       key: "score",
       label: "Creator score",
       align: "right",
-      render: (b) => <Num>{b.score == null ? "—" : b.score.toFixed(1)}</Num>,
+      render: (b) => <ScoreMeter score={b.score} />,
     },
   ];
 
@@ -104,7 +116,12 @@ export function OrderBook({
       rowKey={(b) => b.id}
       minWidth={640}
       className={className}
-      empty="No open bids. Be the first: anything at or above the floor gets escrowed."
+      empty={
+        <span className="flex flex-col items-center gap-1">
+          <span className="font-medium text-text-primary">No open bids</span>
+          <span>Be the first: anything at or above the floor gets escrowed.</span>
+        </span>
+      }
       mobileCard={(b, i) => {
         const r = refundCountdown(b.createdAt, now);
         return (
@@ -127,5 +144,22 @@ export function OrderBook({
         );
       }}
     />
+  );
+}
+
+/**
+ * The creator agent's 0–10 score as a short meter. Colours follow its thresholds
+ * (README, "Creator agent"): 8+ surfaces or accepts, 5–7 may counter, under 5 declines.
+ */
+function ScoreMeter({ score }: { score: number | null | undefined }) {
+  if (score == null) return <Num className="text-text-dim">—</Num>;
+  const tone = score >= 8 ? "bg-green" : score >= 5 ? "bg-arc-gold" : "bg-arc-coral";
+  return (
+    <span className="inline-flex items-center justify-end gap-2">
+      <span aria-hidden className="h-1 w-10 overflow-hidden rounded-full bg-arc-bg-3">
+        <span className={cn("block h-full rounded-full", tone)} style={{ width: `${Math.max(0, Math.min(10, score)) * 10}%` }} />
+      </span>
+      <Num>{score.toFixed(1)}</Num>
+    </span>
   );
 }

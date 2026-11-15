@@ -59,11 +59,14 @@ export function TabButton({
       aria-selected={active}
       onClick={onClick}
       className={cn(
-        "focus-ring -mb-px h-10 whitespace-nowrap border-b-2 px-3 text-sm font-medium",
+        "focus-ring -mb-px inline-flex h-11 items-center gap-2 whitespace-nowrap border-b-2 px-1 text-sm font-medium transition-colors",
         active ? "border-arc-gold text-text-primary" : "border-transparent text-text-secondary hover:text-text-primary",
       )}
     >
-      {children} {count !== undefined && <Num className="text-xs text-text-secondary">{count}</Num>}
+      {children}
+      {count !== undefined && (
+        <Num className={cn("rounded px-1.5 py-px text-[11px]", active ? "bg-arc-gold/15 text-arc-gold" : "bg-arc-bg-3 text-text-secondary")}>{count}</Num>
+      )}
     </button>
   );
 }
@@ -238,6 +241,7 @@ export function BidderView({
         items={[
           {
             label: "Available",
+            tone: "gold",
             value: <Money atomic={summary.walletUsdc} tone="gold" />,
             sub: summary.walletUsdc === null ? "Couldn't read Arc just now" : "USDC in your wallet",
           },
@@ -272,8 +276,8 @@ export function BidderView({
       />
 
       <Panel padded={false}>
-        <div className="flex flex-wrap items-end justify-between gap-2 border-b border-border px-4 pt-3">
-          <div role="tablist" aria-label="Positions" className="flex gap-1">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-5">
+          <div role="tablist" aria-label="Positions" className="flex gap-6">
             <TabButton active={tab === "open"} onClick={() => setTab("open")} count={open.length}>
               Open positions
             </TabButton>
@@ -281,17 +285,14 @@ export function BidderView({
               History · 30d
             </TabButton>
           </div>
-          <div className="flex gap-2 pb-2">
-            <Link
-              href="/creators"
-              className="focus-ring inline-flex h-8 items-center rounded-lg border border-border-bright px-3 text-xs font-medium hover:bg-arc-bg-2"
-            >
+          <div className="flex gap-2 py-2">
+            <Link href="/creators" className="focus-ring btn-secondary h-8 px-3 text-xs">
               Browse markets
             </Link>
             <button
               type="button"
               onClick={onOpenAgent}
-              className="focus-ring inline-flex h-8 items-center rounded-lg border border-border-bright px-3 text-xs font-medium hover:bg-arc-bg-2"
+              className="focus-ring btn-secondary h-8 px-3 text-xs"
             >
               {bidderConfig ? "Agent console" : "Deploy an agent"}
             </button>

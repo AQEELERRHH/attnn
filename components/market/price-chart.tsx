@@ -27,8 +27,12 @@ export function PriceChart({
 
   if (series.length === 0) {
     return (
-      <div className="flex items-center justify-center rounded-lg border border-dashed border-border-bright text-sm text-text-secondary" style={{ height }}>
-        No cleared bids yet. The first reply sets this market&apos;s price.
+      <div
+        className="flex flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-border-bright text-center text-sm text-text-secondary"
+        style={{ height }}
+      >
+        <span className="font-medium text-text-primary">No price yet</span>
+        <span>The first paid reply sets this market&apos;s price.</span>
       </div>
     );
   }
@@ -53,7 +57,7 @@ export function PriceChart({
 
   return (
     <figure className="m-0">
-      <div className="relative pl-14">
+      <div className="relative pl-14 pr-16">
         <div aria-hidden className="num absolute left-0 top-0 w-12 text-right text-[11px] text-text-secondary" style={{ height }}>
           {ticks.map((t) => (
             <span key={t.v} className="absolute right-0 -translate-y-1/2" style={{ top: y(t.v) }}>
@@ -70,12 +74,26 @@ export function PriceChart({
           style={{ height }}
         >
           {ticks.map((t) => (
-            <line key={t.v} x1="0" x2="600" y1={y(t.v)} y2={y(t.v)} stroke="rgba(200,184,232,0.08)" vectorEffect="non-scaling-stroke" />
+            <line key={t.v} x1="0" x2="600" y1={y(t.v)} y2={y(t.v)} stroke="var(--c-hairline)" vectorEffect="non-scaling-stroke" />
           ))}
-          <line x1="0" x2="600" y1={y(floor)} y2={y(floor)} stroke="#8A7FAA" strokeDasharray="4 4" vectorEffect="non-scaling-stroke" />
-          <polygon points={area} fill="rgba(245,166,35,0.07)" />
-          <polyline points={line.join(" ")} fill="none" stroke="#F5A623" strokeWidth={2} strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+          <defs>
+            <linearGradient id="attnn-price-fill" x1="0" x2="0" y1="0" y2="1">
+              <stop offset="0%" stopColor="var(--c-signal)" stopOpacity="0.22" />
+              <stop offset="100%" stopColor="var(--c-signal)" stopOpacity="0" />
+            </linearGradient>
+          </defs>
+          <line x1="0" x2="600" y1={y(floor)} y2={y(floor)} stroke="var(--c-cream-2)" strokeOpacity={0.7} strokeDasharray="3 5" vectorEffect="non-scaling-stroke" />
+          <polygon points={area} fill="url(#attnn-price-fill)" />
+          <polyline points={line.join(" ")} fill="none" stroke="var(--c-signal)" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
         </svg>
+        {/* Last price tag on the right edge, like an exchange chart. */}
+        <span
+          aria-hidden
+          className="num absolute right-0 -translate-y-1/2 rounded bg-arc-gold px-1.5 py-0.5 text-[11px] font-medium text-[#130B00]"
+          style={{ top: y(last.v) }}
+        >
+          {formatUsd(BigInt(Math.round(last.v * 100)) * BigInt(10_000))}
+        </span>
         <div aria-hidden className="num mt-2 flex justify-between text-[11px] text-text-secondary">
           <span>{fmtDate(start)}</span>
           <span>{fmtDate(start + (now - start) / 2)}</span>
@@ -83,7 +101,8 @@ export function PriceChart({
         </div>
       </div>
       <figcaption className="mt-2 flex items-center gap-2 text-xs text-text-secondary">
-        <span aria-hidden className="inline-block w-5 border-t border-dashed border-text-secondary" /> Floor {formatUsd(BigInt(floorUsdc))}
+        <span aria-hidden className="inline-block w-5 border-t border-dashed border-text-secondary" /> Floor <span className="num">{formatUsd(BigInt(floorUsdc))}</span>
+        <span aria-hidden className="ml-3 inline-block h-0.5 w-5 rounded bg-arc-gold" /> Cleared price
       </figcaption>
     </figure>
   );

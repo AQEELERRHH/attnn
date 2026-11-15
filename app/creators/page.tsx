@@ -1,4 +1,5 @@
 import { SiteHeader } from "@/components/market/site-header";
+import { SiteFooter } from "@/components/market/site-footer";
 import { arc } from "@/lib/chain";
 import { loadMarkets } from "./load";
 import { MarketsView } from "./markets-view";
@@ -16,6 +17,7 @@ export default async function CreatorsPage() {
     <div className="min-h-screen bg-arc-bg-0">
       <SiteHeader networkLabel={arc.chain.name} />
       <MarketsView rows={rows} ticker={ticker} now={now} totals={totals} />
+      <SiteFooter />
     </div>
   );
 }

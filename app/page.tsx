@@ -152,7 +152,13 @@ export default async function HomePage() {
                             <span className="min-w-0">
                               <span className="block truncate font-medium">@{r.handle}</span>
                               <span className="block text-xs text-text-secondary">
-                                <Money atomic={r.hasHistory ? r.volume7dUsdc : null} className="text-text-secondary" /> vol
+                                {r.hasHistory ? (
+                                  <>
+                                    <Money atomic={r.volume7dUsdc} className="text-text-secondary" /> vol
+                                  </>
+                                ) : (
+                                  "New market"
+                                )}
                                 {r.openBids > 0 && (
                                   <>
                                     {" "}

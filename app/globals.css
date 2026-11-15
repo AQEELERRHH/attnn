@@ -90,6 +90,11 @@ body {
   .btn-primary {
     @apply inline-flex items-center justify-center gap-2 rounded-lg bg-arc-gold px-5 font-semibold text-[#130B00] transition-[filter,transform] duration-150 hover:brightness-110 active:translate-y-px disabled:bg-arc-bg-3 disabled:text-text-secondary disabled:shadow-none disabled:brightness-100;
   }
+  /* Repeated row actions (Bid, Reply · collect): tinted so a list isn't a wall of solid orange.
+     Fills on its own hover/focus, or when its row (an ancestor with .group) is hovered. */
+  .btn-soft {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg border border-arc-gold/35 bg-arc-gold/[0.07] font-semibold text-arc-gold transition-colors duration-150 hover:border-arc-gold hover:bg-arc-gold hover:text-[#130B00] focus-visible:border-arc-gold focus-visible:bg-arc-gold focus-visible:text-[#130B00] active:translate-y-px group-hover:border-arc-gold group-hover:bg-arc-gold group-hover:text-[#130B00];
+  }
   .btn-secondary {
     @apply inline-flex items-center justify-center gap-2 rounded-lg border border-border-bright bg-arc-bg-1 px-5 font-medium text-text-primary transition-colors duration-150 hover:border-text-primary/25 hover:bg-arc-bg-2;
   }

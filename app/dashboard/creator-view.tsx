@@ -235,6 +235,11 @@ function CreatorMarketDesk({
                 {profile.tags.slice(0, 4).map((t) => (
                   <Tag key={t}>{t}</Tag>
                 ))}
+                {profile.tags.length > 4 && (
+                  <span title={profile.tags.slice(4).join(", ")} className="num pl-0.5 text-xs text-text-secondary">
+                    +{profile.tags.length - 4}
+                  </span>
+                )}
                 <Link href={`/c/${profile.handle}`} className="focus-ring inline-flex items-center gap-1 rounded text-arc-lavender hover:underline">
                   View market <ExternalLink aria-hidden className="h-3 w-3" />
                 </Link>
@@ -679,7 +684,7 @@ function InboxRow({
   const who = bid.agentName ?? "Manual bid";
 
   return (
-    <li className="border-b border-border px-5 py-4 last:border-b-0">
+    <li className="group border-b border-border px-5 py-4 transition-colors last:border-b-0 hover:bg-arc-bg-2/40">
       <div className="flex flex-wrap items-start gap-x-4 gap-y-2">
         <Num className="w-6 pt-1 text-text-secondary">#{rank}</Num>
         <div className="min-w-0 flex-1">
@@ -736,7 +741,7 @@ function InboxRow({
         {!settling && mode === "idle" && (
           <div className="flex w-full flex-wrap gap-2 sm:w-auto">
             {!rebid && (
-              <Button size="sm" onClick={openReply} disabled={windowPassed || !!busy} title={windowPassed ? "The 3-day reply window has passed" : undefined}>
+              <Button size="sm" variant="soft" onClick={openReply} disabled={windowPassed || !!busy} title={windowPassed ? "The 3-day reply window has passed" : undefined}>
                 Reply · collect {formatMoney(bid.amountUsdc)}
               </Button>
             )}

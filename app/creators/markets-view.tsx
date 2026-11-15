@@ -38,10 +38,6 @@ export interface MarketRow {
 export type TickerFill = FillTick;
 export type MarketTotals = PlatformStatsData;
 
-// Row "Bid": tinted orange so a page of rows isn't a wall of solid buttons; fills on row hover or focus.
-const ROW_BID =
-  "inline-flex items-center justify-center rounded-lg border border-arc-gold/35 bg-arc-gold/[0.07] font-semibold text-arc-gold transition-colors duration-150 hover:border-arc-gold hover:bg-arc-gold hover:text-[#130B00] group-hover:border-arc-gold group-hover:bg-arc-gold group-hover:text-[#130B00] focus-visible:bg-arc-gold focus-visible:text-[#130B00] active:translate-y-px";
-
 const big = (s: string | null) => (s === null ? null : BigInt(s));
 const num = (s: string | null) => (s === null ? null : Number(s));
 
@@ -166,7 +162,7 @@ export function MarketsView({
       render: (r) => (
         <Link
           href={`/c/${r.handle}`}
-          className={cn("focus-ring h-8 min-w-[64px] px-3.5 text-[13px]", r.paused ? "btn-secondary" : ROW_BID)}
+          className={cn("focus-ring h-8 min-w-[64px] px-3.5 text-[13px]", r.paused ? "btn-secondary" : "btn-soft")}
         >
           {r.paused ? "View" : "Bid"}
         </Link>
@@ -289,7 +285,7 @@ export function MarketsView({
               </span>
               <Link
                 href={`/c/${r.handle}`}
-                className={cn("focus-ring h-10 px-3.5 text-sm", r.paused ? "btn-secondary" : ROW_BID)}
+                className={cn("focus-ring h-10 px-3.5 text-sm", r.paused ? "btn-secondary" : "btn-soft")}
               >
                 {r.paused ? "View" : "Bid"}
               </Link>

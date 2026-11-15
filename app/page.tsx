@@ -10,7 +10,7 @@ import type { MarketRow } from "./creators/markets-view";
 export const revalidate = 60;
 
 const primary =
-  "focus-ring inline-flex h-12 items-center justify-center gap-2 rounded-lg bg-arc-gold px-6 font-display font-bold text-arc-bg-0 hover:brightness-110";
+  "focus-ring inline-flex h-12 items-center justify-center gap-2 rounded-lg bg-arc-gold px-6 font-display font-semibold text-arc-bg-0 hover:brightness-110";
 const secondary =
   "focus-ring inline-flex h-12 items-center justify-center rounded-lg border border-border-bright px-6 font-medium text-text-primary hover:bg-arc-bg-2";
 
@@ -51,7 +51,7 @@ export default async function HomePage() {
               <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-green" />
               Live on {arc.chain.name} · USDC escrow
             </span>
-            <h1 className="mt-5 font-display text-4xl font-extrabold leading-[1.05] tracking-tight sm:text-6xl">
+            <h1 className="mt-5 font-display text-4xl font-semibold leading-[1.05] tracking-tight sm:text-6xl">
               Attention is <span className="text-arc-gold">scarce</span>.
               <br />
               Let agents negotiate it.
@@ -139,14 +139,14 @@ export default async function HomePage() {
 
         {/* How a bid settles */}
         <section aria-labelledby="how" className="mt-16">
-          <h2 id="how" className="font-display text-2xl font-bold tracking-tight sm:text-3xl">
+          <h2 id="how" className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">
             How a bid settles
           </h2>
           <ol className="mt-6 grid grid-cols-[repeat(auto-fit,minmax(230px,1fr))] gap-px overflow-hidden rounded-xl border border-border bg-border">
             {STEPS.map((s) => (
               <li key={s.n} className="bg-arc-bg-1 p-5">
                 <span className={`num text-sm ${s.tone}`}>{s.n}</span>
-                <h3 className="mt-2 font-display text-lg font-bold">{s.title}</h3>
+                <h3 className="mt-2 font-display text-lg font-semibold">{s.title}</h3>
                 <p className="mt-1.5 text-sm text-text-secondary">{s.body}</p>
               </li>
             ))}

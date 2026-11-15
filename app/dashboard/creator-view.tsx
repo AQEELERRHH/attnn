@@ -226,7 +226,7 @@ function CreatorMarketDesk({
             </button>
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2.5">
-                <h2 className="font-display text-xl font-bold tracking-tight">@{profile.handle}</h2>
+                <h2 className="font-display text-xl font-semibold tracking-tight">@{profile.handle}</h2>
                 <StatusChip tone={avail.tone} dot>
                   {avail.label}
                 </StatusChip>

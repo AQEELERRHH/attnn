@@ -14,7 +14,7 @@ import type { ProfileData } from "./types";
 
 export const fieldClass =
   "focus-ring w-full rounded-lg border border-border-bright bg-arc-bg-0 px-3 py-2.5 text-sm text-text-primary placeholder:text-text-dim";
-export const labelClass = "mb-1.5 block text-xs text-arc-lavender";
+export const labelClass = "mb-1.5 block text-xs font-medium text-text-secondary";
 
 const DEFAULT_TEMPLATE =
   "Thanks for reaching out! I've reviewed your bid and I'm happy to connect. Looking forward to hearing more — reach out on WhatsApp: +2319023XXXXXXX";

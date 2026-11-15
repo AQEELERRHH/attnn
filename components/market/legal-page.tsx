@@ -24,7 +24,7 @@ export function LegalPage({
       <SiteHeader networkLabel={networkLabel} />
       <main className="mx-auto max-w-3xl px-4 pb-20 pt-10 sm:px-6 sm:pt-14">
         <p className="eyebrow">Last updated {updated}</p>
-        <h1 className="mt-2 font-display text-3xl font-bold sm:text-4xl">{title}</h1>
+        <h1 className="mt-2 font-display text-3xl font-semibold sm:text-4xl">{title}</h1>
         <div className="mt-4 text-[15px] leading-relaxed text-text-secondary">{intro}</div>
         <div className="mt-10 flex flex-col gap-10">{children}</div>
         <nav aria-label="Legal" className="mt-14 flex flex-wrap gap-4 border-t border-border pt-6 text-sm text-text-secondary">
@@ -49,7 +49,7 @@ export function LegalPage({
 export function LegalSection({ id, title, children }: { id: string; title: string; children: React.ReactNode }) {
   return (
     <section id={id} aria-labelledby={`${id}-title`} className="scroll-mt-6">
-      <h2 id={`${id}-title`} className="font-display text-xl font-bold text-text-primary">
+      <h2 id={`${id}-title`} className="font-display text-xl font-semibold text-text-primary">
         {title}
       </h2>
       <div className="mt-3 flex flex-col gap-3 text-[15px] leading-relaxed text-text-secondary [&_li]:pl-1 [&_strong]:text-text-primary [&_ul]:flex [&_ul]:list-disc [&_ul]:flex-col [&_ul]:gap-2 [&_ul]:pl-5">

@@ -172,7 +172,7 @@ export function CreatorMarket(props: CreatorMarketProps) {
             <CreatorAvatar handle={handle} src={props.avatarUrl} size={56} />
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2.5">
-                <h1 className="font-display text-2xl font-bold tracking-tight">@{handle}</h1>
+                <h1 className="font-display text-2xl font-semibold tracking-tight">@{handle}</h1>
                 {paused ? (
                   <StatusChip tone="danger" dot>
                     {props.registeredOnChain ? "Not accepting bids" : "Not registered yet"}

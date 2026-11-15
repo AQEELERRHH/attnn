@@ -1,24 +1,33 @@
-@import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=Inter:wght@300;400;500&family=DM+Mono:wght@300;400;500&display=swap');
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* ─── Palette ─────────────────────────────────────────────────────────────────
+   Taken from the Attnn. mark: ink, the cream square and the orange dot.
+   Values are RGB channels so Tailwind opacity modifiers work (tailwind.config.ts).
+   Roles: signal = money / open bids / primary action · up = settled · down =
+   refund countdowns, warnings · info = links, notes, focus · deco = hairlines. */
 :root {
-  --arc-bg-0: #0F0D1A;
-  --arc-bg-1: #16132A;
-  --arc-bg-2: #1E1A35;
-  --arc-bg-3: #251F40;
-  --arc-gold: #F5A623;
-  --arc-coral: #E8635A;
-  --arc-purple: #8B5FBF;
-  --arc-lavender: #C8B8E8;
-  --text-primary: #EDE8F8;
-  --text-secondary: #8A7FAA;
-  --text-dim: #3A3460;
-  --green: #2ECC71;
-  --border: rgba(200, 184, 232, 0.08);
-  --border-bright: rgba(200, 184, 232, 0.15);
+  --ink-0: 9 9 8;        /* page */
+  --ink-1: 17 17 16;     /* panel */
+  --ink-2: 24 24 22;     /* raised / hover */
+  --ink-3: 33 33 30;     /* selected / input fill */
+  --cream: 242 238 230;  /* primary text */
+  --cream-2: 146 142 134;/* secondary text (AA on ink-0..2) */
+  --cream-3: 84 82 77;   /* placeholders, disabled */
+  --signal: 255 154 4;   /* the logo's dot */
+  --up: 61 214 140;
+  --down: 255 107 94;
+  --info: 150 178 255;
+  --deco: 64 62 58;
+
+  /* Plain values for the few places that need a literal (SVG strokes, meta). */
+  --c-signal: rgb(var(--signal));
+  --c-up: rgb(var(--up));
+  --c-down: rgb(var(--down));
+  --c-info: rgb(var(--info));
+  --c-cream-2: rgb(var(--cream-2));
+  --c-hairline: rgb(var(--cream) / 0.07);
 }
 
 * { box-sizing: border-box; }
@@ -26,33 +35,90 @@
 html { color-scheme: dark; }
 
 body {
-  background-color: var(--arc-bg-0);
-  color: var(--text-primary);
-  font-family: 'Inter', sans-serif;
+  background-color: rgb(var(--ink-0));
+  color: rgb(var(--cream));
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  font-feature-settings: "ss01", "cv11";
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
+::selection { background: rgb(var(--signal) / 0.28); color: rgb(var(--cream)); }
+
 @layer base {
-  h1, h2, h3, h4, h5, h6 { font-family: 'Syne', sans-serif; font-weight: 700; }
-  code, pre { font-family: 'DM Mono', monospace; }
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+    font-weight: 600;
+    letter-spacing: -0.022em;
+  }
+  code, pre, kbd { font-family: var(--font-mono), ui-monospace, monospace; }
+
+  /* Quiet scrollbars that match the ink surfaces. */
+  * { scrollbar-width: thin; scrollbar-color: rgb(var(--cream) / 0.14) transparent; }
+  *::-webkit-scrollbar { width: 10px; height: 10px; }
+  *::-webkit-scrollbar-thumb { background: rgb(var(--cream) / 0.12); border-radius: 999px; border: 3px solid transparent; background-clip: content-box; }
+  *::-webkit-scrollbar-thumb:hover { background-color: rgb(var(--cream) / 0.22); }
+  *::-webkit-scrollbar-track { background: transparent; }
+
+  input[type="search"]::-webkit-search-cancel-button { filter: invert(0.6); }
 }
 
 @layer components {
-  /* ─── Market design system (PR 2) ─────────────────────────────────────
+  /* ─── Market design system ────────────────────────────────────────────
      Every number on a market screen (money, %, counts, durations, hashes)
-     uses .num so digits line up in columns. Colors keep their meaning:
-     gold = money / open bids, green = settled / up, coral = refund countdowns,
-     warnings / down, lavender = links and tags, purple = decorative only
-     (it fails text contrast). text-dim is for placeholders and disabled only. */
-  .num { font-family: 'DM Mono', ui-monospace, monospace; font-variant-numeric: tabular-nums; letter-spacing: 0; }
-  .panel { @apply bg-arc-bg-1 border border-border rounded-xl; }
-  .panel-raised { @apply bg-arc-bg-2 border border-border-bright rounded-xl; }
-  .eyebrow { @apply text-[11px] font-medium uppercase tracking-[0.08em] text-text-secondary; }
-  .focus-ring { @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-arc-lavender focus-visible:ring-offset-2 focus-visible:ring-offset-arc-bg-0; }
+     uses .num so digits line up in columns. Colours keep their meaning:
+     gold (signal orange) = money / open bids, green = settled / up, coral =
+     refund countdowns, warnings / down, lavender (info blue) = links and
+     notes, purple = decorative only. text-dim is for placeholders and
+     disabled only. */
+  .num {
+    font-family: var(--font-mono), ui-monospace, monospace;
+    font-variant-numeric: tabular-nums slashed-zero;
+    font-feature-settings: "tnum", "zero";
+    letter-spacing: -0.01em;
+  }
+  .panel { @apply rounded-xl border border-border bg-arc-bg-1; }
+  .panel-raised { @apply rounded-xl border border-border-bright bg-arc-bg-1 shadow-raised; }
+  .eyebrow { @apply text-[11px] font-medium uppercase tracking-[0.09em] text-text-secondary; }
+  .focus-ring { @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-arc-lavender/80 focus-visible:ring-offset-2 focus-visible:ring-offset-arc-bg-0; }
 
-  .glass-panel { @apply bg-arc-bg-2/60 backdrop-blur-xl border border-border rounded-xl; }
-  .glass-panel-bright { @apply bg-arc-bg-2/80 backdrop-blur-xl border border-border-bright rounded-xl; }
-  .btn-primary { @apply px-6 py-3 bg-arc-gold text-arc-bg-0 font-display font-bold rounded-lg hover:brightness-110 transition-all duration-200 disabled:opacity-50; }
-  .btn-secondary { @apply px-6 py-3 border border-border-bright text-text-primary font-display font-bold rounded-lg hover:bg-arc-bg-2 transition-all duration-200; }
-  .input-field { @apply w-full px-4 py-3 bg-arc-bg-1 border border-border rounded-lg text-text-primary placeholder:text-text-dim focus:outline-none focus:border-arc-purple focus:ring-1 focus:ring-arc-purple/30 transition-all duration-200; }
+  .glass-panel { @apply rounded-xl border border-border bg-arc-bg-1; }
+  .glass-panel-bright { @apply rounded-xl border border-border-bright bg-arc-bg-2 shadow-raised; }
+
+  /* Buttons outside <Button> (links styled as buttons). Same look as components/ui/button.tsx. */
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg bg-arc-gold px-5 font-semibold text-[#130B00] transition-[filter,transform] duration-150 hover:brightness-110 active:translate-y-px disabled:opacity-50;
+  }
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg border border-border-bright bg-arc-bg-1 px-5 font-medium text-text-primary transition-colors duration-150 hover:border-text-primary/25 hover:bg-arc-bg-2;
+  }
+  .input-field {
+    @apply w-full rounded-lg border border-border-bright bg-arc-bg-0 px-3.5 py-2.5 text-text-primary placeholder:text-text-dim transition-colors duration-150 hover:border-text-primary/20 focus:border-arc-lavender/60 focus:outline-none focus:ring-2 focus:ring-arc-lavender/20;
+  }
+
+  /* Live indicator: a dot with a soft expanding ring. Colour with text-*. */
+  .live-dot { @apply relative inline-flex h-1.5 w-1.5 flex-none rounded-full bg-current; }
+  .live-dot::after {
+    content: "";
+    @apply absolute inset-0 animate-ping rounded-full bg-current opacity-60;
+  }
+
+  /* Hairline grid for hero backdrops, faded out at the edges. */
+  .grid-backdrop {
+    background-image:
+      linear-gradient(to right, rgb(var(--cream) / 0.045) 1px, transparent 1px),
+      linear-gradient(to bottom, rgb(var(--cream) / 0.045) 1px, transparent 1px);
+    background-size: 56px 56px;
+    mask-image: radial-gradient(ellipse 70% 60% at 50% 30%, #000 30%, transparent 75%);
+  }
+
+  /* Scrolling tape (ticker). Content is rendered twice; the track moves by half. */
+  .marquee-track { @apply flex w-max animate-marquee; }
+  .marquee:hover .marquee-track { animation-play-state: paused; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live-dot::after, .marquee-track { animation: none !important; }
+  * { scroll-behavior: auto !important; }
 }

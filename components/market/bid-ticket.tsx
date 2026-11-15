@@ -97,21 +97,30 @@ export function BidTicket({
   }
 
   const fieldBase =
-    "w-full rounded-lg border border-border-bright bg-arc-bg-0 text-text-primary placeholder:text-text-dim focus-ring";
+    "w-full rounded-lg border border-border-bright bg-arc-bg-0 text-text-primary placeholder:text-text-dim transition-colors hover:border-text-primary/20 focus:border-arc-lavender/60 focus:outline-none focus:ring-2 focus:ring-arc-lavender/20";
 
   return (
-    <form onSubmit={submit} className={cn("panel-raised flex flex-col gap-3.5 p-5", className)} aria-describedby="ticket-terms">
-      <div className="flex items-baseline justify-between">
-        <h2 className="font-display text-lg font-bold">Place bid</h2>
-        <span className="text-xs text-text-secondary">USDC · Arc</span>
+    <form onSubmit={submit} className={cn("panel-raised relative flex flex-col gap-4 p-5", className)} aria-describedby="ticket-terms">
+      <span aria-hidden className="absolute inset-x-5 top-0 h-px bg-gradient-to-r from-transparent via-arc-gold/60 to-transparent" />
+      <div className="flex items-center justify-between">
+        <h2 className="text-[15px] font-semibold tracking-[-0.015em]">Place bid</h2>
+        <span className="num inline-flex items-center gap-1.5 rounded-full border border-border px-2 py-0.5 text-[11px] text-text-secondary">
+          <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-[#2775CA]" />
+          USDC · Arc
+        </span>
       </div>
 
       <div>
-        <label htmlFor="bid-amount" className="mb-1.5 block text-xs text-arc-lavender">
+        <label htmlFor="bid-amount" className="mb-1.5 block text-xs font-medium text-text-secondary">
           Bid amount
         </label>
-        <div className="flex h-[52px] items-center gap-2 rounded-lg border border-border-bright bg-arc-bg-0 px-3.5 focus-within:ring-2 focus-within:ring-arc-lavender">
-          <span className="num text-xl text-text-secondary">$</span>
+        <div
+          className={cn(
+            "flex h-14 items-center gap-2 rounded-lg border bg-arc-bg-0 px-4 transition-colors focus-within:border-arc-lavender/60 focus-within:ring-2 focus-within:ring-arc-lavender/20",
+            belowFloor || aboveMax ? "border-arc-coral/50" : "border-border-bright hover:border-text-primary/20",
+          )}
+        >
+          <span className="num text-2xl text-text-dim">$</span>
           <input
             id="bid-amount"
             inputMode="decimal"
@@ -126,9 +135,9 @@ export function BidTicket({
             }}
             aria-invalid={belowFloor || aboveMax || amount === null}
             aria-describedby="bid-amount-hint"
-            className="num min-w-0 flex-1 bg-transparent text-[22px] text-text-primary outline-none"
+            className="num min-w-0 flex-1 bg-transparent text-[26px] font-medium tracking-[-0.02em] text-text-primary outline-none"
           />
-          <span className="text-[13px] text-text-secondary">USDC</span>
+          <span className="num text-xs text-text-secondary">USDC</span>
         </div>
         <div className={cn("mt-2 grid gap-1.5", quick.length === 3 ? "grid-cols-3" : quick.length === 2 ? "grid-cols-2" : "grid-cols-1")}>
           {quick.map((q) => {
@@ -140,11 +149,11 @@ export function BidTicket({
                 onClick={() => setAmountInput(atomicToDollarInput(q.value))}
                 aria-pressed={on}
                 className={cn(
-                  "focus-ring min-h-11 rounded-lg border px-2 py-1.5 text-left",
-                  on ? "border-arc-gold bg-arc-bg-3" : "border-border-bright bg-arc-bg-0 hover:bg-arc-bg-1",
+                  "focus-ring min-h-11 rounded-lg border px-2.5 py-1.5 text-left transition-colors",
+                  on ? "border-arc-gold/70 bg-arc-gold/[0.07]" : "border-border-bright bg-arc-bg-0 hover:border-text-primary/20 hover:bg-arc-bg-2",
                 )}
               >
-                <span className="block text-[11px] text-text-secondary">{q.label}</span>
+                <span className={cn("block text-[11px]", on ? "text-arc-gold" : "text-text-secondary")}>{q.label}</span>
                 <span className="num block text-[13px]">{formatUsd(q.value)}</span>
               </button>
             );
@@ -173,7 +182,7 @@ export function BidTicket({
       </div>
 
       <div>
-        <label htmlFor="bid-message" className="mb-1.5 block text-xs text-arc-lavender">
+        <label htmlFor="bid-message" className="mb-1.5 block text-xs font-medium text-text-secondary">
           Message
         </label>
         <textarea
@@ -183,7 +192,7 @@ export function BidTicket({
           value={message}
           onChange={(e) => setMessage(e.target.value)}
           placeholder="What do you want their attention for?"
-          className={cn(fieldBase, "resize-y px-3 py-2.5 text-[13px]")}
+          className={cn(fieldBase, "resize-y px-3 py-2.5 text-[13px] leading-relaxed")}
         />
       </div>
 
@@ -198,18 +207,19 @@ export function BidTicket({
       )}
 
       {biddingAs && (
-        <p className="text-xs text-text-secondary">
-          Bidding as <span className="text-text-primary">{biddingAs}</span>
+        <p className="flex items-center gap-2 text-xs text-text-secondary">
+          <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-green" />
+          Bidding as <span className="font-medium text-text-primary">{biddingAs}</span>
         </p>
       )}
 
-      <dl id="ticket-terms" className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-2 border-t border-border pt-3 text-[13px]">
+      <dl id="ticket-terms" className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-2 rounded-lg border border-border bg-arc-bg-0 px-3.5 py-3 text-[13px]">
         <dt className="text-text-secondary">You escrow</dt>
-        <dd className="num text-right">{valid && amount !== null ? formatUsd(amount) : "—"}</dd>
+        <dd className="num text-right font-medium text-arc-gold">{valid && amount !== null ? formatUsd(amount) : "—"}</dd>
         <dt className="text-text-secondary">Queue position</dt>
         <dd className="num text-right">{queue ? `#${queue} of ${open.length + 1}` : "—"}</dd>
         <dt className="text-text-secondary">No reply in</dt>
-        <dd className="num text-right">3 days → full refund</dd>
+        <dd className="num text-right text-arc-coral/90">3 days → full refund</dd>
       </dl>
       <FieldHint className="-mt-1.5" more={`${glossary.escrow} ${glossary.refund(3)}`}>
         Locked, not paid: the creator only gets it by replying.
@@ -218,7 +228,7 @@ export function BidTicket({
       <button
         type="submit"
         disabled={!valid || submitting || !!disabledReason || (!!codeSentTo && !isSecurityCode(code))}
-        className="focus-ring h-12 rounded-lg bg-arc-gold font-display text-[15px] font-bold text-arc-bg-0 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+        className="focus-ring btn-primary h-12 text-[15px] shadow-[inset_0_1px_0_0_rgb(255_255_255/0.25)] disabled:cursor-not-allowed disabled:opacity-45"
       >
         {submitting
           ? "Submitting…"

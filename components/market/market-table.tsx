@@ -67,7 +67,7 @@ export function MarketTable<Row>({
   const toggle = (key: string) =>
     setSort((s) => (s?.key === key ? { key, dir: s.dir === "desc" ? "asc" : "desc" } : { key, dir: "desc" }));
 
-  const emptyState = <div className="px-5 py-10 text-center text-sm text-text-secondary">{empty ?? "Nothing here yet."}</div>;
+  const emptyState = <div className="px-5 py-12 text-center text-sm text-text-secondary">{empty ?? "Nothing here yet."}</div>;
 
   const table = (
     <div className={cn("relative overflow-x-auto", mobileCard ? "hidden sm:block" : className)}>
@@ -84,7 +84,7 @@ export function MarketTable<Row>({
                   scope="col"
                   aria-sort={ariaSort}
                   className={cn(
-                    "eyebrow h-10 whitespace-nowrap border-b border-border px-3.5 first:pl-5 last:pr-5",
+                    "eyebrow h-9 whitespace-nowrap border-b border-border bg-arc-bg-1 px-3.5 font-medium first:pl-5 last:pr-5",
                     c.align === "right" ? "text-right" : "text-left",
                   )}
                 >
@@ -95,7 +95,7 @@ export function MarketTable<Row>({
                       type="button"
                       onClick={() => toggle(c.key)}
                       className={cn(
-                        "focus-ring inline-flex items-center gap-1 rounded uppercase tracking-[0.08em]",
+                        "focus-ring inline-flex items-center gap-1 rounded uppercase tracking-[0.09em] transition-colors",
                         active ? "text-text-primary" : "text-text-secondary hover:text-text-primary",
                       )}
                     >
@@ -117,7 +117,7 @@ export function MarketTable<Row>({
                 <td
                   key={c.key}
                   className={cn(
-                    "whitespace-nowrap border-b border-border px-3.5 py-3 align-middle text-sm group-last:border-b-0 group-hover:bg-arc-bg-2 first:pl-5 last:pr-5",
+                    "whitespace-nowrap border-b border-border px-3.5 py-3 align-middle text-sm transition-colors group-last:border-b-0 group-hover:bg-arc-bg-2/70 first:pl-5 last:pr-5",
                     c.align === "right" && "text-right",
                     c.className,
                   )}
@@ -139,7 +139,7 @@ export function MarketTable<Row>({
     <div className={className}>
       <ul aria-label={caption} className="sm:hidden">
         {sorted.map((row, i) => (
-          <li key={rowKey(row)} className="border-b border-border px-4 py-3 last:border-b-0">
+          <li key={rowKey(row)} className="border-b border-border px-4 py-3.5 last:border-b-0">
             {mobileCard(row, i)}
           </li>
         ))}

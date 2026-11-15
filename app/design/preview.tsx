@@ -112,14 +112,14 @@ export function DesignPreview() {
     <main className="mx-auto max-w-[1320px] space-y-10 px-6 py-10">
       <header>
         <p className="eyebrow">Internal · not linked from the site</p>
-        <h1 className="mt-1 font-display text-3xl font-extrabold tracking-tight">Market design system</h1>
+        <h1 className="mt-1 font-display text-3xl font-semibold tracking-tight">Market design system</h1>
         <p className="mt-2 max-w-[65ch] text-text-secondary">
           Shared pieces for the markets table, creator market page and portfolio. All numbers on this page are sample data.
         </p>
       </header>
 
       <section className="space-y-3">
-        <h2 className="font-display text-lg font-bold">Colour roles</h2>
+        <h2 className="font-display text-lg font-semibold">Colour roles</h2>
         <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3 text-sm">
           {[
             ["bg-arc-gold", "Gold", "Money, open bids, primary action"],
@@ -138,7 +138,7 @@ export function DesignPreview() {
       </section>
 
       <section className="space-y-3">
-        <h2 className="font-display text-lg font-bold">Stat strip</h2>
+        <h2 className="font-display text-lg font-semibold">Stat strip</h2>
         <StatStrip
           items={[
             { label: "In escrow now", value: <Money atomic="1284000000" tone="gold" />, sub: "Read live from AttnnEscrow" },
@@ -150,7 +150,7 @@ export function DesignPreview() {
       </section>
 
       <section className="space-y-3">
-        <h2 className="font-display text-lg font-bold">Market header numbers</h2>
+        <h2 className="font-display text-lg font-semibold">Market header numbers</h2>
         <Panel>
           <StatInline
             items={[
@@ -166,7 +166,7 @@ export function DesignPreview() {
       </section>
 
       <section className="space-y-3">
-        <h2 className="font-display text-lg font-bold">Bid status chips</h2>
+        <h2 className="font-display text-lg font-semibold">Bid status chips</h2>
         <div className="panel flex flex-wrap gap-3 p-5">
           {statuses.map((s, i) => {
             const d = bidDisplay(s);
@@ -185,7 +185,7 @@ export function DesignPreview() {
       </section>
 
       <section className="space-y-3">
-        <h2 className="font-display text-lg font-bold">Markets table</h2>
+        <h2 className="font-display text-lg font-semibold">Markets table</h2>
         <Panel padded={false}>
           <MarketTable columns={columns} rows={sampleMarkets} rowKey={(m) => m.handle} defaultSort={{ key: "vol", dir: "desc" }} caption="Creator markets" />
         </Panel>
@@ -193,13 +193,13 @@ export function DesignPreview() {
 
       <div className="flex flex-wrap items-start gap-5">
         <section className="min-w-0 flex-[999_1_600px] space-y-3">
-          <h2 className="font-display text-lg font-bold">Order book</h2>
+          <h2 className="font-display text-lg font-semibold">Order book</h2>
           <Panel padded={false}>
             <OrderBook bids={sampleBook} floorUsdc="20000000" />
           </Panel>
         </section>
         <section className="min-w-0 max-w-[420px] flex-[1_1_340px] space-y-3">
-          <h2 className="font-display text-lg font-bold">Bid ticket</h2>
+          <h2 className="font-display text-lg font-semibold">Bid ticket</h2>
           <BidTicket
             floorUsdc="20000000"
             openBidAmounts={sampleBook.map((b) => b.amountUsdc)}
@@ -211,7 +211,7 @@ export function DesignPreview() {
       </div>
 
       <section className="space-y-3">
-        <h2 className="font-display text-lg font-bold">Agent wallet</h2>
+        <h2 className="font-display text-lg font-semibold">Agent wallet</h2>
         <AgentWalletCard
           policy={{
             escrowAddress: null,
@@ -226,7 +226,7 @@ export function DesignPreview() {
         readPrice: "1000",
           }}
         />
-        <h2 className="font-display text-lg font-bold">Agent spending policy</h2>
+        <h2 className="font-display text-lg font-semibold">Agent spending policy</h2>
         <AgentPolicy
           config={{
             id: "sample",
@@ -256,7 +256,7 @@ export function DesignPreview() {
       </section>
 
       <section className="space-y-3">
-        <h2 className="font-display text-lg font-bold">Buttons</h2>
+        <h2 className="font-display text-lg font-semibold">Buttons</h2>
         <div className="flex flex-wrap gap-3">
           <Button>Primary</Button>
           <Button variant="outline">Outline</Button>

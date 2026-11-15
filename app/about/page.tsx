@@ -51,7 +51,7 @@ export default async function AboutPage() {
 
         {/* Header */}
         <div className="mb-16 text-center">
-          <h1 className="text-4xl md:text-5xl font-display font-bold mb-4">
+          <h1 className="text-4xl md:text-5xl font-display font-semibold mb-4">
             What is <span className="gold-gradient">Attnn.</span>?
           </h1>
           <p className="text-text-secondary text-lg">
@@ -61,7 +61,7 @@ export default async function AboutPage() {
 
         {/* The Problem */}
         <section className="mb-12">
-          <h2 className="text-2xl font-display font-bold mb-4 text-arc-gold">The Problem</h2>
+          <h2 className="text-2xl font-display font-semibold mb-4 text-arc-gold">The Problem</h2>
           <Card className="p-6">
             <p className="text-text-secondary leading-relaxed mb-4">
               Every day, thousands of professionals; developers, designers, writers, consultants get flooded with messages from people wanting their time and attention. Most of these messages are low quality, irrelevant, or outright spam.
@@ -82,7 +82,7 @@ export default async function AboutPage() {
 
         {/* The Idea */}
         <section className="mb-12">
-          <h2 className="text-2xl font-display font-bold mb-4 text-arc-gold">The Idea</h2>
+          <h2 className="text-2xl font-display font-semibold mb-4 text-arc-gold">The Idea</h2>
           <Card className="p-6">
             <p className="text-text-secondary leading-relaxed mb-4">
               What if reaching someone cost real money and they only got paid if they actually replied?
@@ -103,18 +103,18 @@ export default async function AboutPage() {
 
         {/* The Solution */}
         <section className="mb-12">
-          <h2 className="text-2xl font-display font-bold mb-4 text-arc-gold">The Solution</h2>
+          <h2 className="text-2xl font-display font-semibold mb-4 text-arc-gold">The Solution</h2>
           <Card className="p-6">
             <p className="text-text-secondary leading-relaxed mb-4">
               Attnn. is a two-sided marketplace with two types of users:
             </p>
             <div className="grid md:grid-cols-2 gap-4 mb-6">
               <div className="p-4 rounded-lg border border-arc-gold/30 bg-arc-bg-2/30">
-                <h3 className="font-display font-bold mb-2 text-arc-gold">Creators & Professionals</h3>
+                <h3 className="font-display font-semibold mb-2 text-arc-gold">Creators & Professionals</h3>
                 <p className="text-sm text-text-secondary">Anyone whose time has value; developers, designers, writers, founders, experts. You register your profile, set your minimum bid price, and receive an AI-ranked inbox of bids. You reply to the ones worth your time and earn USDC instantly.</p>
               </div>
               <div className="p-4 rounded-lg border border-arc-purple/30 bg-arc-bg-2/30">
-                <h3 className="font-display font-bold mb-2 text-arc-lavender">Companies & Bidders</h3>
+                <h3 className="font-display font-semibold mb-2 text-arc-lavender">Companies & Bidders</h3>
                 <p className="text-sm text-text-secondary">Anyone who needs to reach professionals: recruiters, founders, investors, marketers. You deploy an AI agent with a goal and budget. The agent finds matching creators automatically, places bids, and works around the clock without you lifting a finger.</p>
               </div>
             </div>
@@ -126,42 +126,42 @@ export default async function AboutPage() {
 
         {/* The Technology */}
         <section className="mb-12">
-          <h2 className="text-2xl font-display font-bold mb-4 text-arc-gold">The Technology</h2>
+          <h2 className="text-2xl font-display font-semibold mb-4 text-arc-gold">The Technology</h2>
           <Card className="p-6">
             <p className="text-text-secondary leading-relaxed mb-6">
               You don&apos;t need to understand the technology to use Attnn. But if you&apos;re curious, here is what powers it, explained simply. Attnn. is built on Arc Network™, a blockchain infrastructure developed by Circle Internet Group, Inc.
             </p>
             <div className="space-y-4">
               <div className="flex gap-4">
-                <div className="w-8 h-8 rounded-full bg-arc-gold/20 flex items-center justify-center shrink-0 text-arc-gold font-bold text-sm">1</div>
+                <div className="w-8 h-8 rounded-full bg-arc-gold/20 flex items-center justify-center shrink-0 text-arc-gold font-semibold text-sm">1</div>
                 <div>
                   <h4 className="font-medium mb-1">USDC: Digital Dollars</h4>
                   <p className="text-sm text-text-secondary">All payments on Attnn. use USDC a digital version of the US dollar that is always worth exactly $1. No price swings, no volatility. When you earn $5, you have $5.</p>
                 </div>
               </div>
               <div className="flex gap-4">
-                <div className="w-8 h-8 rounded-full bg-arc-gold/20 flex items-center justify-center shrink-0 text-arc-gold font-bold text-sm">2</div>
+                <div className="w-8 h-8 rounded-full bg-arc-gold/20 flex items-center justify-center shrink-0 text-arc-gold font-semibold text-sm">2</div>
                 <div>
                   <h4 className="font-medium mb-1">Arc: The Settlement Layer</h4>
                   <p className="text-sm text-text-secondary">Arc Network is a blockchain built by Circle that settles transactions in under one second. When a bid is accepted, USDC moves from the bidder&apos;s wallet to the creator&apos;s wallet almost instantly no bank transfers, no waiting days.</p>
                 </div>
               </div>
               <div className="flex gap-4">
-                <div className="w-8 h-8 rounded-full bg-arc-gold/20 flex items-center justify-center shrink-0 text-arc-gold font-bold text-sm">3</div>
+                <div className="w-8 h-8 rounded-full bg-arc-gold/20 flex items-center justify-center shrink-0 text-arc-gold font-semibold text-sm">3</div>
                 <div>
                   <h4 className="font-medium mb-1">Circle Wallets: No Crypto Setup Needed</h4>
                   <p className="text-sm text-text-secondary">When you sign up, Attnn. creates a secure digital wallet for you automatically in the background. You never need to install MetaMask, write down seed phrases, or touch any crypto interface. It just works.</p>
                 </div>
               </div>
               <div className="flex gap-4">
-                <div className="w-8 h-8 rounded-full bg-arc-gold/20 flex items-center justify-center shrink-0 text-arc-gold font-bold text-sm">4</div>
+                <div className="w-8 h-8 rounded-full bg-arc-gold/20 flex items-center justify-center shrink-0 text-arc-gold font-semibold text-sm">4</div>
                 <div>
                   <h4 className="font-medium mb-1">AI Agents: Your Autonomous Representatives</h4>
                   <p className="text-sm text-text-secondary">Instead of manually searching and messaging creators one by one, companies deploy an AI agent with a goal and budget. The agent works 24/7 discovering, scoring, and bidding on matching creators automatically. No human clicks required per transaction.</p>
                 </div>
               </div>
               <div className="flex gap-4">
-                <div className="w-8 h-8 rounded-full bg-arc-gold/20 flex items-center justify-center shrink-0 text-arc-gold font-bold text-sm">5</div>
+                <div className="w-8 h-8 rounded-full bg-arc-gold/20 flex items-center justify-center shrink-0 text-arc-gold font-semibold text-sm">5</div>
                 <div>
                   <h4 className="font-medium mb-1">Smart Contracts: Trustless Escrow</h4>
                   <p className="text-sm text-text-secondary">The bid money is held by a smart contract a piece of code that runs on Arc. Its rules can&apos;t be changed: the money can only go to the creator when they reply, or back to the sender. No exceptions, no loopholes.</p>
@@ -173,7 +173,7 @@ export default async function AboutPage() {
 
         {/* Agent safety */}
         <section className="mb-12" id="agent-safety">
-          <h2 className="text-2xl font-display font-bold mb-4 text-arc-gold">How our agents are kept safe</h2>
+          <h2 className="text-2xl font-display font-semibold mb-4 text-arc-gold">How our agents are kept safe</h2>
           <Card className="p-6">
             <p className="text-text-secondary leading-relaxed mb-6">
               An AI agent spending real money needs hard limits. Attnn. agents work inside two layers of rules: limits Attnn. checks before any transaction is sent, and rules written into the escrow contract on Arc that nobody can override, including us.
@@ -208,22 +208,22 @@ export default async function AboutPage() {
 
         {/* Real World Examples */}
         <section className="mb-12">
-          <h2 className="text-2xl font-display font-bold mb-4 text-arc-gold">Real World Examples</h2>
+          <h2 className="text-2xl font-display font-semibold mb-4 text-arc-gold">Real World Examples</h2>
           <div className="space-y-4">
             <Card className="p-6 border-l-4 border-l-arc-gold">
-              <h3 className="font-display font-bold mb-2">The Startup Hiring a Developer</h3>
+              <h3 className="font-display font-semibold mb-2">The Startup Hiring a Developer</h3>
               <p className="text-sm text-text-secondary leading-relaxed">
                 A Lagos-based fintech startup needs a smart contract developer urgently. They deploy a bidder agent on Attnn. with the goal &quot;find experienced Solidity developers&quot; and a $50/day budget. The agent searches the registry, finds 3 matching developers, scores them, and places $15 bids on each all within 10 minutes. One developer replies within an hour. The startup has a conversation. The developer earns $15 just for replying.
               </p>
             </Card>
             <Card className="p-6 border-l-4 border-l-arc-purple">
-              <h3 className="font-display font-bold mb-2">The Content Creator Getting Paid for Brand Deals</h3>
+              <h3 className="font-display font-semibold mb-2">The Content Creator Getting Paid for Brand Deals</h3>
               <p className="text-sm text-text-secondary leading-relaxed">
                 A Web3 content creator with 10,000 followers sets up a creator profile on Attnn. with a $20 minimum bid. Instead of getting 100 free DMs from brands asking for free promotion, they now receive bids from brands willing to pay to start a conversation. They reply to the ones that match their content, earn USDC, and ignore the rest which get auto-refunded.
               </p>
             </Card>
             <Card className="p-6 border-l-4 border-l-arc-coral">
-              <h3 className="font-display font-bold mb-2">The Investor Finding Deal Flow</h3>
+              <h3 className="font-display font-semibold mb-2">The Investor Finding Deal Flow</h3>
               <p className="text-sm text-text-secondary leading-relaxed">
                 An angel investor wants to meet early-stage founders building in Web3. They set up a bidder agent with the goal &quot;find founders building on Arc or Ethereum&quot; and a $100/day budget. The agent runs every 30 minutes, finds matching founders registered on Attnn., and places bids automatically. Serious founders reply. The investor gets warm introductions to 5 founders per week without sending a single cold message.
               </p>
@@ -233,7 +233,7 @@ export default async function AboutPage() {
 
         {/* FAQ */}
         <section className="mb-12">
-          <h2 className="text-2xl font-display font-bold mb-4 text-arc-gold">Frequently Asked Questions</h2>
+          <h2 className="text-2xl font-display font-semibold mb-4 text-arc-gold">Frequently Asked Questions</h2>
           <div className="space-y-4">
             {[
               {
@@ -294,7 +294,7 @@ export default async function AboutPage() {
           Arc is a trademark of Circle Internet Group, Inc. and/or its affiliates. Attnn. is built on Arc Network and is not affiliated with or endorsed by Circle.
         </div>
         <div className="text-center">
-          <h2 className="text-2xl font-display font-bold mb-4">Ready to try it?</h2>
+          <h2 className="text-2xl font-display font-semibold mb-4">Ready to try it?</h2>
           <p className="text-text-secondary mb-6">Sign in with Google or email. Your wallet is ready in seconds.</p>
           <Link href="/register">
             <Button size="lg">Get Started <ArrowRight className="ml-2 w-4 h-4" /></Button>

@@ -160,7 +160,7 @@ export function MarketsView({
             "focus-ring inline-flex h-9 items-center rounded-lg px-4 text-sm",
             r.paused
               ? "border border-border-bright font-medium text-text-primary hover:bg-arc-bg-3"
-              : "bg-arc-gold font-display font-bold text-arc-bg-0 hover:brightness-110",
+              : "bg-arc-gold font-display font-semibold text-arc-bg-0 hover:brightness-110",
           )}
         >
           {r.paused ? "View" : "Bid"}
@@ -191,7 +191,7 @@ export function MarketsView({
     <main className="mx-auto max-w-[1320px] px-4 pb-16 pt-7 sm:px-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="font-display text-3xl font-extrabold tracking-tight">Attention markets</h1>
+          <h1 className="font-display text-3xl font-semibold tracking-tight">Attention markets</h1>
           <p className="mt-1 max-w-[60ch] text-text-secondary">
             Every creator is a market. Bids are escrowed USDC on Arc: paid out on reply, refunded after 3 days without one.
           </p>
@@ -202,7 +202,7 @@ export function MarketsView({
           </Link>
           <Link
             href="/dashboard"
-            className="focus-ring inline-flex h-11 w-full items-center justify-center rounded-lg bg-arc-gold px-4 font-display font-bold text-arc-bg-0 hover:brightness-110 sm:w-auto"
+            className="focus-ring inline-flex h-11 w-full items-center justify-center rounded-lg bg-arc-gold px-4 font-display font-semibold text-arc-bg-0 hover:brightness-110 sm:w-auto"
           >
             Deploy a bidder agent
           </Link>
@@ -281,7 +281,7 @@ export function MarketsView({
                 href={`/c/${r.handle}`}
                 className={cn(
                   "focus-ring inline-flex h-11 items-center rounded-lg px-3.5 text-sm",
-                  r.paused ? "border border-border-bright font-medium" : "bg-arc-gold font-display font-bold text-arc-bg-0",
+                  r.paused ? "border border-border-bright font-medium" : "bg-arc-gold font-display font-semibold text-arc-bg-0",
                 )}
               >
                 {r.paused ? "View" : "Bid"}

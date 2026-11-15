@@ -155,16 +155,16 @@ export function WalletDialog({
         </div>
 
         <form onSubmit={send} className="flex flex-col gap-3">
-          <h3 className="font-display text-sm font-bold">Send USDC</h3>
+          <h3 className="font-display text-sm font-semibold">Send USDC</h3>
           <div>
-            <label htmlFor="send-to" className="mb-1 block text-xs text-arc-lavender">
+            <label htmlFor="send-to" className="mb-1.5 block text-xs font-medium text-text-secondary">
               Recipient address
             </label>
             <input id="send-to" value={to} onChange={(e) => setTo(e.target.value)} placeholder="0x…" autoComplete="off" className={`${field} num`} />
             {to.trim() !== "" && !validTo && <p className="mt-1 text-xs text-arc-coral">Enter a full 0x address (42 characters).</p>}
           </div>
           <div>
-            <label htmlFor="send-amount" className="mb-1 block text-xs text-arc-lavender">
+            <label htmlFor="send-amount" className="mb-1.5 block text-xs font-medium text-text-secondary">
               Amount (USDC)
             </label>
             <input
@@ -193,7 +193,7 @@ export function WalletDialog({
           </div>
           {codeSentTo && (
             <div>
-              <label htmlFor="send-code" className="mb-1 block text-xs text-arc-lavender">
+              <label htmlFor="send-code" className="mb-1.5 block text-xs font-medium text-text-secondary">
                 Code from your email
               </label>
               <input

@@ -196,7 +196,7 @@ export function DashboardClient({
       <div className="flex min-h-screen items-center justify-center bg-arc-bg-0 px-4">
         <div className="text-center" role="status">
           <BrandMark className="mx-auto mb-4 h-12 w-auto animate-pulse" />
-          <h1 className="mb-2 font-display text-xl font-bold">Setting up your wallet</h1>
+          <h1 className="mb-2 font-display text-xl font-semibold">Setting up your wallet</h1>
           <p className="text-sm text-text-secondary">Creating a Circle wallet on {networkLabel}…</p>
         </div>
       </div>
@@ -243,7 +243,7 @@ export function DashboardClient({
       <main className="mx-auto max-w-[1320px] px-4 pb-16 pt-6 sm:px-6">
         <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
           <div>
-            <h1 className="font-display text-3xl font-extrabold tracking-tight">Portfolio</h1>
+            <h1 className="font-display text-3xl font-semibold tracking-tight">Portfolio</h1>
             <p className="mt-1 text-text-secondary">Your bids, your market and your agents, settled in USDC on Arc.</p>
           </div>
           <div role="tablist" aria-label="Portfolio view" className="flex w-full rounded-xl border border-border bg-arc-bg-1 p-1 sm:w-auto">
@@ -267,7 +267,7 @@ export function DashboardClient({
                   <Num
                     className={cn(
                       "rounded-full px-1.5 text-xs",
-                      v.badge ? "bg-arc-gold font-bold text-arc-bg-0" : "bg-arc-bg-2 text-text-secondary",
+                      v.badge ? "bg-arc-gold font-semibold text-arc-bg-0" : "bg-arc-bg-2 text-text-secondary",
                     )}
                   >
                     {v.count}

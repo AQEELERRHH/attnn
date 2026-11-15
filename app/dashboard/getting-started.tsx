@@ -130,7 +130,7 @@ export function GettingStarted({
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
           <div className="eyebrow text-arc-gold">Get started</div>
-          <h2 id="gs-title" className="mt-1 font-display text-lg font-bold">
+          <h2 id="gs-title" className="mt-1 font-display text-lg font-semibold">
             <Num>{done}</Num> of <Num>{total}</Num> done
           </h2>
           <div

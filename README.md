@@ -165,6 +165,7 @@ Arc runs the whole money path, with Circle’s building blocks at every step.
 |---|---|---|---|---|
 | Fund | **Arc Onramp Kit** | Live | Buy USDC on Arc by card, inside the app | `lib/onramp.ts`, `app/dashboard/buy-usdc-button.tsx` |
 | Hold | **Developer-Controlled Wallets** | Live | A wallet at sign-up; each agent gets its own, capping what it can spend | `lib/circle.ts`, `lib/wallets.ts` |
+| Go live | **Gas Station** | Live | We pay the network fee, so a verified creator can go live without funding their wallet | `lib/wallets.ts`, `lib/go-live.ts` |
 | Discover | **Gateway + x402** | Live | Agents pay $0.001 per creator profile read, batched | `lib/x402.ts`, `lib/gateway.ts` |
 | Settle | **USDC on Arc** | Live | Escrowed on-chain; paid on reply, refunded otherwise; gas in USDC | `contracts/src/AttnnEscrow.sol`, `lib/bids.ts` |
 | Sync | **Contract event webhooks** | Live | Escrow events keep our records in step with the chain | `app/api/webhooks/circle-events/route.ts` |
@@ -173,7 +174,7 @@ Arc runs the whole money path, with Circle’s building blocks at every step.
 
 **Why Arc:** USDC is the gas token, so every fee and bid is in dollars and nobody needs a second token. Sub-cent fees make a $1 bid and a $0.001 profile read practical.
 
-**Why Circle wallets:** wallet setup is the biggest barrier for people new to crypto. With Developer-Controlled Wallets, signing in is enough. Attnn. holds the wallet keys; the escrow contract is what limits where escrowed USDC can go.
+**Why Circle wallets:** wallet setup is the biggest barrier for people new to crypto. With Developer-Controlled Wallets, signing in is enough, and with Gas Station, new creators don't need USDC just to go live. Attnn. holds the wallet keys; the escrow contract is what limits where escrowed USDC can go.
 
 ## Traction
 
@@ -185,12 +186,13 @@ Live on Arc mainnet since 14 October 2026. Every creator market, its floor, open
 
 We put the product in front of creators and bidders throughout the accelerator and changed it each time.
 
-| What people told us | What we changed |
+| What people told us, and what we saw | What we changed |
 |---|---|
 | “The minimum bid is too high.” | Dropped the minimum to $1 |
 | “I don’t trust the AI with my money.” | Decision history: every agent choice, with the reason |
 | “14 days is too long to wait for a refund.” | Deployed a new escrow with a 3-day refund window |
 | “How do I know the reply will be any good?” | Bidder ratings and a 100-character minimum reply |
+| *What we saw:* most sign-ups stopped at “add $1 to your wallet” before going live | We now pay the network fee with Circle Gas Station: a verified creator goes live without funding their wallet |
 
 ## Business model
 
@@ -217,6 +219,7 @@ Business accounts build on what already exists: per-agent wallets become per-mem
 - [x] **Decision history**: an explainable record of every agent decision
 - [x] **Card funding** with the Arc Onramp Kit
 - [x] Creator verification with X and LinkedIn
+- [x] **Sponsored network fees** with Circle Gas Station: verified creators go live without funding their wallet
 - [x] Spending controls: separate agent wallets, a daily allowance and emailed security codes
 
 ### Next 90 days: targets

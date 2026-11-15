@@ -1,6 +1,7 @@
 import Link from "next/link";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, ChevronDown } from "lucide-react";
 import { SiteHeader } from "@/components/market/site-header";
+import { SiteFooter } from "@/components/market/site-footer";
 import { addressUrl, arc, escrowAddress } from "@/lib/chain";
 import { ESCROW_MAX_BID, ESCROW_MIN_BID, REFUND_PERIOD_MS, formatUsd } from "@/lib/bid-rules";
 import { Button } from "@/components/ui/button";
@@ -47,21 +48,36 @@ export default async function AboutPage() {
     <div className="min-h-screen bg-arc-bg-0">
       <SiteHeader networkLabel={arc.chain.name} />
 
-      <div className="max-w-3xl mx-auto px-4 sm:px-6 pt-12 sm:pt-16 pb-20">
+      <div className="relative isolate">
+        <div aria-hidden className="grid-backdrop pointer-events-none absolute inset-x-0 top-0 -z-10 h-[420px]" />
+      <div className="max-w-3xl mx-auto px-4 sm:px-6 pt-14 sm:pt-20 pb-6">
 
         {/* Header */}
-        <div className="mb-16 text-center">
-          <h1 className="text-4xl md:text-5xl font-display font-semibold mb-4">
-            What is <span className="gold-gradient">Attnn.</span>?
+        <div className="mb-14">
+          <p className="eyebrow text-arc-gold">How it works</p>
+          <h1 className="mt-3 text-4xl font-semibold tracking-[-0.045em] md:text-[56px] md:leading-[1.02]">
+            What is <span className="text-arc-gold">Attnn.</span>?
           </h1>
-          <p className="text-text-secondary text-lg">
+          <p className="mt-4 text-lg text-text-secondary">
             A simple explanation.
           </p>
+          <nav aria-label="On this page" className="mt-6 flex flex-wrap gap-2 text-[13px]">
+            {[
+              ["#problem", "The problem"],
+              ["#technology", "Technology"],
+              ["#agent-safety", "Agent safety"],
+              ["#faq", "FAQ"],
+            ].map(([href, label]) => (
+              <a key={href} href={href} className="focus-ring rounded-full border border-border-bright bg-arc-bg-1 px-3 py-1 text-text-secondary transition-colors hover:text-text-primary">
+                {label}
+              </a>
+            ))}
+          </nav>
         </div>
 
         {/* The Problem */}
-        <section className="mb-12">
-          <h2 className="text-2xl font-display font-semibold mb-4 text-arc-gold">The Problem</h2>
+        <section className="mb-12 scroll-mt-20" id="problem">
+          <h2 className="mb-4 flex items-center gap-3 text-2xl font-semibold tracking-[-0.03em]"><span aria-hidden className="h-5 w-1 rounded-full bg-arc-gold" />The Problem</h2>
           <Card className="p-6">
             <p className="text-text-secondary leading-relaxed mb-4">
               Every day, thousands of professionals; developers, designers, writers, consultants get flooded with messages from people wanting their time and attention. Most of these messages are low quality, irrelevant, or outright spam.
@@ -82,7 +98,7 @@ export default async function AboutPage() {
 
         {/* The Idea */}
         <section className="mb-12">
-          <h2 className="text-2xl font-display font-semibold mb-4 text-arc-gold">The Idea</h2>
+          <h2 className="mb-4 flex items-center gap-3 text-2xl font-semibold tracking-[-0.03em]"><span aria-hidden className="h-5 w-1 rounded-full bg-arc-gold" />The Idea</h2>
           <Card className="p-6">
             <p className="text-text-secondary leading-relaxed mb-4">
               What if reaching someone cost real money and they only got paid if they actually replied?
@@ -103,17 +119,17 @@ export default async function AboutPage() {
 
         {/* The Solution */}
         <section className="mb-12">
-          <h2 className="text-2xl font-display font-semibold mb-4 text-arc-gold">The Solution</h2>
+          <h2 className="mb-4 flex items-center gap-3 text-2xl font-semibold tracking-[-0.03em]"><span aria-hidden className="h-5 w-1 rounded-full bg-arc-gold" />The Solution</h2>
           <Card className="p-6">
             <p className="text-text-secondary leading-relaxed mb-4">
               Attnn. is a two-sided marketplace with two types of users:
             </p>
             <div className="grid md:grid-cols-2 gap-4 mb-6">
-              <div className="p-4 rounded-lg border border-arc-gold/30 bg-arc-bg-2/30">
+              <div className="p-4 rounded-lg border border-arc-gold/30 bg-arc-gold/[0.04]">
                 <h3 className="font-display font-semibold mb-2 text-arc-gold">Creators & Professionals</h3>
                 <p className="text-sm text-text-secondary">Anyone whose time has value; developers, designers, writers, founders, experts. You register your profile, set your minimum bid price, and receive an AI-ranked inbox of bids. You reply to the ones worth your time and earn USDC instantly.</p>
               </div>
-              <div className="p-4 rounded-lg border border-arc-purple/30 bg-arc-bg-2/30">
+              <div className="p-4 rounded-lg border border-arc-lavender/30 bg-arc-lavender/[0.04]">
                 <h3 className="font-display font-semibold mb-2 text-arc-lavender">Companies & Bidders</h3>
                 <p className="text-sm text-text-secondary">Anyone who needs to reach professionals: recruiters, founders, investors, marketers. You deploy an AI agent with a goal and budget. The agent finds matching creators automatically, places bids, and works around the clock without you lifting a finger.</p>
               </div>
@@ -125,43 +141,43 @@ export default async function AboutPage() {
         </section>
 
         {/* The Technology */}
-        <section className="mb-12">
-          <h2 className="text-2xl font-display font-semibold mb-4 text-arc-gold">The Technology</h2>
+        <section className="mb-12 scroll-mt-20" id="technology">
+          <h2 className="mb-4 flex items-center gap-3 text-2xl font-semibold tracking-[-0.03em]"><span aria-hidden className="h-5 w-1 rounded-full bg-arc-gold" />The Technology</h2>
           <Card className="p-6">
             <p className="text-text-secondary leading-relaxed mb-6">
               You don&apos;t need to understand the technology to use Attnn. But if you&apos;re curious, here is what powers it, explained simply. Attnn. is built on Arc Network™, a blockchain infrastructure developed by Circle Internet Group, Inc.
             </p>
             <div className="space-y-4">
               <div className="flex gap-4">
-                <div className="w-8 h-8 rounded-full bg-arc-gold/20 flex items-center justify-center shrink-0 text-arc-gold font-semibold text-sm">1</div>
+                <div className="num w-8 h-8 rounded-lg border border-arc-gold/30 bg-arc-gold/10 flex items-center justify-center shrink-0 text-arc-gold text-sm">1</div>
                 <div>
                   <h4 className="font-medium mb-1">USDC: Digital Dollars</h4>
                   <p className="text-sm text-text-secondary">All payments on Attnn. use USDC a digital version of the US dollar that is always worth exactly $1. No price swings, no volatility. When you earn $5, you have $5.</p>
                 </div>
               </div>
               <div className="flex gap-4">
-                <div className="w-8 h-8 rounded-full bg-arc-gold/20 flex items-center justify-center shrink-0 text-arc-gold font-semibold text-sm">2</div>
+                <div className="num w-8 h-8 rounded-lg border border-arc-gold/30 bg-arc-gold/10 flex items-center justify-center shrink-0 text-arc-gold text-sm">2</div>
                 <div>
                   <h4 className="font-medium mb-1">Arc: The Settlement Layer</h4>
                   <p className="text-sm text-text-secondary">Arc Network is a blockchain built by Circle that settles transactions in under one second. When a bid is accepted, USDC moves from the bidder&apos;s wallet to the creator&apos;s wallet almost instantly no bank transfers, no waiting days.</p>
                 </div>
               </div>
               <div className="flex gap-4">
-                <div className="w-8 h-8 rounded-full bg-arc-gold/20 flex items-center justify-center shrink-0 text-arc-gold font-semibold text-sm">3</div>
+                <div className="num w-8 h-8 rounded-lg border border-arc-gold/30 bg-arc-gold/10 flex items-center justify-center shrink-0 text-arc-gold text-sm">3</div>
                 <div>
                   <h4 className="font-medium mb-1">Circle Wallets: No Crypto Setup Needed</h4>
                   <p className="text-sm text-text-secondary">When you sign up, Attnn. creates a secure digital wallet for you automatically in the background. You never need to install MetaMask, write down seed phrases, or touch any crypto interface. It just works.</p>
                 </div>
               </div>
               <div className="flex gap-4">
-                <div className="w-8 h-8 rounded-full bg-arc-gold/20 flex items-center justify-center shrink-0 text-arc-gold font-semibold text-sm">4</div>
+                <div className="num w-8 h-8 rounded-lg border border-arc-gold/30 bg-arc-gold/10 flex items-center justify-center shrink-0 text-arc-gold text-sm">4</div>
                 <div>
                   <h4 className="font-medium mb-1">AI Agents: Your Autonomous Representatives</h4>
                   <p className="text-sm text-text-secondary">Instead of manually searching and messaging creators one by one, companies deploy an AI agent with a goal and budget. The agent works 24/7 discovering, scoring, and bidding on matching creators automatically. No human clicks required per transaction.</p>
                 </div>
               </div>
               <div className="flex gap-4">
-                <div className="w-8 h-8 rounded-full bg-arc-gold/20 flex items-center justify-center shrink-0 text-arc-gold font-semibold text-sm">5</div>
+                <div className="num w-8 h-8 rounded-lg border border-arc-gold/30 bg-arc-gold/10 flex items-center justify-center shrink-0 text-arc-gold text-sm">5</div>
                 <div>
                   <h4 className="font-medium mb-1">Smart Contracts: Trustless Escrow</h4>
                   <p className="text-sm text-text-secondary">The bid money is held by a smart contract a piece of code that runs on Arc. Its rules can&apos;t be changed: the money can only go to the creator when they reply, or back to the sender. No exceptions, no loopholes.</p>
@@ -172,8 +188,8 @@ export default async function AboutPage() {
         </section>
 
         {/* Agent safety */}
-        <section className="mb-12" id="agent-safety">
-          <h2 className="text-2xl font-display font-semibold mb-4 text-arc-gold">How our agents are kept safe</h2>
+        <section className="mb-12 scroll-mt-20" id="agent-safety">
+          <h2 className="mb-4 flex items-center gap-3 text-2xl font-semibold tracking-[-0.03em]"><span aria-hidden className="h-5 w-1 rounded-full bg-arc-gold" />How our agents are kept safe</h2>
           <Card className="p-6">
             <p className="text-text-secondary leading-relaxed mb-6">
               An AI agent spending real money needs hard limits. Attnn. agents work inside two layers of rules: limits Attnn. checks before any transaction is sent, and rules written into the escrow contract on Arc that nobody can override, including us.
@@ -208,22 +224,22 @@ export default async function AboutPage() {
 
         {/* Real World Examples */}
         <section className="mb-12">
-          <h2 className="text-2xl font-display font-semibold mb-4 text-arc-gold">Real World Examples</h2>
+          <h2 className="mb-4 flex items-center gap-3 text-2xl font-semibold tracking-[-0.03em]"><span aria-hidden className="h-5 w-1 rounded-full bg-arc-gold" />Real World Examples</h2>
           <div className="space-y-4">
-            <Card className="p-6 border-l-4 border-l-arc-gold">
-              <h3 className="font-display font-semibold mb-2">The Startup Hiring a Developer</h3>
+            <Card className="p-6">
+              <h3 className="font-semibold mb-2 flex items-center gap-2.5"><span aria-hidden className="h-2 w-2 rounded-full bg-arc-gold" />The Startup Hiring a Developer</h3>
               <p className="text-sm text-text-secondary leading-relaxed">
                 A Lagos-based fintech startup needs a smart contract developer urgently. They deploy a bidder agent on Attnn. with the goal &quot;find experienced Solidity developers&quot; and a $50/day budget. The agent searches the registry, finds 3 matching developers, scores them, and places $15 bids on each all within 10 minutes. One developer replies within an hour. The startup has a conversation. The developer earns $15 just for replying.
               </p>
             </Card>
-            <Card className="p-6 border-l-4 border-l-arc-purple">
-              <h3 className="font-display font-semibold mb-2">The Content Creator Getting Paid for Brand Deals</h3>
+            <Card className="p-6">
+              <h3 className="font-semibold mb-2 flex items-center gap-2.5"><span aria-hidden className="h-2 w-2 rounded-full bg-arc-lavender" />The Content Creator Getting Paid for Brand Deals</h3>
               <p className="text-sm text-text-secondary leading-relaxed">
                 A Web3 content creator with 10,000 followers sets up a creator profile on Attnn. with a $20 minimum bid. Instead of getting 100 free DMs from brands asking for free promotion, they now receive bids from brands willing to pay to start a conversation. They reply to the ones that match their content, earn USDC, and ignore the rest which get auto-refunded.
               </p>
             </Card>
-            <Card className="p-6 border-l-4 border-l-arc-coral">
-              <h3 className="font-display font-semibold mb-2">The Investor Finding Deal Flow</h3>
+            <Card className="p-6">
+              <h3 className="font-semibold mb-2 flex items-center gap-2.5"><span aria-hidden className="h-2 w-2 rounded-full bg-arc-coral" />The Investor Finding Deal Flow</h3>
               <p className="text-sm text-text-secondary leading-relaxed">
                 An angel investor wants to meet early-stage founders building in Web3. They set up a bidder agent with the goal &quot;find founders building on Arc or Ethereum&quot; and a $100/day budget. The agent runs every 30 minutes, finds matching founders registered on Attnn., and places bids automatically. Serious founders reply. The investor gets warm introductions to 5 founders per week without sending a single cold message.
               </p>
@@ -232,9 +248,9 @@ export default async function AboutPage() {
         </section>
 
         {/* FAQ */}
-        <section className="mb-12">
-          <h2 className="text-2xl font-display font-semibold mb-4 text-arc-gold">Frequently Asked Questions</h2>
-          <div className="space-y-4">
+        <section className="mb-12 scroll-mt-20" id="faq">
+          <h2 className="mb-4 flex items-center gap-3 text-2xl font-semibold tracking-[-0.03em]"><span aria-hidden className="h-5 w-1 rounded-full bg-arc-gold" />Frequently Asked Questions</h2>
+          <div className="space-y-2">
             {[
               {
                 q: "What service is actually being exchanged on Attnn.?",
@@ -281,10 +297,13 @@ export default async function AboutPage() {
                 a: "Three layers. First, a reply must be at least 100 characters before a bid can be accepted, so a quick \"thanks, bye\" can't collect the money. Second, every bidder can rate the reply they paid for (worth it or not), and each creator's market shows the share of replies rated worth it. Third, replies sent automatically, from a creator's saved template or written by their AI agent, are labelled as auto-replies, and each market shows how many of its replies were auto-replies. Bidders can see who actually answers before they bid."
               },
             ].map(({ q, a }) => (
-              <Card key={q} className="p-6">
-                <h3 className="font-display font-semibold mb-2 text-sm">{q}</h3>
-                <p className="text-sm text-text-secondary leading-relaxed">{a}</p>
-              </Card>
+              <details key={q} className="group panel open:bg-arc-bg-1 [&_summary::-webkit-details-marker]:hidden">
+                <summary className="focus-ring flex cursor-pointer list-none items-center justify-between gap-4 rounded-xl px-5 py-4 text-[15px] font-medium transition-colors hover:text-text-primary">
+                  <h3 className="text-[15px] font-medium tracking-[-0.01em]">{q}</h3>
+                  <ChevronDown aria-hidden className="h-4 w-4 flex-none text-text-secondary transition-transform group-open:rotate-180" />
+                </summary>
+                <p className="-mt-1 px-5 pb-5 text-sm leading-relaxed text-text-secondary">{a}</p>
+              </details>
             ))}
           </div>
         </section>
@@ -293,15 +312,18 @@ export default async function AboutPage() {
         <div className="text-center text-xs text-text-dim mb-8">
           Arc is a trademark of Circle Internet Group, Inc. and/or its affiliates. Attnn. is built on Arc Network and is not affiliated with or endorsed by Circle.
         </div>
-        <div className="text-center">
-          <h2 className="text-2xl font-display font-semibold mb-4">Ready to try it?</h2>
+        <div className="panel-raised relative isolate overflow-hidden px-6 py-10 text-center">
+          <div aria-hidden className="grid-backdrop pointer-events-none absolute inset-0 -z-10" />
+          <h2 className="mb-3 text-3xl font-semibold tracking-[-0.035em]">Ready to try it?</h2>
           <p className="text-text-secondary mb-6">Sign in with Google or email. Your wallet is ready in seconds.</p>
-          <Link href="/register">
-            <Button size="lg">Get Started <ArrowRight className="ml-2 w-4 h-4" /></Button>
-          </Link>
+          <Button size="lg" asChild>
+            <Link href="/register">Get started <ArrowRight aria-hidden className="w-4 h-4" /></Link>
+          </Button>
         </div>
 
       </div>
+      </div>
+      <SiteFooter />
     </div>
   );
 }

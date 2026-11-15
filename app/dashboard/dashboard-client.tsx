@@ -193,11 +193,16 @@ export function DashboardClient({
 
   if (provisioning) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-arc-bg-0 px-4">
-        <div className="text-center" role="status">
-          <BrandMark className="mx-auto mb-4 h-12 w-auto animate-pulse" />
-          <h1 className="mb-2 font-display text-xl font-semibold">Setting up your wallet</h1>
-          <p className="text-sm text-text-secondary">Creating a Circle wallet on {networkLabel}…</p>
+      <div className="relative isolate flex min-h-screen items-center justify-center bg-arc-bg-0 px-4">
+        <div aria-hidden className="grid-backdrop pointer-events-none absolute inset-0 -z-10" />
+        <div className="panel-raised w-full max-w-sm px-6 py-8 text-center" role="status">
+          <BrandMark className="mx-auto mb-5 h-10 w-auto animate-pulse" />
+          <h1 className="text-xl font-semibold tracking-[-0.02em]">Setting up your wallet</h1>
+          <p className="mt-1.5 text-sm text-text-secondary">Creating a Circle wallet on {networkLabel}…</p>
+          <div aria-hidden className="mx-auto mt-6 h-1 w-40 overflow-hidden rounded-full bg-arc-bg-3">
+            <div className="h-full w-1/3 rounded-full bg-arc-gold" style={{ animation: "attnn-progress 1.2s ease-in-out infinite alternate" }} />
+          </div>
+          <style>{`@keyframes attnn-progress { from { transform: translateX(-100%); } to { transform: translateX(300%); } }`}</style>
         </div>
       </div>
     );
@@ -206,7 +211,7 @@ export function DashboardClient({
   const views: { id: View; label: string; icon: React.ReactNode; count?: number; badge?: boolean }[] = [
     { id: "bidder", label: "Bidding", icon: <Coins aria-hidden className="hidden h-4 w-4 sm:block" />, count: openPositions },
     { id: "creator", label: "Creator", icon: <Inbox aria-hidden className="hidden h-4 w-4 sm:block" />, count: inboxCount, badge: inboxCount > 0 },
-    { id: "agent", label: "Agent", icon: <Bot aria-hidden className="hidden h-4 w-4 sm:block" /> },
+    { id: "agent", label: "Agent", icon: <Bot aria-hidden className="hidden h-4 w-4 sm:block" />, badge: bidderConfig?.isActive ?? false },
   ];
 
   return (
@@ -231,7 +236,8 @@ export function DashboardClient({
             <button
               type="button"
               onClick={() => signOut({ callbackUrl: "/" })}
-              className="focus-ring inline-flex h-9 w-9 items-center justify-center rounded-lg text-text-secondary hover:bg-arc-bg-2 hover:text-text-primary"
+              title="Sign out"
+              className="focus-ring inline-flex h-9 w-9 items-center justify-center rounded-lg text-text-secondary transition-colors hover:bg-arc-bg-2 hover:text-text-primary"
             >
               <LogOut aria-hidden className="h-4 w-4" />
               <span className="sr-only">Sign out</span>
@@ -240,13 +246,17 @@ export function DashboardClient({
         }
       />
 
-      <main className="mx-auto max-w-[1320px] px-4 pb-16 pt-6 sm:px-6">
-        <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
+      <main className="mx-auto max-w-[1320px] px-4 pb-16 pt-8 sm:px-6">
+        <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
           <div>
-            <h1 className="font-display text-3xl font-semibold tracking-tight">Portfolio</h1>
-            <p className="mt-1 text-text-secondary">Your bids, your market and your agents, settled in USDC on Arc.</p>
+            <p className="eyebrow flex items-center gap-2">
+              <span aria-hidden className="live-dot text-green" />
+              {networkLabel} · USDC
+            </p>
+            <h1 className="mt-2 text-[34px] font-semibold leading-none tracking-[-0.04em]">Portfolio</h1>
+            <p className="mt-2 text-text-secondary">Your bids, your market and your agents, settled in USDC on Arc.</p>
           </div>
-          <div role="tablist" aria-label="Portfolio view" className="flex w-full rounded-xl border border-border bg-arc-bg-1 p-1 sm:w-auto">
+          <div role="tablist" aria-label="Portfolio view" className="flex w-full rounded-xl border border-border bg-arc-bg-1 p-1 shadow-raised sm:w-auto">
             {views.map((v) => (
               <button
                 key={v.id}
@@ -257,21 +267,29 @@ export function DashboardClient({
                 aria-controls={`panel-${v.id}`}
                 onClick={() => setView(v.id)}
                 className={cn(
-                  "focus-ring inline-flex h-10 flex-1 items-center justify-center gap-1.5 rounded-lg px-2 text-sm font-medium sm:flex-none sm:gap-2 sm:px-4",
-                  view === v.id ? "bg-arc-bg-3 text-text-primary" : "text-text-secondary hover:text-text-primary",
+                  "focus-ring relative inline-flex h-10 flex-1 items-center justify-center gap-1.5 rounded-lg px-2 text-sm font-medium transition-colors sm:flex-none sm:gap-2 sm:px-4",
+                  view === v.id ? "bg-arc-bg-3 text-text-primary shadow-[inset_0_1px_0_0_rgb(255_255_255/0.05)]" : "text-text-secondary hover:text-text-primary",
                 )}
               >
                 {v.icon}
                 {v.label}
-                {v.count !== undefined && v.count > 0 && (
+                {v.count !== undefined && v.count > 0 ? (
                   <Num
                     className={cn(
-                      "rounded-full px-1.5 text-xs",
-                      v.badge ? "bg-arc-gold font-semibold text-arc-bg-0" : "bg-arc-bg-2 text-text-secondary",
+                      "min-w-5 rounded-full px-1.5 py-px text-center text-[11px]",
+                      v.badge ? "bg-arc-gold font-semibold text-[#130B00]" : "bg-arc-bg-2 text-text-secondary",
                     )}
                   >
                     {v.count}
                   </Num>
+                ) : (
+                  v.id === "agent" &&
+                  v.badge && (
+                    <span title="Agent is on" className="text-green">
+                      <span aria-hidden className="live-dot" />
+                      <span className="sr-only">(on)</span>
+                    </span>
+                  )
                 )}
               </button>
             ))}

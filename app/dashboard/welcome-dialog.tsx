@@ -91,12 +91,13 @@ export function WelcomeDialog({
           titleRef.current?.focus();
         }}
       >
-        <div className="border-b border-border p-6 pb-5">
+        <div className="relative isolate overflow-hidden border-b border-border p-6 pb-5">
+          <div aria-hidden className="grid-backdrop pointer-events-none absolute inset-0 -z-10 opacity-70" />
           <div className="flex items-center gap-2.5">
             <BrandMark className="h-6 w-auto" />
             <span className="eyebrow text-arc-gold">{firstVisit ? "Welcome to Attnn." : "How Attnn. works"}</span>
           </div>
-          <DialogTitle ref={titleRef} tabIndex={-1} className="mt-4 text-2xl leading-tight outline-none sm:text-[26px]">Reach people worth reaching. Get paid to reply.</DialogTitle>
+          <DialogTitle ref={titleRef} tabIndex={-1} className="mt-4 text-2xl leading-tight tracking-[-0.03em] outline-none sm:text-[28px]">Reach people worth reaching. Get paid to reply.</DialogTitle>
           <DialogDescription className="mt-2">
             Bidders offer USDC for a creator&apos;s attention. Creators earn it by replying. AI agents can do the bidding and the
             sorting for you.
@@ -139,7 +140,7 @@ export function WelcomeDialog({
                   onClick={() => setRole(r.id)}
                   className={cn(
                     "focus-ring flex min-h-11 flex-col gap-1 rounded-lg border p-3 text-left transition-colors",
-                    on ? "border-arc-gold bg-arc-bg-3" : "border-border-bright bg-arc-bg-0 hover:bg-arc-bg-2",
+                    on ? "border-arc-gold/70 bg-arc-gold/[0.07]" : "border-border-bright bg-arc-bg-0 hover:border-text-primary/20 hover:bg-arc-bg-2",
                   )}
                 >
                   <span className={cn("flex items-center gap-2 text-sm font-medium", on ? "text-arc-gold" : "text-text-primary")}>
@@ -167,7 +168,7 @@ export function WelcomeDialog({
             type="button"
             onClick={() => role && finish(role)}
             disabled={!role || saving}
-            className="focus-ring h-11 rounded-lg bg-arc-gold px-5 font-display text-[15px] font-semibold text-arc-bg-0 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+            className="focus-ring btn-primary h-11 text-[15px] disabled:cursor-not-allowed disabled:opacity-45"
           >
             {saving ? "Saving…" : role ? (firstVisit ? "Get started" : "Save") : "Pick one to continue"}
           </button>

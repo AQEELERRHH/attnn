@@ -241,6 +241,7 @@ export function BidderView({
         items={[
           {
             label: "Available",
+            tone: "gold",
             value: <Money atomic={summary.walletUsdc} tone="gold" />,
             sub: summary.walletUsdc === null ? "Couldn't read Arc just now" : "USDC in your wallet",
           },

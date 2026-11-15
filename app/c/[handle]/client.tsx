@@ -218,20 +218,20 @@ export function CreatorMarket(props: CreatorMarketProps) {
               </div>
             </div>
           </div>
-          <dl className="grid flex-[1_1_360px] grid-cols-3 gap-px overflow-hidden rounded-lg border border-border bg-border">
-            <div className="bg-arc-bg-0 px-4 py-3">
+          <dl className="grid flex-[1_1_360px] grid-cols-2 gap-px overflow-hidden rounded-lg border border-border bg-border min-[440px]:grid-cols-3 max-[439px]:[&>*:last-child]:col-span-2">
+            <div className="min-w-0 bg-arc-bg-0 px-4 py-3">
               <dt className="eyebrow">Floor</dt>
               <dd className="mt-1 text-xl font-medium tracking-[-0.02em]">
                 <Money atomic={stats.floorUsdc} />
               </dd>
             </div>
-            <div className="bg-arc-bg-0 px-4 py-3">
+            <div className="min-w-0 bg-arc-bg-0 px-4 py-3">
               <dt className="eyebrow">Top bid</dt>
               <dd className="mt-1 text-xl font-medium tracking-[-0.02em]">
                 <Money atomic={stats.topBidUsdc} tone="gold" />
               </dd>
             </div>
-            <div className="bg-arc-bg-0 px-4 py-3">
+            <div className="min-w-0 bg-arc-bg-0 px-4 py-3">
               <dt className="eyebrow">Last cleared</dt>
               <dd className="mt-1 flex flex-wrap items-baseline gap-x-1.5 text-xl font-medium tracking-[-0.02em]">
                 <Money atomic={stats.lastClearedUsdc} tone={stats.lastClearedUsdc ? "success" : "default"} />

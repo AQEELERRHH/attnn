@@ -38,6 +38,10 @@ export interface MarketRow {
 export type TickerFill = FillTick;
 export type MarketTotals = PlatformStatsData;
 
+// Row "Bid": tinted orange so a page of rows isn't a wall of solid buttons; fills on row hover or focus.
+const ROW_BID =
+  "inline-flex items-center justify-center rounded-lg border border-arc-gold/35 bg-arc-gold/[0.07] font-semibold text-arc-gold transition-colors duration-150 hover:border-arc-gold hover:bg-arc-gold hover:text-[#130B00] group-hover:border-arc-gold group-hover:bg-arc-gold group-hover:text-[#130B00] focus-visible:bg-arc-gold focus-visible:text-[#130B00] active:translate-y-px";
+
 const big = (s: string | null) => (s === null ? null : BigInt(s));
 const num = (s: string | null) => (s === null ? null : Number(s));
 
@@ -87,9 +91,11 @@ export function MarketsView({
               )}
               {r.paused && <span className="rounded border border-arc-coral/40 bg-arc-coral/[0.06] px-1.5 py-px text-[10px] font-medium uppercase tracking-[0.06em] text-arc-coral">Paused</span>}
             </span>
-            <span className={cn("block text-xs", r.openBids > 0 ? "text-arc-gold" : "text-text-secondary")}>
-              {r.openBids > 0 ? `${r.openBids} open bid${r.openBids > 1 ? "s" : ""}` : "No open bids"}
-            </span>
+            {r.openBids > 0 && (
+              <span className="block text-xs text-arc-gold">
+                <Num>{r.openBids}</Num> open bid{r.openBids > 1 ? "s" : ""}
+              </span>
+            )}
           </span>
         </Link>
       ),
@@ -98,11 +104,15 @@ export function MarketsView({
       key: "tags",
       label: "Tags",
       render: (r) => (
-        <span className="flex gap-1">
+        <span className="flex items-center gap-1">
           {r.tags.slice(0, 2).map((t) => (
             <Tag key={t}>{t}</Tag>
           ))}
-          {r.tags.length > 2 && <span className="text-xs text-text-secondary">+{r.tags.length - 2}</span>}
+          {r.tags.length > 2 && (
+            <span title={r.tags.slice(2).join(", ")} className="num pl-0.5 text-xs text-text-secondary">
+              +{r.tags.length - 2}
+            </span>
+          )}
         </span>
       ),
     },
@@ -156,10 +166,7 @@ export function MarketsView({
       render: (r) => (
         <Link
           href={`/c/${r.handle}`}
-          className={cn(
-            "focus-ring h-8 min-w-[64px] px-3.5 text-[13px]",
-            r.paused ? "btn-secondary" : "btn-primary",
-          )}
+          className={cn("focus-ring h-8 min-w-[64px] px-3.5 text-[13px]", r.paused ? "btn-secondary" : ROW_BID)}
         >
           {r.paused ? "View" : "Bid"}
         </Link>
@@ -282,7 +289,7 @@ export function MarketsView({
               </span>
               <Link
                 href={`/c/${r.handle}`}
-                className={cn("focus-ring h-10 px-3.5 text-sm", r.paused ? "btn-secondary" : "btn-primary")}
+                className={cn("focus-ring h-10 px-3.5 text-sm", r.paused ? "btn-secondary" : ROW_BID)}
               >
                 {r.paused ? "View" : "Bid"}
               </Link>
@@ -290,7 +297,10 @@ export function MarketsView({
           )}
         />
         <div className="flex items-center justify-between gap-3 border-t border-border bg-arc-bg-0/40 px-5 py-3 text-[13px] text-text-secondary">
-          <Num>{filtered.length}</Num> of <Num>{rows.length}</Num> markets · prices in USDC
+          <span>
+            <Num className="text-text-primary">{filtered.length}</Num> of <Num>{rows.length}</Num> markets
+          </span>
+          <span>Prices in USDC</span>
         </div>
       </Panel>
 

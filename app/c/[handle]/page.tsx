@@ -9,6 +9,7 @@ import { arc, escrowAddress, txUrl } from "@/lib/chain";
 import { computeCreatorStats, loadMarketBids } from "@/lib/market";
 import { listVerifications } from "@/lib/social-verify";
 import { SiteHeader } from "@/components/market/site-header";
+import { SiteFooter } from "@/components/market/site-footer";
 import { CreatorMarket, type CreatorMarketProps } from "./client";
 
 export async function generateMetadata({ params }: { params: Promise<{ handle: string }> }) {
@@ -114,6 +115,7 @@ export default async function CreatorMarketPage({ params }: { params: Promise<{ 
     <div className="min-h-screen bg-arc-bg-0">
       <SiteHeader networkLabel={arc.chain.name} />
       <CreatorMarket {...props} />
+      <SiteFooter />
     </div>
   );
 }

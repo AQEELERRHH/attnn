@@ -1,18 +1,16 @@
+import type * as React from "react";
 import Link from "next/link";
-import { ArrowRight } from "lucide-react";
-import { CreatorAvatar, LiveFills, Money, Num, Panel, PlatformStats, Sparkline } from "@/components/market";
+import { ArrowRight, Bot, CheckCircle2, Clock3, Inbox, Lock, Undo2 } from "lucide-react";
+import { CreatorAvatar, LiveFills, Money, Num, PlatformStats, Sparkline } from "@/components/market";
 import { SiteHeader } from "@/components/market/site-header";
+import { SiteFooter } from "@/components/market/site-footer";
 import { arc } from "@/lib/chain";
+import { cn } from "@/lib/cn";
 import { loadMarkets } from "./creators/load";
 import type { MarketRow } from "./creators/markets-view";
 
 // Live market numbers, rebuilt at most once a minute (same cadence as /creators).
 export const revalidate = 60;
-
-const primary =
-  "focus-ring inline-flex h-12 items-center justify-center gap-2 rounded-lg bg-arc-gold px-6 font-display font-semibold text-arc-bg-0 hover:brightness-110";
-const secondary =
-  "focus-ring inline-flex h-12 items-center justify-center rounded-lg border border-border-bright px-6 font-medium text-text-primary hover:bg-arc-bg-2";
 
 /** Busiest markets first: 7d volume, then open bids, then top bid. */
 function topMarkets(rows: MarketRow[], n: number): MarketRow[] {
@@ -27,12 +25,22 @@ function topMarkets(rows: MarketRow[], n: number): MarketRow[] {
     .slice(0, n);
 }
 
+/** The life of a bid. Colours follow the market roles: orange = money in play, green = paid, coral = refund. */
 const STEPS = [
-  { n: "01", title: "Bid", body: "A bidder or their agent picks a creator and escrows USDC on Arc. Nothing is paid yet.", tone: "text-arc-gold" },
-  { n: "02", title: "Triage", body: "The creator's agent scores the bid: accept, counter, surface to the inbox, or decline.", tone: "text-arc-lavender" },
-  { n: "03", title: "Reply → paid", body: "When the creator replies, the escrow releases the USDC to them on-chain.", tone: "text-green" },
-  { n: "04", title: "No reply → refund", body: "No reply within 3 days and the full bid goes back to the bidder.", tone: "text-arc-coral" },
-];
+  { n: "01", title: "Bid", body: "A bidder or their agent picks a creator and escrows USDC on Arc. Nothing is paid yet.", tone: "gold", icon: Lock },
+  { n: "02", title: "Triage", body: "The creator's agent scores the bid: accept, counter, surface to the inbox, or decline.", tone: "info", icon: Bot },
+  { n: "03", title: "Reply → paid", body: "When the creator replies, the escrow releases the USDC to them on-chain.", tone: "up", icon: CheckCircle2 },
+  { n: "04", title: "No reply → refund", body: "No reply within 3 days and the full bid goes back to the bidder.", tone: "down", icon: Undo2 },
+] as const;
+
+const STEP_TONE = {
+  gold: { text: "text-arc-gold", ring: "border-arc-gold/40 bg-arc-gold/10", bar: "bg-arc-gold" },
+  info: { text: "text-arc-lavender", ring: "border-arc-lavender/40 bg-arc-lavender/10", bar: "bg-arc-lavender" },
+  up: { text: "text-green", ring: "border-green/40 bg-green/10", bar: "bg-green" },
+  down: { text: "text-arc-coral", ring: "border-arc-coral/40 bg-arc-coral/10", bar: "bg-arc-coral" },
+};
+
+const STACK = ["USDC escrow", "Circle Wallets", "Gateway · x402", "Arc Onramp Kit", "Contract webhooks"];
 
 export default async function HomePage() {
   const now = Date.now();
@@ -40,172 +48,269 @@ export default async function HomePage() {
   const top = topMarkets(rows, 5);
 
   return (
-    <div className="min-h-screen bg-arc-bg-0">
+    <div className="min-h-screen overflow-x-clip bg-arc-bg-0">
       <SiteHeader networkLabel={arc.chain.name} />
 
-      <main className="mx-auto max-w-[1320px] px-4 pb-16 sm:px-6">
+      <main>
         {/* Hero */}
-        <section className="flex flex-wrap items-center gap-10 py-12 sm:py-16">
-          <div className="min-w-0 flex-[1_1_480px]">
-            <span className="inline-flex items-center gap-2 rounded-full border border-border-bright px-3 py-1 text-xs text-arc-lavender">
-              <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-green" />
-              Live on {arc.chain.name} · USDC escrow
-            </span>
-            <h1 className="mt-5 font-display text-4xl font-semibold leading-[1.05] tracking-tight sm:text-6xl">
-              Attention is <span className="text-arc-gold">scarce</span>.
-              <br />
-              Let agents negotiate it.
-            </h1>
-            <p className="mt-5 max-w-[56ch] text-lg text-text-secondary">
-              Every creator is a market. Bidders and their AI agents escrow USDC to reach them. Creators get paid only when they reply,
-              and bidders get a full refund if they don&apos;t within 3 days.
-            </p>
-            <div className="mt-8 flex flex-wrap gap-3">
-              <Link href="/creators" className={`${primary} w-full sm:w-auto`}>
-                Browse markets <ArrowRight aria-hidden className="h-4 w-4" />
+        <section className="relative isolate">
+          <div aria-hidden className="grid-backdrop pointer-events-none absolute inset-0 -z-10" />
+          <div
+            aria-hidden
+            className="pointer-events-none absolute left-1/2 top-[-240px] -z-10 h-[480px] w-[900px] -translate-x-1/2 rounded-full bg-arc-gold/[0.07] blur-[120px]"
+          />
+          <div className="mx-auto flex max-w-[1320px] flex-wrap items-center gap-x-14 gap-y-12 px-4 pb-14 pt-14 sm:px-6 sm:pb-20 sm:pt-20">
+            <div className="min-w-0 flex-[1_1_520px]">
+              <Link
+                href="/creators"
+                className="focus-ring group inline-flex items-center gap-2 rounded-full border border-border-bright bg-arc-bg-1/80 py-1 pl-2.5 pr-3 text-xs text-text-secondary transition-colors hover:text-text-primary"
+              >
+                <span aria-hidden className="live-dot text-green" />
+                Live on {arc.chain.name}
+                <span aria-hidden className="h-3 w-px bg-border-bright" />
+                <span className="text-text-primary">USDC escrow</span>
+                <ArrowRight aria-hidden className="h-3 w-3 transition-transform group-hover:translate-x-0.5" />
               </Link>
-              <Link href="/dashboard" className={`${secondary} w-full sm:w-auto`}>
-                Deploy a bidder agent
-              </Link>
-            </div>
-            <p className="mt-4 text-sm text-text-secondary">
-              Your time is worth something?{" "}
-              <Link href="/dashboard" className="text-arc-lavender hover:underline">
-                Open your creator market
-              </Link>
-              .
-            </p>
-          </div>
-
-          <Panel
-            raised
-            padded={false}
-            className="min-w-0 flex-[1_1_380px]"
-            title="Top markets"
-            description="Busiest creators by 7-day cleared volume."
-            actions={
-              <Link href="/creators" className="focus-ring rounded text-[13px] text-arc-lavender hover:underline">
-                All markets →
-              </Link>
-            }
-          >
-            {top.length === 0 ? (
-              <div className="border-t border-border px-5 py-10 text-center text-sm text-text-secondary">
-                No markets yet.{" "}
-                <Link href="/dashboard" className="text-arc-lavender hover:underline">
-                  Be the first creator
+              <h1 className="mt-6 text-[44px] font-semibold leading-[0.98] tracking-[-0.045em] sm:text-[72px]">
+                Attention is scarce.
+                <br />
+                <span className="text-text-secondary">Let agents negotiate it.</span>
+              </h1>
+              <p className="mt-6 max-w-[54ch] text-[17px] leading-relaxed text-text-secondary">
+                Every creator is a market. Bidders and their AI agents escrow USDC to reach them. Creators get paid only when they reply,
+                and bidders get a full refund if they don&apos;t within 3 days.
+              </p>
+              <div className="mt-8 flex flex-wrap gap-3">
+                <Link href="/creators" className="focus-ring btn-primary h-12 w-full px-6 text-[15px] sm:w-auto">
+                  Browse markets <ArrowRight aria-hidden className="h-4 w-4" />
                 </Link>
-                .
+                <Link href="/dashboard" className="focus-ring btn-secondary h-12 w-full px-6 text-[15px] sm:w-auto">
+                  <Bot aria-hidden className="h-4 w-4 text-text-secondary" />
+                  Deploy a bidder agent
+                </Link>
               </div>
-            ) : (
-              <ol className="border-t border-border">
-                {top.map((r) => (
-                  <li key={r.handle} className="border-b border-border last:border-b-0">
-                    <Link href={`/c/${r.handle}`} className="focus-ring flex items-center gap-3 px-5 py-3 hover:bg-arc-bg-2">
-                      <CreatorAvatar handle={r.handle} src={r.avatarUrl} size={34} />
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate font-semibold">@{r.handle}</span>
-                        <span className="block text-xs text-text-secondary">
-                          Floor <Money atomic={r.floorUsdc} className="text-text-secondary" />
-                          {r.openBids > 0 && (
-                            <>
-                              {" "}
-                              · <Num>{r.openBids}</Num> open
-                            </>
-                          )}
-                        </span>
+              <ul className="mt-8 flex flex-wrap gap-x-6 gap-y-2 text-[13px] text-text-secondary">
+                <li className="inline-flex items-center gap-2">
+                  <CheckCircle2 aria-hidden className="h-4 w-4 text-green" /> Creators keep 100%
+                </li>
+                <li className="inline-flex items-center gap-2">
+                  <Lock aria-hidden className="h-4 w-4 text-arc-gold" /> Paid only on reply
+                </li>
+                <li className="inline-flex items-center gap-2">
+                  <Clock3 aria-hidden className="h-4 w-4 text-arc-coral" /> Refund after 3 days
+                </li>
+              </ul>
+              <p className="mt-6 text-sm text-text-secondary">
+                Your time is worth something?{" "}
+                <Link href="/dashboard" className="focus-ring rounded font-medium text-text-primary underline decoration-border-bright underline-offset-4 hover:decoration-arc-gold">
+                  Open your creator market
+                </Link>
+              </p>
+            </div>
+
+            {/* Top markets board */}
+            <section aria-labelledby="top-markets" className="panel-raised min-w-0 flex-[1_1_400px] overflow-hidden">
+              <header className="flex items-center justify-between gap-3 border-b border-border px-5 py-3.5">
+                <div className="flex items-center gap-2.5">
+                  <h2 id="top-markets" className="text-[15px] font-semibold tracking-[-0.015em]">
+                    Top markets
+                  </h2>
+                  <span className="num inline-flex items-center gap-1.5 rounded-full bg-green/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.08em] text-green">
+                    <span aria-hidden className="live-dot" />
+                    Live
+                  </span>
+                </div>
+                <Link href="/creators" className="focus-ring rounded text-[13px] text-text-secondary transition-colors hover:text-text-primary">
+                  All markets →
+                </Link>
+              </header>
+              {top.length === 0 ? (
+                <div className="px-5 py-14 text-center text-sm text-text-secondary">
+                  No markets yet.{" "}
+                  <Link href="/dashboard" className="text-arc-lavender hover:underline">
+                    Be the first creator
+                  </Link>
+                  .
+                </div>
+              ) : (
+                <>
+                  <div className="eyebrow grid grid-cols-[1fr_auto] gap-3 px-5 pb-1 pt-3 sm:grid-cols-[1fr_72px_96px]">
+                    <span>Creator · 7d volume</span>
+                    <span className="hidden sm:block">Trend</span>
+                    <span className="text-right">Price</span>
+                  </div>
+                  <ol>
+                    {top.map((r, i) => (
+                      <li key={r.handle}>
+                        <Link
+                          href={`/c/${r.handle}`}
+                          className="focus-ring group grid grid-cols-[1fr_auto] items-center gap-3 px-5 py-3 transition-colors hover:bg-arc-bg-2 sm:grid-cols-[1fr_72px_96px]"
+                        >
+                          <span className="flex min-w-0 items-center gap-3">
+                            <Num className="w-4 text-xs text-text-dim">{i + 1}</Num>
+                            <CreatorAvatar handle={r.handle} src={r.avatarUrl} size={34} />
+                            <span className="min-w-0">
+                              <span className="block truncate font-medium">@{r.handle}</span>
+                              <span className="block text-xs text-text-secondary">
+                                <Money atomic={r.hasHistory ? r.volume7dUsdc : null} className="text-text-secondary" /> vol
+                                {r.openBids > 0 && (
+                                  <>
+                                    {" "}
+                                    · <Num className="text-arc-gold">{r.openBids}</Num> open
+                                  </>
+                                )}
+                              </span>
+                            </span>
+                          </span>
+                          <span className="hidden sm:block">
+                            <Sparkline values={r.trend7d} width={72} label={`7 day cleared prices for @${r.handle}`} />
+                          </span>
+                          <span className="text-right leading-tight">
+                            <Money atomic={r.topBidUsdc ?? r.lastClearedUsdc} tone={r.topBidUsdc ? "gold" : "default"} className="block text-[15px] font-medium" />
+                            <span className="block text-[11px] text-text-secondary">
+                              {r.topBidUsdc ? "top bid" : r.lastClearedUsdc ? "last cleared" : "no bids yet"}
+                            </span>
+                          </span>
+                        </Link>
+                      </li>
+                    ))}
+                  </ol>
+                </>
+              )}
+              <div className="flex items-center justify-between gap-3 border-t border-border bg-arc-bg-0/40 px-5 py-3 text-xs text-text-secondary">
+                <span>Ranked by 7-day cleared volume</span>
+                <span className="num">USDC</span>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <div className="mx-auto max-w-[1320px] px-4 sm:px-6">
+          {/* Live numbers */}
+          <section aria-label="Platform numbers">
+            <PlatformStats totals={totals} />
+            <LiveFills ticker={ticker} now={now} className="mt-3" />
+            <p className="mt-3 text-xs text-text-secondary">Numbers count only bids settled on-chain. Nothing here is estimated.</p>
+          </section>
+
+          {/* How a bid settles */}
+          <section aria-labelledby="how" className="mt-24">
+            <div className="flex flex-wrap items-end justify-between gap-4">
+              <div>
+                <p className="eyebrow text-arc-gold">The escrow</p>
+                <h2 id="how" className="mt-2 text-3xl font-semibold tracking-[-0.035em] sm:text-4xl">
+                  How a bid settles
+                </h2>
+              </div>
+              <p className="max-w-[46ch] text-sm text-text-secondary">
+                Bids are held by the AttnnEscrow contract on Arc, which only pays the creator on a reply or returns the money to the bidder.
+              </p>
+            </div>
+            <ol className="mt-8 grid grid-cols-[repeat(auto-fit,minmax(240px,1fr))] gap-px overflow-hidden rounded-xl border border-border bg-border">
+              {STEPS.map((s) => {
+                const t = STEP_TONE[s.tone];
+                const Icon = s.icon;
+                return (
+                  <li key={s.n} className="relative bg-arc-bg-1 p-6">
+                    <span aria-hidden className={cn("absolute inset-x-0 top-0 h-0.5 opacity-70", t.bar)} />
+                    <div className="flex items-center justify-between">
+                      <span className={cn("inline-flex h-9 w-9 items-center justify-center rounded-lg border", t.ring)}>
+                        <Icon aria-hidden className={cn("h-[18px] w-[18px]", t.text)} />
                       </span>
-                      <span className="hidden sm:block">
-                        <Sparkline values={r.trend7d} width={64} label={`7 day cleared prices for @${r.handle}`} />
-                      </span>
-                      <span className="w-24 text-right leading-tight">
-                        <Money atomic={r.topBidUsdc ?? r.lastClearedUsdc} tone={r.topBidUsdc ? "gold" : "default"} className="block font-medium" />
-                        <span className="block text-[11px] text-text-secondary">{r.topBidUsdc ? "top bid" : r.lastClearedUsdc ? "last cleared" : "no bids yet"}</span>
-                      </span>
-                    </Link>
+                      <span className="num text-xs text-text-dim">{s.n}</span>
+                    </div>
+                    <h3 className="mt-5 text-lg font-semibold tracking-[-0.02em]">{s.title}</h3>
+                    <p className="mt-1.5 text-sm leading-relaxed text-text-secondary">{s.body}</p>
                   </li>
-                ))}
-              </ol>
-            )}
-          </Panel>
-        </section>
+                );
+              })}
+            </ol>
+          </section>
 
-        {/* Live numbers */}
-        <section aria-label="Platform numbers">
-          <PlatformStats totals={totals} />
-          <LiveFills ticker={ticker} now={now} className="mt-3" />
-          <p className="mt-3 text-xs text-text-secondary">Numbers count only bids settled on-chain. Nothing here is estimated.</p>
-        </section>
+          {/* Two sides */}
+          <section className="mt-24 grid gap-4 md:grid-cols-2">
+            <SideCard
+              eyebrow="For bidders"
+              title="Put an agent on your outreach."
+              icon={<Bot aria-hidden className="h-5 w-5 text-arc-gold" />}
+              points={[
+                "Set a goal, search tags, a daily budget and a max bid per creator.",
+                "Your agent finds creators, scores the fit and escrows bids within those limits, every 30 minutes.",
+                "Track every open position, its rank in the book and its refund countdown in your portfolio.",
+              ]}
+              cta={
+                <Link href="/dashboard" className="focus-ring btn-primary h-11 w-full sm:w-auto">
+                  Deploy a bidder agent
+                </Link>
+              }
+            />
+            <SideCard
+              eyebrow="For creators"
+              title="Get paid to reply."
+              icon={<Inbox aria-hidden className="h-5 w-5 text-green" />}
+              points={[
+                "Set a floor price. Bids below it never reach you.",
+                "Your inbox is ranked by amount, with your agent's score on every bid.",
+                "Reply to collect, counter for more, or let it expire. Pause your market any time.",
+              ]}
+              cta={
+                <Link href="/dashboard" className="focus-ring btn-secondary h-11 w-full sm:w-auto">
+                  Open your creator market
+                </Link>
+              }
+            />
+          </section>
 
-        {/* How a bid settles */}
-        <section aria-labelledby="how" className="mt-16">
-          <h2 id="how" className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">
-            How a bid settles
-          </h2>
-          <ol className="mt-6 grid grid-cols-[repeat(auto-fit,minmax(230px,1fr))] gap-px overflow-hidden rounded-xl border border-border bg-border">
-            {STEPS.map((s) => (
-              <li key={s.n} className="bg-arc-bg-1 p-5">
-                <span className={`num text-sm ${s.tone}`}>{s.n}</span>
-                <h3 className="mt-2 font-display text-lg font-semibold">{s.title}</h3>
-                <p className="mt-1.5 text-sm text-text-secondary">{s.body}</p>
-              </li>
-            ))}
-          </ol>
-          <p className="mt-3 text-xs text-text-secondary">
-            Bids are held by the AttnnEscrow contract on Arc, which only pays the creator on a reply or returns the money to the bidder.
-          </p>
-        </section>
-
-        {/* Two sides */}
-        <section className="mt-16 grid gap-5 md:grid-cols-2">
-          <Panel raised title="For bidders">
-            <ul className="flex flex-col gap-2.5 text-sm text-text-secondary">
-              <li>Set a goal, search tags, a daily budget and a max bid per creator.</li>
-              <li>Your agent finds creators, scores the fit and escrows bids within those limits, every 30 minutes.</li>
-              <li>Track every open position, its rank in the book and its refund countdown in your portfolio.</li>
+          {/* Built on */}
+          <section aria-label="Built on" className="mt-24 flex flex-wrap items-center justify-between gap-6 rounded-xl border border-border bg-arc-bg-1 px-6 py-5">
+            <p className="text-sm text-text-secondary">
+              <span className="font-medium text-text-primary">Settles on Arc.</span> USDC is the gas token, so every fee and bid is in dollars.
+            </p>
+            <ul className="flex flex-wrap gap-2">
+              {[arc.chain.name, ...STACK].map((s) => (
+                <li key={s} className="num rounded-md border border-border bg-arc-bg-0 px-2.5 py-1 text-xs text-text-secondary">
+                  {s}
+                </li>
+              ))}
             </ul>
-            <Link href="/dashboard" className={`${primary} mt-5 h-11 w-full sm:w-auto`}>
-              Deploy a bidder agent
-            </Link>
-          </Panel>
-          <Panel raised title="For creators">
-            <ul className="flex flex-col gap-2.5 text-sm text-text-secondary">
-              <li>Set a floor price. Bids below it never reach you.</li>
-              <li>Your inbox is ranked by amount, with your agent&apos;s score on every bid.</li>
-              <li>Reply to collect, counter for more, or let it expire. Pause your market any time.</li>
-            </ul>
-            <Link href="/dashboard" className={`${secondary} mt-5 h-11 w-full sm:w-auto`}>
-              Open your creator market
-            </Link>
-          </Panel>
-        </section>
+          </section>
+        </div>
       </main>
 
-      <footer className="border-t border-border">
-        <div className="mx-auto flex max-w-[1320px] flex-wrap items-start justify-between gap-4 px-4 py-8 text-xs text-text-secondary sm:px-6">
-          <nav aria-label="Footer" className="flex flex-wrap gap-4">
-            <Link href="/creators" className="hover:text-text-primary">
-              Markets
-            </Link>
-            <Link href="/about" className="hover:text-text-primary">
-              How it works
-            </Link>
-            <Link href="/dashboard" className="hover:text-text-primary">
-              Portfolio
-            </Link>
-            <Link href="/privacy" className="hover:text-text-primary">
-              Privacy
-            </Link>
-            <Link href="/terms" className="hover:text-text-primary">
-              Terms
-            </Link>
-          </nav>
-          <div className="sm:text-right">
-            <span>Built on Arc Network™ · Circle USDC · x402</span>
-            <span className="mt-1 block text-[11px]">Arc is a trademark of Circle Internet Group, Inc. and/or its affiliates.</span>
-          </div>
-        </div>
-      </footer>
+      <SiteFooter />
     </div>
+  );
+}
+
+function SideCard({
+  eyebrow,
+  title,
+  icon,
+  points,
+  cta,
+}: {
+  eyebrow: string;
+  title: string;
+  icon: React.ReactNode;
+  points: string[];
+  cta: React.ReactNode;
+}) {
+  return (
+    <section className="panel flex flex-col p-6 sm:p-8">
+      <div className="flex items-center gap-3">
+        <span className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-border-bright bg-arc-bg-2">{icon}</span>
+        <p className="eyebrow">{eyebrow}</p>
+      </div>
+      <h2 className="mt-5 text-2xl font-semibold tracking-[-0.03em]">{title}</h2>
+      <ul className="mt-4 flex flex-1 flex-col gap-3 text-sm text-text-secondary">
+        {points.map((p) => (
+          <li key={p} className="flex gap-3">
+            <span aria-hidden className="mt-[7px] h-1 w-1 flex-none rounded-full bg-text-secondary" />
+            <span className="leading-relaxed">{p}</span>
+          </li>
+        ))}
+      </ul>
+      <div className="mt-6">{cta}</div>
+    </section>
   );
 }

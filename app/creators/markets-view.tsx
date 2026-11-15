@@ -77,17 +77,17 @@ export function MarketsView({
       key: "creator",
       label: "Creator",
       render: (r) => (
-        <Link href={`/c/${r.handle}`} className="focus-ring flex items-center gap-2.5 rounded-md text-text-primary">
-          <CreatorAvatar handle={r.handle} src={r.avatarUrl} />
+        <Link href={`/c/${r.handle}`} className="focus-ring flex items-center gap-3 rounded-md text-text-primary">
+          <CreatorAvatar handle={r.handle} src={r.avatarUrl} size={36} />
           <span>
             <span className="flex items-center gap-2">
-              <span className="font-semibold">@{r.handle}</span>
+              <span className="font-medium">@{r.handle}</span>
               {!r.hasHistory && (
-                <span className="rounded border border-arc-lavender/30 px-1.5 text-[11px] text-arc-lavender">New market</span>
+                <span className="rounded border border-arc-lavender/30 bg-arc-lavender/[0.06] px-1.5 py-px text-[10px] font-medium uppercase tracking-[0.06em] text-arc-lavender">New</span>
               )}
-              {r.paused && <span className="rounded border border-arc-coral/40 px-1.5 text-[11px] text-arc-coral">Paused</span>}
+              {r.paused && <span className="rounded border border-arc-coral/40 bg-arc-coral/[0.06] px-1.5 py-px text-[10px] font-medium uppercase tracking-[0.06em] text-arc-coral">Paused</span>}
             </span>
-            <span className="block text-xs text-text-secondary">
+            <span className={cn("block text-xs", r.openBids > 0 ? "text-arc-gold" : "text-text-secondary")}>
               {r.openBids > 0 ? `${r.openBids} open bid${r.openBids > 1 ? "s" : ""}` : "No open bids"}
             </span>
           </span>
@@ -157,10 +157,8 @@ export function MarketsView({
         <Link
           href={`/c/${r.handle}`}
           className={cn(
-            "focus-ring inline-flex h-9 items-center rounded-lg px-4 text-sm",
-            r.paused
-              ? "border border-border-bright font-medium text-text-primary hover:bg-arc-bg-3"
-              : "bg-arc-gold font-display font-semibold text-arc-bg-0 hover:brightness-110",
+            "focus-ring h-8 min-w-[64px] px-3.5 text-[13px]",
+            r.paused ? "btn-secondary" : "btn-primary",
           )}
         >
           {r.paused ? "View" : "Bid"}
@@ -178,8 +176,10 @@ export function MarketsView({
         aria-pressed={on}
         onClick={() => setTag(label)}
         className={cn(
-          "focus-ring h-9 rounded-full border px-3.5 text-[13px]",
-          on ? "border-arc-gold bg-arc-bg-3 text-text-primary" : "border-border-bright text-text-secondary hover:text-text-primary",
+          "focus-ring h-8 rounded-full border px-3.5 text-[13px] font-medium transition-colors",
+          on
+            ? "border-text-primary bg-text-primary text-arc-bg-0"
+            : "border-border-bright bg-arc-bg-1 text-text-secondary hover:border-text-primary/25 hover:text-text-primary",
         )}
       >
         {label}
@@ -188,22 +188,23 @@ export function MarketsView({
   };
 
   return (
-    <main className="mx-auto max-w-[1320px] px-4 pb-16 pt-7 sm:px-6">
+    <main className="mx-auto max-w-[1320px] px-4 pb-6 pt-10 sm:px-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="font-display text-3xl font-semibold tracking-tight">Attention markets</h1>
-          <p className="mt-1 max-w-[60ch] text-text-secondary">
+          <p className="eyebrow inline-flex items-center gap-2">
+            <span aria-hidden className="live-dot text-green" />
+            <Num className="text-text-primary">{rows.filter((r) => !r.paused).length}</Num> markets accepting bids
+          </p>
+          <h1 className="mt-2 text-4xl font-semibold tracking-[-0.04em]">Attention markets</h1>
+          <p className="mt-2 max-w-[60ch] text-text-secondary">
             Every creator is a market. Bids are escrowed USDC on Arc: paid out on reply, refunded after 3 days without one.
           </p>
         </div>
         <div className="flex w-full flex-wrap gap-2 sm:w-auto">
-          <Link href="/dashboard" className="focus-ring inline-flex h-11 w-full items-center justify-center rounded-lg border border-border-bright px-4 font-medium hover:bg-arc-bg-2 sm:w-auto">
+          <Link href="/dashboard" className="focus-ring btn-secondary h-11 w-full px-4 sm:w-auto">
             List yourself as a creator
           </Link>
-          <Link
-            href="/dashboard"
-            className="focus-ring inline-flex h-11 w-full items-center justify-center rounded-lg bg-arc-gold px-4 font-display font-semibold text-arc-bg-0 hover:brightness-110 sm:w-auto"
-          >
+          <Link href="/dashboard" className="focus-ring btn-primary h-11 w-full px-4 sm:w-auto">
             Deploy a bidder agent
           </Link>
         </div>
@@ -217,7 +218,7 @@ export function MarketsView({
           {["All", ...topTags].map(chip)}
         </div>
         <div className="flex w-full flex-wrap items-center gap-2.5 sm:ml-auto sm:w-auto">
-          <label className="relative flex h-10 min-w-[220px] flex-1 sm:flex-none items-center gap-2 rounded-lg border border-border-bright bg-arc-bg-1 px-3 focus-within:ring-2 focus-within:ring-arc-lavender">
+          <label className="relative flex h-10 min-w-[220px] flex-1 items-center gap-2 rounded-lg border border-border-bright bg-arc-bg-1 px-3 transition-colors focus-within:border-arc-lavender/60 focus-within:ring-2 focus-within:ring-arc-lavender/20 hover:border-text-primary/20 sm:w-64 sm:flex-none">
             <Search aria-hidden className="h-4 w-4 text-text-secondary" />
             <span className="sr-only">Search creators</span>
             <input
@@ -233,11 +234,13 @@ export function MarketsView({
             aria-pressed={acceptingOnly}
             onClick={() => setAcceptingOnly((v) => !v)}
             className={cn(
-              "focus-ring inline-flex h-10 items-center gap-2 rounded-lg border px-3.5 text-[13px]",
-              acceptingOnly ? "border-green bg-arc-bg-3" : "border-border-bright",
+              "focus-ring inline-flex h-10 items-center gap-2.5 rounded-lg border px-3 text-[13px] transition-colors",
+              acceptingOnly ? "border-green/40 bg-green/[0.06] text-text-primary" : "border-border-bright bg-arc-bg-1 text-text-secondary hover:text-text-primary",
             )}
           >
-            <span aria-hidden className={cn("h-2 w-2 rounded-full", acceptingOnly ? "bg-green" : "bg-text-dim")} />
+            <span aria-hidden className={cn("relative h-4 w-7 rounded-full transition-colors", acceptingOnly ? "bg-green" : "bg-arc-bg-3")}>
+              <span className={cn("absolute top-0.5 h-3 w-3 rounded-full bg-text-primary transition-[left]", acceptingOnly ? "left-[14px]" : "left-0.5")} />
+            </span>
             Accepting bids only
           </button>
         </div>
@@ -254,13 +257,13 @@ export function MarketsView({
           empty={rows.length === 0 ? "No creators have opened a market yet." : "No markets match these filters."}
           mobileCard={(r) => (
             <div className="flex items-center gap-3">
-              <Link href={`/c/${r.handle}`} className="focus-ring flex min-w-0 flex-1 items-center gap-2.5 rounded-md">
-                <CreatorAvatar handle={r.handle} src={r.avatarUrl} />
+              <Link href={`/c/${r.handle}`} className="focus-ring flex min-w-0 flex-1 items-center gap-3 rounded-md">
+                <CreatorAvatar handle={r.handle} src={r.avatarUrl} size={36} />
                 <span className="min-w-0">
                   <span className="flex flex-wrap items-center gap-1.5">
-                    <span className="truncate font-semibold">@{r.handle}</span>
-                    {!r.hasHistory && <span className="rounded border border-arc-lavender/30 px-1.5 text-[11px] text-arc-lavender">New</span>}
-                    {r.paused && <span className="rounded border border-arc-coral/40 px-1.5 text-[11px] text-arc-coral">Paused</span>}
+                    <span className="truncate font-medium">@{r.handle}</span>
+                    {!r.hasHistory && <span className="rounded border border-arc-lavender/30 px-1.5 py-px text-[10px] font-medium uppercase tracking-[0.06em] text-arc-lavender">New</span>}
+                    {r.paused && <span className="rounded border border-arc-coral/40 px-1.5 py-px text-[10px] font-medium uppercase tracking-[0.06em] text-arc-coral">Paused</span>}
                   </span>
                   <span className="block text-xs text-text-secondary">
                     Floor <Money atomic={r.floorUsdc} className="text-text-secondary" />
@@ -279,17 +282,14 @@ export function MarketsView({
               </span>
               <Link
                 href={`/c/${r.handle}`}
-                className={cn(
-                  "focus-ring inline-flex h-11 items-center rounded-lg px-3.5 text-sm",
-                  r.paused ? "border border-border-bright font-medium" : "bg-arc-gold font-display font-semibold text-arc-bg-0",
-                )}
+                className={cn("focus-ring h-10 px-3.5 text-sm", r.paused ? "btn-secondary" : "btn-primary")}
               >
                 {r.paused ? "View" : "Bid"}
               </Link>
             </div>
           )}
         />
-        <div className="border-t border-border px-5 py-3 text-[13px] text-text-secondary">
+        <div className="flex items-center justify-between gap-3 border-t border-border bg-arc-bg-0/40 px-5 py-3 text-[13px] text-text-secondary">
           <Num>{filtered.length}</Num> of <Num>{rows.length}</Num> markets · prices in USDC
         </div>
       </Panel>

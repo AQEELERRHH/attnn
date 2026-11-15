@@ -122,11 +122,12 @@ export function DesignPreview() {
         <h2 className="font-display text-lg font-semibold">Colour roles</h2>
         <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3 text-sm">
           {[
-            ["bg-arc-gold", "Gold", "Money, open bids, primary action"],
-            ["bg-green", "Green", "Settled, paid, price up"],
-            ["bg-arc-coral", "Coral", "Refund countdowns, warnings, down"],
-            ["bg-arc-lavender", "Lavender", "Links, tags, focus ring"],
-            ["bg-arc-purple", "Purple", "Decorative only (fails text contrast)"],
+            ["bg-arc-gold", "Signal orange · arc-gold", "Money, open bids, primary action"],
+            ["bg-green", "Green · green", "Settled, paid, price up"],
+            ["bg-arc-coral", "Coral · arc-coral", "Refund countdowns, warnings, down"],
+            ["bg-arc-lavender", "Info blue · arc-lavender", "Links, notes, focus ring"],
+            ["bg-arc-purple", "Hairline · arc-purple", "Decorative only (fails text contrast)"],
+            ["bg-text-primary", "Cream · text-primary", "Text; the logo's square"],
           ].map(([cls, name, use]) => (
             <div key={name} className="panel p-3">
               <span className={`mb-2 block h-8 rounded ${cls}`} />

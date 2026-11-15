@@ -168,7 +168,7 @@ export function WelcomeDialog({
             type="button"
             onClick={() => role && finish(role)}
             disabled={!role || saving}
-            className="focus-ring btn-primary h-11 text-[15px] disabled:cursor-not-allowed disabled:opacity-45"
+            className="focus-ring btn-primary h-11 text-[15px] disabled:cursor-not-allowed"
           >
             {saving ? "Saving…" : role ? (firstVisit ? "Get started" : "Save") : "Pick one to continue"}
           </button>

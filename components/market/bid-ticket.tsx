@@ -228,7 +228,7 @@ export function BidTicket({
       <button
         type="submit"
         disabled={!valid || submitting || !!disabledReason || (!!codeSentTo && !isSecurityCode(code))}
-        className="focus-ring btn-primary h-12 text-[15px] shadow-[inset_0_1px_0_0_rgb(255_255_255/0.25)] disabled:cursor-not-allowed disabled:opacity-45"
+        className="focus-ring btn-primary h-12 text-[15px] shadow-[inset_0_1px_0_0_rgb(255_255_255/0.25)] disabled:cursor-not-allowed"
       >
         {submitting
           ? "Submitting…"

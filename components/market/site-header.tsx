@@ -53,8 +53,12 @@ export function SiteHeader({ networkLabel, actions }: { networkLabel: string; ac
             <span aria-hidden className="live-dot text-green" />
             {networkLabel}
           </span>
-          {actions ?? (status === "authenticated" ? (
+          {actions ?? (status === "loading" ? (
+            // Session still loading: hold the space instead of flashing "Get started" at signed-in users.
+            <span aria-hidden className="h-9 w-[104px] animate-pulse rounded-lg bg-arc-bg-2" />
+          ) : status === "authenticated" ? (
             <Link
+              key="portfolio"
               href="/dashboard"
               className="focus-ring inline-flex h-9 items-center gap-1.5 rounded-lg border border-border-bright bg-arc-bg-1 px-3.5 text-[13px] font-medium transition-colors hover:bg-arc-bg-2"
             >
@@ -62,7 +66,7 @@ export function SiteHeader({ networkLabel, actions }: { networkLabel: string; ac
               <ArrowUpRight aria-hidden className="h-3.5 w-3.5 text-text-secondary" />
             </Link>
           ) : (
-            <Link href="/register" className="focus-ring btn-primary h-9 px-4 text-[13px]">
+            <Link key="get-started" href="/register" className="focus-ring btn-primary h-9 px-4 text-[13px]">
               Get started
             </Link>
           ))}

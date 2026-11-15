@@ -321,9 +321,14 @@ export function CreatorMarket(props: CreatorMarketProps) {
 
           <section aria-label="About this creator" className="grid grid-cols-[repeat(auto-fit,minmax(240px,1fr))] gap-4">
             <Panel
-              title="Agent endpoint"
+              className={details.unlocked ? "col-span-full" : undefined}
+              title={
+                <span className="flex items-center gap-2">
+                  Agent endpoint
+                  <span className="num rounded-md border border-arc-gold/30 bg-arc-gold/[0.07] px-1.5 py-px text-[11px] font-normal text-arc-gold">$0.001 · x402</span>
+                </span>
+              }
               description="External agents can read this market over x402."
-              actions={<span className="num rounded-md border border-arc-gold/30 bg-arc-gold/[0.07] px-2 py-0.5 text-[11px] text-arc-gold">$0.001</span>}
             >
               <EndpointField path={props.apiPath} />
             </Panel>
@@ -417,7 +422,7 @@ function EndpointField({ path }: { path: string }) {
   const text = `GET attnn.xyz${path}`;
   return (
     <div className="flex items-center gap-2 rounded-md border border-border bg-arc-bg-0 py-1.5 pl-2.5 pr-1.5">
-      <code className="num min-w-0 flex-1 overflow-x-auto whitespace-nowrap text-xs text-text-primary">
+      <code className="num min-w-0 flex-1 overflow-x-auto whitespace-nowrap text-xs text-text-primary [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <span className="text-green">GET</span> attnn.xyz{path}
       </code>
       <button

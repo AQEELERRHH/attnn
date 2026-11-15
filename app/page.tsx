@@ -71,7 +71,7 @@ export default async function HomePage() {
                 <span className="text-text-primary">USDC escrow</span>
                 <ArrowRight aria-hidden className="h-3 w-3 transition-transform group-hover:translate-x-0.5" />
               </Link>
-              <h1 className="mt-6 text-[44px] font-semibold leading-[0.98] tracking-[-0.045em] sm:text-[72px]">
+              <h1 className="mt-6 text-balance text-[44px] font-semibold leading-[0.98] tracking-[-0.045em] sm:text-[clamp(52px,4.5vw,66px)]">
                 Attention is scarce.
                 <br />
                 <span className="text-text-secondary">Let agents negotiate it.</span>

@@ -88,7 +88,7 @@ body {
 
   /* Buttons outside <Button> (links styled as buttons). Same look as components/ui/button.tsx. */
   .btn-primary {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg bg-arc-gold px-5 font-semibold text-[#130B00] transition-[filter,transform] duration-150 hover:brightness-110 active:translate-y-px disabled:opacity-50;
+    @apply inline-flex items-center justify-center gap-2 rounded-lg bg-arc-gold px-5 font-semibold text-[#130B00] transition-[filter,transform] duration-150 hover:brightness-110 active:translate-y-px disabled:bg-arc-bg-3 disabled:text-text-secondary disabled:shadow-none disabled:brightness-100;
   }
   .btn-secondary {
     @apply inline-flex items-center justify-center gap-2 rounded-lg border border-border-bright bg-arc-bg-1 px-5 font-medium text-text-primary transition-colors duration-150 hover:border-text-primary/25 hover:bg-arc-bg-2;

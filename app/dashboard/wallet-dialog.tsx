@@ -240,7 +240,7 @@ function AddressOrb({ address, size = 22 }: { address: string; size?: number }) 
   return (
     <span
       aria-hidden
-      className="inline-block flex-none rounded-full ring-1 ring-inset ring-white/15"
+      className="inline-block flex-none rounded-full ring-1 ring-inset ring-border-bright"
       style={{ width: size, height: size, background: `conic-gradient(from ${a}deg, hsl(${a} 80% 60%), hsl(${b} 75% 45%), hsl(${(a + 120) % 360} 70% 55%), hsl(${a} 80% 60%))` }}
     />
   );

@@ -29,10 +29,64 @@
   --c-cream-2: rgb(var(--cream-2));
   --c-hairline: rgb(var(--cream) / 0.07);
 
+  /* Text and icons on a filled accent (orange buttons, coral destructive). */
+  --on-accent: 19 11 0;
+  /* The logo mark's three squares, front to back (components/market/brand-mark.tsx). */
+  --logo-a: 253 250 243;
+  --logo-b: 127 128 130;
+  --logo-c: 59 61 63;
+  /* Hairline strength for border / border-bright (tailwind.config.ts). */
+  --line-a: 0.07;
+  --line-b: 0.13;
+  /* Elevation (shadow-raised / shadow-pop). */
+  --shadow-raised: inset 0 1px 0 0 rgb(var(--cream) / 0.04), 0 1px 2px 0 rgb(0 0 0 / 0.4), 0 8px 24px -12px rgb(0 0 0 / 0.6);
+  --shadow-pop: inset 0 1px 0 0 rgb(var(--cream) / 0.05), 0 16px 48px -12px rgb(0 0 0 / 0.75);
+
   /* Motion: ease-out for things arriving or responding (fast start, soft settle),
      ease-in for things leaving. Same curve as Tailwind's default (tailwind.config.ts). */
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-in: cubic-bezier(0.4, 0, 1, 1);
+}
+
+/* ─── Light theme ────────────────────────────────────────────────────────────
+   Set by the header's theme toggle (components/market/theme-toggle.tsx) as
+   data-theme="light" on <html>, saved in localStorage and applied before first
+   paint (app/layout.tsx). Every colour on the site comes from the tokens above,
+   so redefining them here re-themes every page. Text colours hold WCAG AA (4.5:1)
+   on the page and panel greys; accents are darker than in the dark theme so
+   orange, green and coral text stay readable, and text on a filled accent flips
+   to light. */
+:root[data-theme="light"] {
+  --ink-0: 245 244 239;  /* page */
+  --ink-1: 254 253 250;  /* panel */
+  --ink-2: 240 238 232;  /* raised / hover */
+  --ink-3: 233 230 222;  /* selected / input fill */
+  --cream: 24 23 21;     /* primary text */
+  --cream-2: 91 88 82;   /* secondary text, 6.4:1 on the page */
+  --cream-3: 128 124 116;/* placeholders, disabled */
+  --signal: 176 76 4;    /* orange that reads as text (4.9:1) and holds light text (5.2:1) */
+  --up: 15 112 62;
+  --down: 184 44 33;
+  --info: 38 84 190;
+  --deco: 205 200 190;
+  --on-accent: 255 250 242;
+  --logo-a: 24 23 21;
+  --logo-b: 120 117 110;
+  --logo-c: 196 192 184;
+  --line-a: 0.1;
+  --line-b: 0.16;
+  --shadow-raised: inset 0 1px 0 0 rgb(255 255 255 / 0.7), 0 1px 2px 0 rgb(24 23 21 / 0.06), 0 8px 24px -12px rgb(24 23 21 / 0.14);
+  --shadow-pop: 0 0 0 1px rgb(24 23 21 / 0.04), 0 16px 48px -12px rgb(24 23 21 / 0.2);
+  color-scheme: light;
+}
+
+/* The toggle shows the theme you'd switch to; both icons are rendered and CSS picks. */
+:root[data-theme="light"] .theme-when-dark { display: none; }
+:root:not([data-theme="light"]) .theme-when-light { display: none; }
+
+/* While switching, every surface fades to its new colour instead of flashing. */
+.theme-switching, .theme-switching *, .theme-switching *::before, .theme-switching *::after {
+  transition: background-color 280ms var(--ease-out), color 280ms var(--ease-out), border-color 280ms var(--ease-out), fill 280ms var(--ease-out), stroke 280ms var(--ease-out), box-shadow 280ms var(--ease-out) !important;
 }
 
 /* Anything you can click, focus or type into changes state smoothly, even where its
@@ -104,12 +158,12 @@ body {
   /* Every button eases into its hover state and presses in quickly (75ms to 97%), then
      settles back over 200ms when released: a soft press, not a 1px jump. */
   .btn-primary {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg bg-arc-gold px-5 font-semibold text-[#130B00] transition-[filter,transform,box-shadow,background-color,color] duration-200 ease-smooth hover:brightness-110 hover:shadow-[0_6px_20px_-8px_rgb(var(--signal)/0.6)] active:scale-[0.97] active:duration-75 disabled:bg-arc-bg-3 disabled:text-text-secondary disabled:shadow-none disabled:brightness-100;
+    @apply inline-flex items-center justify-center gap-2 rounded-lg bg-arc-gold px-5 font-semibold text-on-accent transition-[filter,transform,box-shadow,background-color,color] duration-200 ease-smooth hover:brightness-110 hover:shadow-[0_6px_20px_-8px_rgb(var(--signal)/0.6)] active:scale-[0.97] active:duration-75 disabled:bg-arc-bg-3 disabled:text-text-secondary disabled:shadow-none disabled:brightness-100;
   }
   /* Repeated row actions (Bid, Reply · collect): tinted so a list isn't a wall of solid orange.
      Fills on its own hover/focus, or when its row (an ancestor with .group) is hovered. */
   .btn-soft {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg border border-arc-gold/35 bg-arc-gold/[0.07] font-semibold text-arc-gold transition-[background-color,border-color,color,transform] duration-200 ease-smooth hover:border-arc-gold hover:bg-arc-gold hover:text-[#130B00] focus-visible:border-arc-gold focus-visible:bg-arc-gold focus-visible:text-[#130B00] active:scale-[0.97] active:duration-75 group-hover:border-arc-gold group-hover:bg-arc-gold group-hover:text-[#130B00];
+    @apply inline-flex items-center justify-center gap-2 rounded-lg border border-arc-gold/35 bg-arc-gold/[0.07] font-semibold text-arc-gold transition-[background-color,border-color,color,transform] duration-200 ease-smooth hover:border-arc-gold hover:bg-arc-gold hover:text-on-accent focus-visible:border-arc-gold focus-visible:bg-arc-gold focus-visible:text-on-accent active:scale-[0.97] active:duration-75 group-hover:border-arc-gold group-hover:bg-arc-gold group-hover:text-on-accent;
   }
   .btn-secondary {
     @apply inline-flex items-center justify-center gap-2 rounded-lg border border-border-bright bg-arc-bg-1 px-5 font-medium text-text-primary transition-[background-color,border-color,color,transform] duration-200 ease-smooth hover:border-text-primary/25 hover:bg-arc-bg-2 active:scale-[0.97] active:duration-75;

@@ -229,7 +229,7 @@ export function CreatorAvatar({
         background: `linear-gradient(140deg, hsl(${hue} 38% 22%), hsl(${(hue + 40) % 360} 30% 13%))`,
         color: `hsl(${hue} 85% 80%)`,
       }}
-      className={cn(radius, "flex flex-none items-center justify-center font-semibold ring-1 ring-inset ring-white/10", className)}
+      className={cn(radius, "flex flex-none items-center justify-center font-semibold ring-1 ring-inset ring-border", className)}
     >
       {clean.charAt(0).toUpperCase() || "?"}
     </span>

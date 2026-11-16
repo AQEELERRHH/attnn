@@ -7,6 +7,7 @@ import { useSession } from "next-auth/react";
 import { ArrowUpRight } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { BrandMark } from "./brand-mark";
+import { ThemeToggle } from "./theme-toggle";
 
 const NAV = [
   { href: "/creators", label: "Markets" },
@@ -53,6 +54,7 @@ export function SiteHeader({ networkLabel, actions }: { networkLabel: string; ac
             <span aria-hidden className="live-dot text-green" />
             {networkLabel}
           </span>
+          <ThemeToggle />
           {actions ?? (status === "loading" ? (
             // Session still loading: hold the space instead of flashing "Get started" at signed-in users.
             <span aria-hidden className="h-9 w-[104px] animate-pulse rounded-lg bg-arc-bg-2" />

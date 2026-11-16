@@ -3,12 +3,9 @@
 
 .bid-life .bl-card {
   border-radius: 14px;
-  border: 1px solid rgb(var(--cream) / 0.08);
+  border: 1px solid rgb(var(--cream) / var(--line-a));
   background: rgb(var(--ink-1));
-  box-shadow:
-    inset 0 1px 0 0 rgb(var(--cream) / 0.04),
-    0 1px 2px 0 rgb(0 0 0 / 0.4),
-    0 8px 24px -12px rgb(0 0 0 / 0.6);
+  box-shadow: var(--shadow-raised);
 }
 
 /* The escrow is the hero: it glows orange while it holds money. */
@@ -56,7 +53,7 @@
   justify-content: center;
   border-radius: 9px;
   background: rgb(var(--signal));
-  color: #130b00;
+  color: rgb(var(--on-accent));
   font-size: 13px;
   font-weight: 600;
   transition: transform 120ms ease, background-color 250ms ease, color 250ms ease, box-shadow 250ms ease;
@@ -68,7 +65,7 @@
   color: rgb(var(--signal));
   box-shadow: inset 0 0 0 1px rgb(var(--signal) / 0.35);
 }
-.bid-life .bl-button--reply[data-pressed]:not([data-done]) { background: rgb(var(--signal)); color: #130b00; }
+.bid-life .bl-button--reply[data-pressed]:not([data-done]) { background: rgb(var(--signal)); color: rgb(var(--on-accent)); }
 .bid-life .bl-button[data-done] {
   background: rgb(var(--up) / 0.1);
   color: rgb(var(--up));
@@ -78,7 +75,7 @@
 /* The bid arriving in the creator's inbox */
 .bid-life .bl-row {
   border-radius: 10px;
-  border: 1px solid rgb(var(--cream) / 0.08);
+  border: 1px solid rgb(var(--cream) / var(--line-a));
   background: rgb(var(--ink-0) / 0.6);
   padding: 12px;
   opacity: 0;
@@ -129,7 +126,7 @@
   justify-content: center;
   border-radius: 999px;
   background: rgb(var(--signal));
-  color: #130b00;
+  color: rgb(var(--on-accent));
   font-size: 12.5px;
   font-weight: 600;
   box-shadow:

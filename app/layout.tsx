@@ -29,12 +29,21 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: "#090908",
-  colorScheme: "dark",
+  colorScheme: "dark light",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={`dark ${sans.variable} ${mono.variable}`} suppressHydrationWarning>
+      <head>
+        {/* Apply the saved theme before first paint, so a light-theme visitor never sees a dark flash.
+            Key matches THEME_KEY in components/market/theme-toggle.tsx. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `try{if(localStorage.getItem("attnn-theme")==="light")document.documentElement.dataset.theme="light"}catch(e){}`,
+          }}
+        />
+      </head>
       <body className="min-h-screen bg-arc-bg-0 font-body text-text-primary antialiased">
         <Providers>{children}</Providers>
         <Toaster />

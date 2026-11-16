@@ -35,6 +35,8 @@ const eslintConfig = [
       "build/**",
       "next-env.d.ts",
       "contracts/**",
+      // Vendored third-party code (Stageshow kit, MIT); type-checked, not linted.
+      "components/stageshow/kit/**",
     ],
   },
 ];

@@ -1,3 +1,4 @@
+import type * as React from "react";
 import Link from "next/link";
 import { Change, Money, Num, StatStrip } from "./primitives";
 import { formatChange, formatDuration, timeAgo } from "@/lib/format";
@@ -7,10 +8,16 @@ import { cn } from "@/lib/cn";
 export interface PlatformStatsData {
   escrowUsdc: string;
   escrowSource: string;
-  settled24hUsdc: string;
+  /**
+   * The window the settled numbers cover: the last 24h when anything settled
+   * in it, else the last 7 days, else all time (lib/market.ts settledHeadline).
+   */
+  settledWindow: "24h" | "7d" | "all";
+  settledUsdc: string;
+  /** Only for the 24h window's change line. */
   settledPrev24hUsdc: string;
-  cleared24h: number;
-  refunded24h: number;
+  cleared: number;
+  refunded: number;
   activeAgents: number;
   medianReply7dMs: number | null;
 }
@@ -21,26 +28,40 @@ export interface FillTick {
   settledAt: string;
 }
 
+const SETTLED_LABEL = { "24h": "24h settled", "7d": "7d settled", all: "Settled, all time" } as const;
+const CLEARED_WINDOW = { "24h": "24h", "7d": "7d", all: "all time" } as const;
+
+/** The line under the settled amount: the change for 24h, else why the window is wider. */
+function settledSub(t: PlatformStatsData): React.ReactNode {
+  if (t.settledWindow === "7d") return "None in the last 24h";
+  if (t.settledWindow === "all") return "None in the last 7 days";
+  if (BigInt(t.settledPrev24hUsdc) === BigInt(0)) return "Nothing settled the 24h before";
+  return (
+    <>
+      <Change value={formatChange(BigInt(t.settledUsdc), BigInt(t.settledPrev24hUsdc))} /> vs prior 24h
+    </>
+  );
+}
+
 /** Server-safe strip of live platform numbers (markets page, homepage). */
-export function PlatformStats({ totals, className }: { totals: PlatformStatsData; className?: string }) {
+export function PlatformStats({ totals, enter, className }: { totals: PlatformStatsData; enter?: boolean; className?: string }) {
   return (
     <StatStrip
       className={className}
+      enter={enter}
       items={[
-        { label: "In escrow now", value: <Money atomic={totals.escrowUsdc} tone="gold" />, sub: totals.escrowSource, tone: "gold" },
         {
-          label: "24h settled",
-          value: <Money atomic={totals.settled24hUsdc} />,
-          sub:
-            BigInt(totals.settledPrev24hUsdc) > BigInt(0) ? (
-              <>
-                <Change value={formatChange(BigInt(totals.settled24hUsdc), BigInt(totals.settledPrev24hUsdc))} /> vs prior 24h
-              </>
-            ) : (
-              "Nothing settled the 24h before"
-            ),
+          label: "In escrow now",
+          value: <Money atomic={totals.escrowUsdc} tone={BigInt(totals.escrowUsdc) > BigInt(0) ? "gold" : "default"} />,
+          sub: totals.escrowSource,
+          tone: "gold",
         },
-        { label: "Bids cleared · 24h", value: <Num>{totals.cleared24h}</Num>, sub: `${totals.refunded24h} refunded` },
+        { label: SETTLED_LABEL[totals.settledWindow], value: <Money atomic={totals.settledUsdc} />, sub: settledSub(totals) },
+        {
+          label: `Bids cleared · ${CLEARED_WINDOW[totals.settledWindow]}`,
+          value: <Num>{totals.cleared}</Num>,
+          sub: `${totals.refunded} refunded`,
+        },
         { label: "Active bidder agents", value: <Num>{totals.activeAgents}</Num>, sub: "Running on a schedule" },
         { label: "Median reply", value: <Num>{formatDuration(totals.medianReply7dMs)}</Num>, sub: "Across cleared bids, 7d" },
       ]}

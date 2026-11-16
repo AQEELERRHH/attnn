@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import { bidderConfigs, profiles } from "@/lib/db/schema";
-import { computeCreatorStats, computePlatformTotals, loadMarketBids, readEscrowBalance, type MarketBid } from "@/lib/market";
+import { computeCreatorStats, computePlatformTotals, settledHeadline, loadMarketBids, readEscrowBalance, type MarketBid } from "@/lib/market";
 import type { MarketRow, MarketTotals, TickerFill } from "./markets-view";
 
 /**
@@ -44,6 +44,8 @@ export async function loadMarkets(now: number): Promise<{ rows: MarketRow[]; tic
   });
 
   const t = computePlatformTotals(marketBids, now);
+  // A quiet day widens the window instead of showing zeros and a -100%.
+  const headline = settledHeadline(t);
 
   // Latest fills across all markets, for the ticker.
   const handleByUser = new Map(creatorProfiles.map((p) => [p.userId, p.handle]));
@@ -59,10 +61,11 @@ export async function loadMarkets(now: number): Promise<{ rows: MarketRow[]; tic
     totals: {
       escrowUsdc: escrowOnChain ?? t.openEscrowUsdc,
       escrowSource: escrowOnChain ? "Read live from AttnnEscrow" : "Open bids in escrow",
-      settled24hUsdc: t.settled24hUsdc,
+      settledWindow: headline.window,
+      settledUsdc: headline.settledUsdc,
       settledPrev24hUsdc: t.settledPrev24hUsdc,
-      cleared24h: t.cleared24h,
-      refunded24h: t.refunded24h,
+      cleared: headline.cleared,
+      refunded: headline.refunded,
       activeAgents,
       medianReply7dMs: t.medianReply7dMs,
     },

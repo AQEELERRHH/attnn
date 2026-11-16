@@ -113,11 +113,12 @@ export function MarketTable<Row>({
         <tbody>
           {sorted.map((row, i) => (
             <tr key={rowKey(row)} className="group">
-              {columns.map((c) => (
+              {columns.map((c, ci) => (
                 <td
                   key={c.key}
                   className={cn(
                     "whitespace-nowrap border-b border-border px-3.5 py-3 align-middle text-sm transition-colors group-last:border-b-0 group-hover:bg-arc-bg-2/70 first:pl-5 last:pr-5",
+                    ci === 0 && "signal-row",
                     c.align === "right" && "text-right",
                     c.className,
                   )}

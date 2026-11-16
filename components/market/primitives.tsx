@@ -96,7 +96,7 @@ export interface StatItem {
 const STAT_TONE = { default: "text-text-primary", gold: "text-arc-gold", success: "text-green", danger: "text-arc-coral" };
 
 /** A row of key numbers separated by hairlines (market totals, portfolio totals). */
-export function StatStrip({ items, className }: { items: StatItem[]; className?: string }) {
+export function StatStrip({ items, enter, className }: { items: StatItem[]; /** Rise in once on load, left to right (.enter). */ enter?: boolean; className?: string }) {
   return (
     <dl
       className={cn(
@@ -107,8 +107,12 @@ export function StatStrip({ items, className }: { items: StatItem[]; className?:
         className,
       )}
     >
-      {items.map((it) => (
-        <div key={it.label} className="relative bg-arc-bg-1 px-5 py-4">
+      {items.map((it, i) => (
+        <div
+          key={it.label}
+          className={cn("relative bg-arc-bg-1 px-5 py-4", enter && "enter")}
+          style={enter ? ({ ["--enter" as string]: `${420 + i * 60}ms` } as React.CSSProperties) : undefined}
+        >
           {it.tone === "gold" && <span aria-hidden className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-arc-gold/70 via-arc-gold/20 to-transparent" />}
           <dt className="eyebrow">{it.label}</dt>
           <dd className={cn("num mt-1.5 text-2xl font-medium leading-none tracking-[-0.02em]", STAT_TONE[it.tone ?? "default"])}>{it.value}</dd>

@@ -136,13 +136,23 @@ export interface PlatformTotals {
   settledPrev24hUsdc: string;
   cleared24h: number;
   refunded24h: number;
+  /** The same over the last 7 days and over all time, for when the last 24h is quiet. */
+  settled7dUsdc: string;
+  cleared7d: number;
+  refunded7d: number;
+  settledAllUsdc: string;
+  clearedAll: number;
+  refundedAll: number;
   medianReply7dMs: number | null;
 }
 
 export function computePlatformTotals(all: MarketBid[], now: number = Date.now()): PlatformTotals {
   const cleared = all.filter(isCleared);
+  const refunded = all.filter((b) => b.status === "refunded");
   const inWindow = (d: Date | null, from: number, to: number) => !!d && d.getTime() >= from && d.getTime() < to;
-  const c24 = cleared.filter((b) => inWindow(b.settledAt, now - DAY, now + 1));
+  const since = (ms: number) => (b: MarketBid) => inWindow(b.settledAt, now - ms, now + 1);
+  const c24 = cleared.filter(since(DAY));
+  const c7 = cleared.filter(since(7 * DAY));
   const cPrev = cleared.filter((b) => inWindow(b.settledAt, now - 2 * DAY, now - DAY));
   const sum = (xs: MarketBid[]) => xs.reduce((s, b) => s + BigInt(b.amountUsdc), BigInt(0)).toString();
   return {
@@ -150,11 +160,35 @@ export function computePlatformTotals(all: MarketBid[], now: number = Date.now()
     settled24hUsdc: sum(c24),
     settledPrev24hUsdc: sum(cPrev),
     cleared24h: c24.length,
-    refunded24h: all.filter((b) => b.status === "refunded" && inWindow(b.settledAt, now - DAY, now + 1)).length,
-    medianReply7dMs: median(
-      cleared.filter((b) => b.settledAt.getTime() >= now - 7 * DAY).map((b) => b.settledAt.getTime() - b.createdAt.getTime()),
-    ),
+    refunded24h: refunded.filter(since(DAY)).length,
+    settled7dUsdc: sum(c7),
+    cleared7d: c7.length,
+    refunded7d: refunded.filter(since(7 * DAY)).length,
+    settledAllUsdc: sum(cleared),
+    clearedAll: cleared.length,
+    refundedAll: refunded.filter((b) => b.settledAt).length,
+    medianReply7dMs: median(c7.map((b) => b.settledAt.getTime() - b.createdAt.getTime())),
   };
+}
+
+export type SettledWindow = "24h" | "7d" | "all";
+
+/**
+ * Which window the headline "settled" numbers use: the last 24h when anything
+ * settled in it, else the last 7 days, else all time. Every figure stays real;
+ * only the window widens, and the label says which one it is. With nothing
+ * settled ever, it stays on 24h (and shows the zeros).
+ */
+export function settledHeadline(t: Pick<PlatformTotals, "settled24hUsdc" | "cleared24h" | "refunded24h" | "settled7dUsdc" | "cleared7d" | "refunded7d" | "settledAllUsdc" | "clearedAll" | "refundedAll">): {
+  window: SettledWindow;
+  settledUsdc: string;
+  cleared: number;
+  refunded: number;
+} {
+  if (t.cleared24h > 0) return { window: "24h", settledUsdc: t.settled24hUsdc, cleared: t.cleared24h, refunded: t.refunded24h };
+  if (t.cleared7d > 0) return { window: "7d", settledUsdc: t.settled7dUsdc, cleared: t.cleared7d, refunded: t.refunded7d };
+  if (t.clearedAll > 0) return { window: "all", settledUsdc: t.settledAllUsdc, cleared: t.clearedAll, refunded: t.refundedAll };
+  return { window: "24h", settledUsdc: t.settled24hUsdc, cleared: t.cleared24h, refunded: t.refunded24h };
 }
 
 // ─── Loaders (server only) ──────────────────────────────────────────────────

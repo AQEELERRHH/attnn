@@ -78,7 +78,7 @@ export function LiveFills({ ticker, now, className }: { ticker: FillTick[]; now:
   if (ticker.length === 0) return null;
   const item = (f: FillTick, i: number, copy: boolean) => (
     <li key={`${copy ? "c" : "o"}${i}`} aria-hidden={copy || undefined} className="flex flex-none items-center gap-2 px-5 text-text-secondary">
-      <Link href={`/c/${f.handle}`} tabIndex={copy ? -1 : undefined} className="font-medium text-text-primary hover:underline">
+      <Link href={`/c/${f.handle}`} tabIndex={copy ? -1 : undefined} className="font-medium text-text-primary link-u">
         @{f.handle}
       </Link>
       <span className="text-text-dim">cleared</span>

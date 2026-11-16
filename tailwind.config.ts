@@ -55,6 +55,13 @@ const config: Config = {
         sans: ["var(--font-sans)", "ui-sans-serif", "system-ui", "sans-serif"],
         mono: ["var(--font-mono)", "ui-monospace", "SFMono-Regular", "monospace"],
       },
+      // One motion language: every `transition-*` class eases out smoothly (fast start,
+      // gentle settle) over 200ms unless it names its own. `ease-smooth` is the same curve.
+      transitionTimingFunction: {
+        DEFAULT: "cubic-bezier(0.22, 1, 0.36, 1)",
+        smooth: "cubic-bezier(0.22, 1, 0.36, 1)",
+      },
+      transitionDuration: { DEFAULT: "200ms" },
       boxShadow: {
         // A hairline top highlight plus a soft drop: raised surfaces on ink.
         raised: "inset 0 1px 0 0 rgb(var(--cream) / 0.04), 0 1px 2px 0 rgb(0 0 0 / 0.4), 0 8px 24px -12px rgb(0 0 0 / 0.6)",

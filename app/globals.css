@@ -28,6 +28,20 @@
   --c-info: rgb(var(--info));
   --c-cream-2: rgb(var(--cream-2));
   --c-hairline: rgb(var(--cream) / 0.07);
+
+  /* Motion: ease-out for things arriving or responding (fast start, soft settle),
+     ease-in for things leaving. Same curve as Tailwind's default (tailwind.config.ts). */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+}
+
+/* Anything you can click, focus or type into changes state smoothly, even where its
+   classes name no transition. A `transition-*` class on the element still wins
+   (utilities outrank this unlayered-but-low-specificity :where() rule). */
+:where(a, button, summary, input, textarea, select, label, [role="button"], [role="tab"], [role="menuitem"], [role="option"], [role="switch"], [role="checkbox"]) {
+  transition-property: color, background-color, border-color, text-decoration-color, fill, stroke, opacity, box-shadow, transform, filter;
+  transition-duration: 200ms;
+  transition-timing-function: var(--ease-out);
 }
 
 * { box-sizing: border-box; }
@@ -87,17 +101,29 @@ body {
   .glass-panel-bright { @apply rounded-xl border border-border-bright bg-arc-bg-2 shadow-raised; }
 
   /* Buttons outside <Button> (links styled as buttons). Same look as components/ui/button.tsx. */
+  /* Every button eases into its hover state and presses in quickly (75ms to 97%), then
+     settles back over 200ms when released: a soft press, not a 1px jump. */
   .btn-primary {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg bg-arc-gold px-5 font-semibold text-[#130B00] transition-[filter,transform] duration-150 hover:brightness-110 active:translate-y-px disabled:bg-arc-bg-3 disabled:text-text-secondary disabled:shadow-none disabled:brightness-100;
+    @apply inline-flex items-center justify-center gap-2 rounded-lg bg-arc-gold px-5 font-semibold text-[#130B00] transition-[filter,transform,box-shadow,background-color,color] duration-200 ease-smooth hover:brightness-110 hover:shadow-[0_6px_20px_-8px_rgb(var(--signal)/0.6)] active:scale-[0.97] active:duration-75 disabled:bg-arc-bg-3 disabled:text-text-secondary disabled:shadow-none disabled:brightness-100;
   }
   /* Repeated row actions (Bid, Reply · collect): tinted so a list isn't a wall of solid orange.
      Fills on its own hover/focus, or when its row (an ancestor with .group) is hovered. */
   .btn-soft {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg border border-arc-gold/35 bg-arc-gold/[0.07] font-semibold text-arc-gold transition-colors duration-150 hover:border-arc-gold hover:bg-arc-gold hover:text-[#130B00] focus-visible:border-arc-gold focus-visible:bg-arc-gold focus-visible:text-[#130B00] active:translate-y-px group-hover:border-arc-gold group-hover:bg-arc-gold group-hover:text-[#130B00];
+    @apply inline-flex items-center justify-center gap-2 rounded-lg border border-arc-gold/35 bg-arc-gold/[0.07] font-semibold text-arc-gold transition-[background-color,border-color,color,transform] duration-200 ease-smooth hover:border-arc-gold hover:bg-arc-gold hover:text-[#130B00] focus-visible:border-arc-gold focus-visible:bg-arc-gold focus-visible:text-[#130B00] active:scale-[0.97] active:duration-75 group-hover:border-arc-gold group-hover:bg-arc-gold group-hover:text-[#130B00];
   }
   .btn-secondary {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg border border-border-bright bg-arc-bg-1 px-5 font-medium text-text-primary transition-colors duration-150 hover:border-text-primary/25 hover:bg-arc-bg-2;
+    @apply inline-flex items-center justify-center gap-2 rounded-lg border border-border-bright bg-arc-bg-1 px-5 font-medium text-text-primary transition-[background-color,border-color,color,transform] duration-200 ease-smooth hover:border-text-primary/25 hover:bg-arc-bg-2 active:scale-[0.97] active:duration-75;
   }
+
+  /* A link whose underline fades in on hover instead of snapping on (was hover:underline). */
+  .link-u {
+    text-decoration-line: underline;
+    text-decoration-color: transparent;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 4px;
+    transition: text-decoration-color 200ms var(--ease-out), color 200ms var(--ease-out);
+  }
+  .link-u:hover, .link-u:focus-visible { text-decoration-color: currentColor; }
   .input-field {
     @apply w-full rounded-lg border border-border-bright bg-arc-bg-0 px-3.5 py-2.5 text-text-primary placeholder:text-text-dim transition-colors duration-150 hover:border-text-primary/20 focus:border-arc-lavender/60 focus:outline-none focus:ring-2 focus:ring-arc-lavender/20;
   }
@@ -122,6 +148,17 @@ body {
   .marquee-track { @apply flex w-max animate-marquee; }
   .marquee:hover .marquee-track { animation-play-state: paused; }
 }
+
+/* ─── Overlays and panels ──────────────────────────────────────────────────
+   Dialogs, menus, selects and toasts (tailwindcss-animate's animate-in/out) arrive on
+   the ease-out curve and leave faster on ease-in, so closing never drags. */
+.animate-in { animation-timing-function: var(--ease-out); }
+.animate-out { animation-timing-function: var(--ease-in); animation-duration: 140ms; }
+
+/* .view-in: a panel that swaps in place (dashboard tabs) fades and rises 4px. Key the
+   element on the view so it plays on each switch. */
+.view-in { animation: view-in 280ms var(--ease-out) both; }
+@keyframes view-in { from { opacity: 0; transform: translateY(4px); } }
 
 /* ─── Entrances and row signals ─────────────────────────────────────────────
    .enter: a one-time rise on page load (the hero, the numbers). Stagger with
@@ -180,7 +217,9 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .live-dot::after, .marquee-track { animation: none !important; }
-  .mascot-nod, .mascot-hop, .mascot-pulse, .mascot-shake, .bubble-pop, .enter { animation: none !important; }
+  .mascot-nod, .mascot-hop, .mascot-pulse, .mascot-shake, .bubble-pop, .enter, .view-in { animation: none !important; }
+  /* Presses and hovers still change colour, just without movement. */
+  .btn-primary:active, .btn-soft:active, .btn-secondary:active { transform: none; }
   .signal-row::before { transition: none; }
   .mascot-pupil { transition: none; }
   * { scroll-behavior: auto !important; }

@@ -88,6 +88,19 @@ export function DashboardClient({
   const [view, setView] = React.useState<View>(() =>
     inboxCount > 0 || userRole === "creator" ? "creator" : "bidder",
   );
+  // The selected-tab pill slides between tabs instead of jumping. Until it's measured
+  // (first paint, no JS) the selected tab paints its own background.
+  const tabRefs = React.useRef<Partial<Record<View, HTMLButtonElement | null>>>({});
+  const [pill, setPill] = React.useState<{ left: number; width: number } | null>(null);
+  React.useLayoutEffect(() => {
+    const measure = () => {
+      const el = tabRefs.current[view];
+      if (el) setPill({ left: el.offsetLeft, width: el.offsetWidth });
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [view]);
 
   // First-run guide. The welcome shows until it's closed once (stored server-side);
   // Help reopens it. Dismissing the checklist is optimistic, then saved.
@@ -256,10 +269,20 @@ export function DashboardClient({
             <h1 className="mt-2 text-[34px] font-semibold leading-none tracking-[-0.04em]">Portfolio</h1>
             <p className="mt-2 text-text-secondary">Your bids, your market and your agents, settled in USDC on Arc.</p>
           </div>
-          <div role="tablist" aria-label="Portfolio view" className="flex w-full rounded-xl border border-border bg-arc-bg-1 p-1 shadow-raised sm:w-auto">
+          <div role="tablist" aria-label="Portfolio view" className="relative flex w-full rounded-xl border border-border bg-arc-bg-1 p-1 shadow-raised sm:w-auto">
+            {pill && (
+              <span
+                aria-hidden
+                className="pointer-events-none absolute bottom-1 top-1 rounded-lg bg-arc-bg-3 shadow-[inset_0_1px_0_0_rgb(255_255_255/0.05)] transition-[left,width] duration-300 ease-smooth motion-reduce:transition-none"
+                style={{ left: pill.left, width: pill.width }}
+              />
+            )}
             {views.map((v) => (
               <button
                 key={v.id}
+                ref={(el) => {
+                  tabRefs.current[v.id] = el;
+                }}
                 type="button"
                 role="tab"
                 id={`tab-${v.id}`}
@@ -268,7 +291,9 @@ export function DashboardClient({
                 onClick={() => setView(v.id)}
                 className={cn(
                   "focus-ring relative inline-flex h-10 flex-1 items-center justify-center gap-1.5 rounded-lg px-2 text-sm font-medium transition-colors sm:flex-none sm:gap-2 sm:px-4",
-                  view === v.id ? "bg-arc-bg-3 text-text-primary shadow-[inset_0_1px_0_0_rgb(255_255_255/0.05)]" : "text-text-secondary hover:text-text-primary",
+                  view === v.id
+                    ? cn("text-text-primary", !pill && "bg-arc-bg-3 shadow-[inset_0_1px_0_0_rgb(255_255_255/0.05)]")
+                    : "text-text-secondary hover:text-text-primary",
                 )}
               >
                 {v.icon}
@@ -333,7 +358,8 @@ export function DashboardClient({
           </div>
         )}
 
-        <div role="tabpanel" id={`panel-${view}`} aria-labelledby={`tab-${view}`}>
+        {/* Keyed on the view, so each switch fades the new panel in (.view-in). */}
+        <div key={view} role="tabpanel" id={`panel-${view}`} aria-labelledby={`tab-${view}`} className="view-in">
           {view === "bidder" && (
             <BidderView bids={placed} summary={summary} bidderConfig={bidderConfig} now={now} onOpenAgent={() => setView("agent")} />
           )}

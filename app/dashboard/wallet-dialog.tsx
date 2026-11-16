@@ -145,7 +145,7 @@ export function WalletDialog({
                 href="https://faucet.circle.com"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="focus-ring inline-flex h-8 items-center gap-1 rounded-lg px-2 text-xs text-arc-lavender hover:underline"
+                className="focus-ring inline-flex h-8 items-center gap-1 rounded-lg px-2 text-xs text-arc-lavender link-u"
               >
                 Get free test USDC <ExternalLink aria-hidden className="h-3 w-3" />
               </a>

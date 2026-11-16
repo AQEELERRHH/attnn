@@ -240,7 +240,7 @@ function CreatorMarketDesk({
                     +{profile.tags.length - 4}
                   </span>
                 )}
-                <Link href={`/c/${profile.handle}`} className="focus-ring inline-flex items-center gap-1 rounded text-arc-lavender hover:underline">
+                <Link href={`/c/${profile.handle}`} className="focus-ring inline-flex items-center gap-1 rounded text-arc-lavender link-u">
                   View market <ExternalLink aria-hidden className="h-3 w-3" />
                 </Link>
               </div>
@@ -338,7 +338,7 @@ function CreatorMarketDesk({
         {inbox.length === 0 ? (
           <p className="border-t border-border px-5 py-10 text-center text-sm text-text-secondary">
             No bids waiting. Share your market:{" "}
-            <Link href={`/c/${profile.handle}`} className="num text-arc-gold hover:underline">
+            <Link href={`/c/${profile.handle}`} className="num text-arc-gold link-u">
               attnn.xyz/c/{profile.handle}
             </Link>
           </p>
@@ -379,7 +379,7 @@ function CreatorMarketDesk({
                   <span className="ml-auto flex items-center gap-3">
                     <Num className="text-xs text-text-secondary">{timeAgo(b.settledAt ?? b.createdAt, now)}</Num>
                     {b.settlementTxHref && (
-                      <a href={b.settlementTxHref} target="_blank" rel="noopener noreferrer" className="text-[13px] text-arc-lavender hover:underline">
+                      <a href={b.settlementTxHref} target="_blank" rel="noopener noreferrer" className="text-[13px] text-arc-lavender link-u">
                         Settlement ↗
                       </a>
                     )}
@@ -437,7 +437,7 @@ function VerifiedAccounts({ profile, gasSponsored }: { profile: ProfileData; gas
             <span key={v.provider} className="inline-flex items-center gap-1.5 rounded-full border border-green/40 bg-green/10 px-2.5 py-1 text-xs text-text-primary">
               <BadgeCheck aria-hidden className="h-3.5 w-3.5 text-green" />
               {href ? (
-                <a href={href} target="_blank" rel="noopener noreferrer" className="focus-ring rounded hover:underline">
+                <a href={href} target="_blank" rel="noopener noreferrer" className="focus-ring rounded link-u">
                   {verificationLabel(v)}
                 </a>
               ) : (
@@ -532,7 +532,7 @@ function AutoAcceptSetting({ stored, hasTemplate }: { stored: number | null; has
           onClick={() => setOpen((o) => !o)}
           aria-expanded={open}
           aria-controls="auto-accept-choices"
-          className="focus-ring -my-2 flex-none rounded px-1 py-2 text-[13px] text-arc-lavender hover:underline"
+          className="focus-ring -my-2 flex-none rounded px-1 py-2 text-[13px] text-arc-lavender link-u"
         >
           {open ? "Done" : "Change"}
         </button>
@@ -732,7 +732,7 @@ function InboxRow({
             <p className="mt-2 flex flex-wrap items-center gap-x-2 text-xs text-arc-lavender">
               <Sparkles aria-hidden className="h-3.5 w-3.5" />
               Your agent drafted a reply. Nothing is sent until you check it.
-              <button type="button" onClick={openReply} className="focus-ring rounded font-medium underline-offset-2 hover:underline">
+              <button type="button" onClick={openReply} className="focus-ring rounded font-medium underline-offset-2 link-u">
                 Review draft
               </button>
             </p>
@@ -785,7 +785,7 @@ function InboxRow({
               {REPLY_MIN_CHARS} characters. Give them a real answer: the bidder sees this when the payment clears and can rate it on your market.
             </span>
             {template && (
-              <button type="button" onClick={() => setReply(template)} title="Replies sent from your template are labelled as auto-replies" className="focus-ring rounded text-arc-lavender hover:underline">
+              <button type="button" onClick={() => setReply(template)} title="Replies sent from your template are labelled as auto-replies" className="focus-ring rounded text-arc-lavender link-u">
                 Use my template
               </button>
             )}

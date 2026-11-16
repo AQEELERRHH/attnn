@@ -31,7 +31,7 @@ export default function PrivacyPage() {
       <LegalSection id="who" title="Who we are">
         <p>
           Attnn. is run from Nigeria by its founder. We decide how your information is used, so under Nigeria&apos;s Data Protection Act 2023 we are the data controller. Questions or requests:{" "}
-          <a href={`mailto:${LEGAL_CONTACT}`} className="text-arc-lavender hover:underline">
+          <a href={`mailto:${LEGAL_CONTACT}`} className="text-arc-lavender link-u">
             {LEGAL_CONTACT}
           </a>
           .
@@ -166,7 +166,7 @@ export default function PrivacyPage() {
         </ul>
         <p>
           Email{" "}
-          <a href={`mailto:${LEGAL_CONTACT}`} className="text-arc-lavender hover:underline">
+          <a href={`mailto:${LEGAL_CONTACT}`} className="text-arc-lavender link-u">
             {LEGAL_CONTACT}
           </a>{" "}
           from the address on your account. Before closing an account, move your USDC out: once it&apos;s closed we can&apos;t help you reach those wallets. If you&apos;re unhappy with how we
@@ -178,7 +178,7 @@ export default function PrivacyPage() {
         <p>
           Access to our database is restricted to the app itself, security codes are stored hashed, and money leaving a wallet is capped and checked. No system is perfectly secure, so please
           keep your email account safe: it&apos;s how you sign in. How our agents are limited is explained in{" "}
-          <Link href="/about#agent-safety" className="text-arc-lavender hover:underline">
+          <Link href="/about#agent-safety" className="text-arc-lavender link-u">
             How it works
           </Link>
           .

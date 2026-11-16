@@ -248,7 +248,7 @@ export function BidTicket({
         <p className="text-xs text-text-secondary">
           Held by AttnnEscrow on Arc, not by Attnn.{" "}
           {escrowHref ? (
-            <a href={escrowHref} target="_blank" rel="noopener noreferrer" className="num text-arc-lavender hover:underline">
+            <a href={escrowHref} target="_blank" rel="noopener noreferrer" className="num text-arc-lavender link-u">
               {shortAddress(escrowAddress)} ↗
             </a>
           ) : (

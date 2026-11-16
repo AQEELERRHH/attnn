@@ -27,7 +27,7 @@ export default function TermsPage() {
       intro={
         <p>
           These are the rules for using Attnn. By creating an account or placing a bid you agree to them. They&apos;re written to be read, so please do. If something here is unclear, email{" "}
-          <a href={`mailto:${LEGAL_CONTACT}`} className="text-arc-lavender hover:underline">
+          <a href={`mailto:${LEGAL_CONTACT}`} className="text-arc-lavender link-u">
             {LEGAL_CONTACT}
           </a>
           .
@@ -112,7 +112,7 @@ export default function TermsPage() {
         <p>
           If you switch on a bidder agent, it bids for you within the budget, caps and settings you choose, and those bids are yours. The AI ranks creators and suggests drafts; it can be wrong,
           and we don&apos;t promise any creator is a good fit. Fixed rules, not the AI, decide amounts. What your agent can and can&apos;t do is listed on your dashboard and in{" "}
-          <Link href="/about#agent-safety" className="text-arc-lavender hover:underline">
+          <Link href="/about#agent-safety" className="text-arc-lavender link-u">
             How it works
           </Link>
           . Pause it any time.
@@ -140,7 +140,7 @@ export default function TermsPage() {
         <p>
           You own what you write and upload. You let us store it, show it on Attnn. (for example your public market page) and pass it to the providers that run the service, only to run Attnn.
           How we handle your information is in our{" "}
-          <Link href="/privacy" className="text-arc-lavender hover:underline">
+          <Link href="/privacy" className="text-arc-lavender link-u">
             privacy policy
           </Link>
           .

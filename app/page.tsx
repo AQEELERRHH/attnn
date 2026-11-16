@@ -132,7 +132,7 @@ export default async function HomePage() {
               {top.length === 0 ? (
                 <div className="px-5 py-14 text-center text-sm text-text-secondary">
                   No markets yet.{" "}
-                  <Link href="/dashboard" className="text-arc-lavender hover:underline">
+                  <Link href="/dashboard" className="text-arc-lavender link-u">
                     Be the first creator
                   </Link>
                   .

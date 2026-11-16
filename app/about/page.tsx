@@ -214,7 +214,7 @@ export default async function AboutPage() {
             </ul>
             {escrow && (
               <p className="mt-6 text-sm">
-                <a href={addressUrl(escrow)} target="_blank" rel="noopener noreferrer" className="text-arc-lavender hover:underline break-all">
+                <a href={addressUrl(escrow)} target="_blank" rel="noopener noreferrer" className="text-arc-lavender link-u break-all">
                   See the escrow contract and every bid on Arc ↗
                 </a>
               </p>

@@ -130,7 +130,7 @@ export function CreatorMarket(props: CreatorMarketProps) {
       key: "tx",
       label: "Transaction",
       render: (f) => (
-        <a href={f.txHref} target="_blank" rel="noopener noreferrer" className="num text-[13px] text-arc-lavender hover:underline">
+        <a href={f.txHref} target="_blank" rel="noopener noreferrer" className="num text-[13px] text-arc-lavender link-u">
           {shortAddress(f.txHash, 4, 4)} ↗
         </a>
       ),
@@ -197,7 +197,7 @@ export function CreatorMarket(props: CreatorMarketProps) {
                           <BadgeCheck aria-hidden className="h-3.5 w-3.5 text-green" />
                           <span className="sr-only">Verified:</span>
                           {href ? (
-                            <a href={href} target="_blank" rel="noopener noreferrer" className="focus-ring rounded text-text-primary hover:underline">
+                            <a href={href} target="_blank" rel="noopener noreferrer" className="focus-ring rounded text-text-primary link-u">
                               {verificationLabel(v)}
                             </a>
                           ) : (
@@ -307,7 +307,7 @@ export function CreatorMarket(props: CreatorMarketProps) {
                       <div className="truncate font-medium">{f.agent}</div>
                       <div className="text-xs text-text-secondary">
                         <Num>{timeAgo(f.settledAt, now)}</Num> · replied in <Num>{formatDuration(f.replyMs)}</Num> · <ReplyQuality fill={f} /> ·{" "}
-                        <a href={f.txHref} target="_blank" rel="noopener noreferrer" className="text-arc-lavender hover:underline">
+                        <a href={f.txHref} target="_blank" rel="noopener noreferrer" className="text-arc-lavender link-u">
                           tx ↗
                         </a>
                       </div>

@@ -117,7 +117,7 @@ export function AgentWalletCard({ policy }: { policy: AgentPolicyInfo }) {
             href={agent.href}
             target="_blank"
             rel="noopener noreferrer"
-            className="focus-ring mt-1 flex items-center gap-1 rounded text-xs text-arc-lavender hover:underline"
+            className="focus-ring mt-1 flex items-center gap-1 rounded text-xs text-arc-lavender link-u"
           >
             <Num>{shortAddress(agent.address)}</Num> on Arc <ExternalLink aria-hidden className="h-3 w-3" />
           </a>
@@ -156,10 +156,10 @@ export function AgentWalletCard({ policy }: { policy: AgentPolicyInfo }) {
         </Button>
       </div>
       <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs">
-        <button type="button" className="focus-ring rounded text-arc-lavender hover:underline" onClick={() => setAmount(atomicToDollarInput(maxOf(mainUsdc)))}>
+        <button type="button" className="focus-ring rounded text-arc-lavender link-u" onClick={() => setAmount(atomicToDollarInput(maxOf(mainUsdc)))}>
           Max to agent
         </button>
-        <button type="button" className="focus-ring rounded text-arc-lavender hover:underline" onClick={() => setAmount(atomicToDollarInput(maxOf(agentUsdc)))}>
+        <button type="button" className="focus-ring rounded text-arc-lavender link-u" onClick={() => setAmount(atomicToDollarInput(maxOf(agentUsdc)))}>
           Max back
         </button>
         <span className="text-text-secondary">A few cents stay behind to pay the network fee.</span>

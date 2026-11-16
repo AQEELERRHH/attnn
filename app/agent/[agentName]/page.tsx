@@ -81,7 +81,7 @@ export default async function AgentPage({ params }: { params: Promise<{ agentNam
                   <>
                     {" "}
                     operated by{" "}
-                    <Link href={`/c/${ownerProfile.handle}`} className="text-arc-lavender hover:underline">
+                    <Link href={`/c/${ownerProfile.handle}`} className="text-arc-lavender link-u">
                       @{ownerProfile.handle}
                     </Link>
                   </>

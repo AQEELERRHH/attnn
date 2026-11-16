@@ -32,11 +32,11 @@ export default async function RegisterPage() {
             <p className="mt-4 text-xs text-text-secondary">One account works on both sides: bid on creators and run your own market.</p>
             <p className="mt-3 text-xs text-text-secondary">
               By continuing you agree to our{" "}
-              <Link href="/terms" className="text-arc-lavender hover:underline">
+              <Link href="/terms" className="text-arc-lavender link-u">
                 terms
               </Link>{" "}
               and{" "}
-              <Link href="/privacy" className="text-arc-lavender hover:underline">
+              <Link href="/privacy" className="text-arc-lavender link-u">
                 privacy policy
               </Link>
               .

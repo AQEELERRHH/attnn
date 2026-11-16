@@ -270,11 +270,11 @@ export default async function AboutPage() {
               },
               {
                 q: "Do I need to know anything about crypto to use Attnn.?",
-                a: "No. You sign in with Google or your email. A wallet is created for you automatically. You fund it with testnet USDC from a faucet (free on testnet). Everything else, the blockchain, the smart contracts, the escrow happens invisibly in the background. You just see a normal web app."
+                a: "No. You sign in with Google or your email. A wallet is created for you automatically. You add USDC on Arc to it, by card inside the app or by sending it from another wallet or exchange. Everything else, the blockchain, the smart contracts, the escrow happens invisibly in the background. You just see a normal web app."
               },
               {
                 q: "How much does it cost to place a bid?",
-                a: "The minimum bid depends on the amount the creator sets. You can bid more to stand out in a creator's inbox , higher bids rank higher. Gas fees (the cost of running transactions on Arc) are paid in USDC too, so you never need any other token. On testnet, all USDC is free from the faucet."
+                a: "The minimum bid depends on the amount the creator sets. You can bid more to stand out in a creator's inbox , higher bids rank higher. Gas fees (the cost of running transactions on Arc) are paid in USDC too, so you never need any other token, and they are usually a cent or two."
               },
               {
                 q: "Is my money safe when I place a bid?",
@@ -290,7 +290,7 @@ export default async function AboutPage() {
               },
               {
                 q: "Is Attnn. live?",
-                a: "Attnn. is currently live on Arc Testnet a test environment where USDC has no real monetary value. This lets builders and early users test everything safely. Mainnet launch follows Arc Network going live. The protocols v1(pitchslotarc.vercel.app) has already processed 500+ transactions in testing."
+                a: "Yes. Attnn. has been live on Arc mainnet since 14 October 2026. Bids are real USDC, held in the escrow contract on Arc: the creator is paid when they reply, and the bidder is refunded otherwise. Every market and paid reply is public on the markets page. Our first version, PitchSlotArc (pitchslotarc.vercel.app), processed 500+ transactions on Arc Testnet before we launched."
               },
               {
                 q: "How do you make sure a reply is actually meaningful and not just thanks bye?",

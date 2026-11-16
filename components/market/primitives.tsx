@@ -247,7 +247,13 @@ export function Sparkline({
   /** Accessible description, e.g. "7 day cleared price from $20 to $35". */
   label: string;
 }) {
-  if (values.length === 0) return <span className="text-xs text-text-dim">No fills yet</span>;
+  // No fills: a faint dashed baseline instead of the same words on every row.
+  if (values.length === 0)
+    return (
+      <svg viewBox="0 0 100 28" preserveAspectRatio="none" role="img" aria-label="No fills yet" style={{ width, height }} className="block">
+        <line x1="0" y1="25" x2="100" y2="25" stroke="var(--c-hairline)" strokeWidth={1.5} strokeDasharray="3 4" vectorEffect="non-scaling-stroke" />
+      </svg>
+    );
   if (values.length === 1) return <span className="text-xs text-text-secondary">1 fill</span>;
   const min = Math.min(...values);
   const max = Math.max(...values);

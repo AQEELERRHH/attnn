@@ -66,7 +66,7 @@ function DecisionRow({ d, now }: { d: DecisionView; now: number }) {
   return (
     <li className="flex flex-col gap-1.5 border-b border-border px-5 py-3 text-[13px] last:border-b-0">
       <div className="flex flex-wrap items-center gap-2">
-        <a href={`/c/${encodeURIComponent(d.creator)}`} className="font-medium text-arc-lavender hover:underline">
+        <a href={`/c/${encodeURIComponent(d.creator)}`} className="font-medium text-arc-lavender link-u">
           @{d.creator}
         </a>
         {chip ? (

@@ -184,7 +184,7 @@ export default function RegisterForm() {
           <button
             type="button"
             onClick={() => setPhase("idle")}
-            className="mt-3 text-xs text-arc-lavender underline-offset-4 hover:underline"
+            className="mt-3 text-xs text-arc-lavender underline-offset-4 link-u"
           >
             Use a different email
           </button>

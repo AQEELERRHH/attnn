@@ -282,7 +282,7 @@ export function AgentConsole({
                     <span className={cn("min-w-0 flex-1", kind === "error" ? "text-arc-coral" : "text-text-primary")}>
                       {logMessage(l.action, l.data)}
                       {l.txHref && (
-                        <a href={l.txHref} target="_blank" rel="noopener noreferrer" className="ml-2 text-arc-lavender hover:underline">
+                        <a href={l.txHref} target="_blank" rel="noopener noreferrer" className="ml-2 text-arc-lavender link-u">
                           tx ↗
                         </a>
                       )}

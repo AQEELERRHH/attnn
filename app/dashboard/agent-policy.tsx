@@ -40,7 +40,7 @@ export function AgentPolicy({ config, spent, policy }: { config: BidderConfigDat
       </p>
 
       <details className="group mt-4 border-t border-border pt-3">
-        <summary className="focus-ring flex cursor-pointer list-none items-center gap-1.5 rounded text-sm font-medium text-arc-lavender hover:underline [&::-webkit-details-marker]:hidden">
+        <summary className="focus-ring flex cursor-pointer list-none items-center gap-1.5 rounded text-sm font-medium text-arc-lavender link-u [&::-webkit-details-marker]:hidden">
           Read what your agent can and can&apos;t do
           <ChevronDown aria-hidden className="h-4 w-4 transition-transform group-open:rotate-180" />
         </summary>
@@ -116,12 +116,12 @@ export function AgentPolicy({ config, spent, policy }: { config: BidderConfigDat
 
       <p className="mt-5 flex flex-wrap gap-x-4 gap-y-1.5 border-t border-border pt-4 text-xs text-text-secondary">
         {policy.escrowAddress && policy.escrowHref && (
-          <a href={policy.escrowHref} target="_blank" rel="noopener noreferrer" className="focus-ring inline-flex items-center gap-1 rounded text-arc-lavender hover:underline">
+          <a href={policy.escrowHref} target="_blank" rel="noopener noreferrer" className="focus-ring inline-flex items-center gap-1 rounded text-arc-lavender link-u">
             Escrow contract <Num>{shortAddress(policy.escrowAddress)}</Num> <ExternalLink aria-hidden className="h-3 w-3" />
           </a>
         )}
         {(policy.agentWallet?.href ?? policy.walletHref) && (
-          <a href={(policy.agentWallet?.href ?? policy.walletHref)!} target="_blank" rel="noopener noreferrer" className="focus-ring inline-flex items-center gap-1 rounded text-arc-lavender hover:underline">
+          <a href={(policy.agentWallet?.href ?? policy.walletHref)!} target="_blank" rel="noopener noreferrer" className="focus-ring inline-flex items-center gap-1 rounded text-arc-lavender link-u">
             Every transaction from your {policy.agentWallet ? "agent " : ""}wallet <ExternalLink aria-hidden className="h-3 w-3" />
           </a>
         )}

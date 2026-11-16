@@ -64,7 +64,7 @@ export function GettingStarted({
                 href="https://faucet.circle.com"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="focus-ring inline-flex h-9 items-center gap-1 rounded-lg px-2 text-sm text-arc-lavender hover:underline"
+                className="focus-ring inline-flex h-9 items-center gap-1 rounded-lg px-2 text-sm text-arc-lavender link-u"
               >
                 Get free test USDC <ExternalLink aria-hidden className="h-3 w-3" />
                 <span className="sr-only">(opens Circle&apos;s faucet in a new tab)</span>

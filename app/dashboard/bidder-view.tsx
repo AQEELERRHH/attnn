@@ -28,12 +28,12 @@ export function TxLinks({ bid, hideEmpty }: { bid: BidData; hideEmpty?: boolean 
   return (
     <span className="flex gap-3 text-[13px]">
       {bid.bidTxHref && (
-        <a href={bid.bidTxHref} target="_blank" rel="noopener noreferrer" className="text-arc-lavender hover:underline">
+        <a href={bid.bidTxHref} target="_blank" rel="noopener noreferrer" className="text-arc-lavender link-u">
           Escrow ↗
         </a>
       )}
       {bid.settlementTxHref && (
-        <a href={bid.settlementTxHref} target="_blank" rel="noopener noreferrer" className="text-arc-lavender hover:underline">
+        <a href={bid.settlementTxHref} target="_blank" rel="noopener noreferrer" className="text-arc-lavender link-u">
           Settlement ↗
         </a>
       )}
@@ -341,7 +341,7 @@ export function BidderView({
             }}
             empty={
               <>
-                No open bids. Find a creator on the <Link href="/creators" className="text-arc-lavender hover:underline">markets page</Link> or let your agent bid for you.
+                No open bids. Find a creator on the <Link href="/creators" className="text-arc-lavender link-u">markets page</Link> or let your agent bid for you.
               </>
             }
           />

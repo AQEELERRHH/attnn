@@ -123,7 +123,63 @@ body {
   .marquee:hover .marquee-track { animation-play-state: paused; }
 }
 
+/* ─── Entrances and row signals ─────────────────────────────────────────────
+   .enter: a one-time rise on page load (the hero, the numbers). Stagger with
+   style={{ "--enter": "120ms" }}. Fill mode is `backwards`, so once it has
+   played the element's own hover and press transforms work as usual.
+   Never used for scroll reveals. */
+.enter { animation: enter-rise 640ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards; animation-delay: var(--enter, 0ms); }
+@keyframes enter-rise { from { opacity: 0; transform: translateY(14px); } }
+
+/* .signal-row: an orange bar on the left edge of a row while it is hovered or
+   focused (market lists). Put it on the row, or on a table row's first cell. */
+.signal-row { position: relative; }
+.signal-row::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 22%;
+  bottom: 22%;
+  width: 2px;
+  border-radius: 2px;
+  background: rgb(var(--signal));
+  transform: scaleY(0);
+  transition: transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.signal-row:hover::before,
+.signal-row:focus-visible::before,
+.group:hover > .signal-row::before { transform: scaleY(1); }
+
+/* ─── Attention mascot (components/market/attention-mascot.tsx) ─────────────
+   SVG transforms here are in the mark's 200-unit space. */
+.mascot-g, .mascot-pupil { transform-box: fill-box; transform-origin: center; }
+.mascot-pupil { transition: transform 160ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+.mascot-nod { animation: mascot-nod 420ms cubic-bezier(0.3, 0.7, 0.4, 1); }
+.mascot-hop { animation: mascot-hop 720ms cubic-bezier(0.3, 0.7, 0.4, 1); }
+.mascot-pulse { animation: mascot-pulse 900ms ease-in-out infinite; }
+.mascot-shake { animation: mascot-shake 380ms ease-in-out; }
+.bubble-pop { transform-origin: left center; animation: bubble-pop 260ms cubic-bezier(0.2, 0.9, 0.3, 1.15); }
+@keyframes mascot-nod { 0%, 100% { transform: translateY(0); } 45% { transform: translateY(16px); } }
+@keyframes mascot-hop {
+  0%, 100% { transform: translateY(0); }
+  30% { transform: translateY(-30px); }
+  55% { transform: translateY(0); }
+  75% { transform: translateY(-12px); }
+}
+@keyframes mascot-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.25); } }
+@keyframes mascot-shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-4px); }
+  40% { transform: translateX(4px); }
+  60% { transform: translateX(-3px); }
+  80% { transform: translateX(2px); }
+}
+@keyframes bubble-pop { from { opacity: 0; transform: translateX(-6px) scale(0.92); } to { opacity: 1; transform: none; } }
+
 @media (prefers-reduced-motion: reduce) {
   .live-dot::after, .marquee-track { animation: none !important; }
+  .mascot-nod, .mascot-hop, .mascot-pulse, .mascot-shake, .bubble-pop, .enter { animation: none !important; }
+  .signal-row::before { transition: none; }
+  .mascot-pupil { transition: none; }
   * { scroll-behavior: auto !important; }
 }

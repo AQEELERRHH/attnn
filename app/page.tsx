@@ -1,6 +1,7 @@
 import type * as React from "react";
 import Link from "next/link";
-import { ArrowRight, Bot, CheckCircle2, Clock3, Inbox, Lock, Undo2 } from "lucide-react";
+import { ArrowRight, Bot, CheckCircle2, Clock3, Inbox, Lock } from "lucide-react";
+import { BidLifecycle } from "@/components/market/bid-lifecycle";
 import { CreatorAvatar, LiveFills, Money, Num, PlatformStats, Sparkline } from "@/components/market";
 import { SiteHeader } from "@/components/market/site-header";
 import { SiteFooter } from "@/components/market/site-footer";
@@ -27,18 +28,16 @@ function topMarkets(rows: MarketRow[], n: number): MarketRow[] {
 
 /** The life of a bid. Colours follow the market roles: orange = money in play, green = paid, coral = refund. */
 const STEPS = [
-  { n: "01", title: "Bid", body: "A bidder or their agent picks a creator and escrows USDC on Arc. Nothing is paid yet.", tone: "gold", icon: Lock },
-  { n: "02", title: "Triage", body: "The creator's agent scores the bid: accept, counter, surface to the inbox, or decline.", tone: "info", icon: Bot },
-  { n: "03", title: "Reply → paid", body: "When the creator replies, the escrow releases the USDC to them on-chain.", tone: "up", icon: CheckCircle2 },
-  { n: "04", title: "No reply → refund", body: "No reply within 3 days and the full bid goes back to the bidder.", tone: "down", icon: Undo2 },
+  { n: "01", title: "Bid", body: "A bidder or their agent picks a creator and escrows USDC on Arc. Nothing is paid yet.", tone: "gold" },
+  { n: "02", title: "Triage", body: "The creator's agent scores the bid: accept, counter, surface to the inbox, or decline.", tone: "info" },
+  { n: "03", title: "Reply, get paid", body: "When the creator replies, the escrow releases the USDC to them on-chain.", tone: "up" },
+  { n: "04", title: "No reply, full refund", body: "No reply within 3 days and the full bid goes back to the bidder.", tone: "down" },
 ] as const;
 
-const STEP_TONE = {
-  gold: { text: "text-arc-gold", ring: "border-arc-gold/40 bg-arc-gold/10", bar: "bg-arc-gold" },
-  info: { text: "text-arc-lavender", ring: "border-arc-lavender/40 bg-arc-lavender/10", bar: "bg-arc-lavender" },
-  up: { text: "text-green", ring: "border-green/40 bg-green/10", bar: "bg-green" },
-  down: { text: "text-arc-coral", ring: "border-arc-coral/40 bg-arc-coral/10", bar: "bg-arc-coral" },
-};
+const STEP_TONE = { gold: "text-arc-gold", info: "text-arc-lavender", up: "text-green", down: "text-arc-coral" };
+
+/** Delay for a hero part's one-time entrance (.enter in globals.css). */
+const enter = (ms: number) => ({ ["--enter" as string]: `${ms}ms` }) as React.CSSProperties;
 
 const STACK = ["USDC escrow", "Circle Wallets", "Gateway · x402", "Arc Onramp Kit", "Contract webhooks"];
 
@@ -63,7 +62,7 @@ export default async function HomePage() {
             <div className="min-w-0 flex-[1_1_520px]">
               <Link
                 href="/creators"
-                className="focus-ring group inline-flex items-center gap-2 rounded-full border border-border-bright bg-arc-bg-1/80 py-1 pl-2.5 pr-3 text-xs text-text-secondary transition-colors hover:text-text-primary"
+                className="enter focus-ring group inline-flex items-center gap-2 rounded-full border border-border-bright bg-arc-bg-1/80 py-1 pl-2.5 pr-3 text-xs text-text-secondary transition-colors hover:text-text-primary"
               >
                 <span aria-hidden className="live-dot text-green" />
                 Live on {arc.chain.name}
@@ -71,16 +70,20 @@ export default async function HomePage() {
                 <span className="text-text-primary">USDC escrow</span>
                 <ArrowRight aria-hidden className="h-3 w-3 transition-transform group-hover:translate-x-0.5" />
               </Link>
+              {/* The hero enters once on load, line by line (.enter in globals.css; off under reduced motion). */}
               <h1 className="mt-6 text-balance text-[44px] font-semibold leading-[0.98] tracking-[-0.045em] sm:text-[clamp(52px,4.5vw,66px)]">
-                Attention is scarce.
-                <br />
-                <span className="text-text-secondary">Let agents negotiate it.</span>
+                <span className="enter block" style={enter(60)}>
+                  Attention is scarce.
+                </span>
+                <span className="enter block text-text-secondary" style={enter(140)}>
+                  Let agents negotiate it.
+                </span>
               </h1>
-              <p className="mt-6 max-w-[54ch] text-[17px] leading-relaxed text-text-secondary">
+              <p className="enter mt-6 max-w-[54ch] text-[17px] leading-relaxed text-text-secondary" style={enter(220)}>
                 Every creator is a market. Bidders and their AI agents escrow USDC to reach them. Creators get paid only when they reply,
                 and bidders get a full refund if they don&apos;t within 3 days.
               </p>
-              <div className="mt-8 flex flex-wrap gap-3">
+              <div className="enter mt-8 flex flex-wrap gap-3" style={enter(300)}>
                 <Link href="/creators" className="focus-ring btn-primary h-12 w-full px-6 text-[15px] sm:w-auto">
                   Browse markets <ArrowRight aria-hidden className="h-4 w-4" />
                 </Link>
@@ -89,7 +92,7 @@ export default async function HomePage() {
                   Deploy a bidder agent
                 </Link>
               </div>
-              <ul className="mt-8 flex flex-wrap gap-x-6 gap-y-2 text-[13px] text-text-secondary">
+              <ul className="enter mt-8 flex flex-wrap gap-x-6 gap-y-2 text-[13px] text-text-secondary" style={enter(380)}>
                 <li className="inline-flex items-center gap-2">
                   <CheckCircle2 aria-hidden className="h-4 w-4 text-green" /> Creators keep 100%
                 </li>
@@ -100,7 +103,7 @@ export default async function HomePage() {
                   <Clock3 aria-hidden className="h-4 w-4 text-arc-coral" /> Refund after 3 days
                 </li>
               </ul>
-              <p className="mt-6 text-sm text-text-secondary">
+              <p className="enter mt-6 text-sm text-text-secondary" style={enter(440)}>
                 Your time is worth something?{" "}
                 <Link href="/dashboard" className="focus-ring rounded font-medium text-text-primary underline decoration-border-bright underline-offset-4 hover:decoration-arc-gold">
                   Open your creator market
@@ -109,7 +112,7 @@ export default async function HomePage() {
             </div>
 
             {/* Top markets board */}
-            <section aria-labelledby="top-markets" className="panel-raised min-w-0 flex-[1_1_400px] overflow-hidden">
+            <section aria-labelledby="top-markets" className="enter panel-raised min-w-0 flex-[1_1_400px] overflow-hidden" style={enter(260)}>
               <header className="flex items-center justify-between gap-3 border-b border-border px-5 py-3.5">
                 <div className="flex items-center gap-2.5">
                   <h2 id="top-markets" className="text-[15px] font-semibold tracking-[-0.015em]">
@@ -144,7 +147,7 @@ export default async function HomePage() {
                       <li key={r.handle}>
                         <Link
                           href={`/c/${r.handle}`}
-                          className="focus-ring group grid grid-cols-[1fr_auto] items-center gap-3 px-5 py-3 transition-colors hover:bg-arc-bg-2 sm:grid-cols-[1fr_72px_96px]"
+                          className="signal-row focus-ring group grid grid-cols-[1fr_auto] items-center gap-3 px-5 py-3 transition-colors hover:bg-arc-bg-2 sm:grid-cols-[1fr_72px_96px]"
                         >
                           <span className="flex min-w-0 items-center gap-3">
                             <Num className="w-4 text-xs text-text-dim">{i + 1}</Num>
@@ -194,7 +197,7 @@ export default async function HomePage() {
         <div className="mx-auto max-w-[1320px] px-4 sm:px-6">
           {/* Live numbers */}
           <section aria-label="Platform numbers">
-            <PlatformStats totals={totals} />
+            <PlatformStats totals={totals} enter />
             <LiveFills ticker={ticker} now={now} className="mt-3" />
             <p className="mt-3 text-xs text-text-secondary">Numbers count only bids settled on-chain. Nothing here is estimated.</p>
           </section>
@@ -212,25 +215,24 @@ export default async function HomePage() {
                 Bids are held by the AttnnEscrow contract on Arc, which only pays the creator on a reply or returns the money to the bidder.
               </p>
             </div>
-            <ol className="mt-8 grid grid-cols-[repeat(auto-fit,minmax(240px,1fr))] gap-px overflow-hidden rounded-xl border border-border bg-border">
-              {STEPS.map((s) => {
-                const t = STEP_TONE[s.tone];
-                const Icon = s.icon;
-                return (
-                  <li key={s.n} className="relative bg-arc-bg-1 p-6">
-                    <span aria-hidden className={cn("absolute inset-x-0 top-0 h-0.5 opacity-70", t.bar)} />
-                    <div className="flex items-center justify-between">
-                      <span className={cn("inline-flex h-9 w-9 items-center justify-center rounded-lg border", t.ring)}>
-                        <Icon aria-hidden className={cn("h-[18px] w-[18px]", t.text)} />
+            <figure className="mt-10">
+              {/* The demo acts out the four rules below; screen readers get the list instead. */}
+              <div aria-hidden>
+                <BidLifecycle />
+              </div>
+              <figcaption className="mt-10 border-t border-border pt-6">
+                <ol className="grid gap-x-8 gap-y-4 sm:grid-cols-2 lg:grid-cols-4">
+                  {STEPS.map((s) => (
+                    <li key={s.n} className="flex gap-3 text-sm leading-relaxed text-text-secondary">
+                      <span className={cn("num pt-px text-xs", STEP_TONE[s.tone])}>{s.n}</span>
+                      <span>
+                        <span className="font-medium text-text-primary">{s.title}.</span> {s.body}
                       </span>
-                      <span className="num text-xs text-text-dim">{s.n}</span>
-                    </div>
-                    <h3 className="mt-5 text-lg font-semibold tracking-[-0.02em]">{s.title}</h3>
-                    <p className="mt-1.5 text-sm leading-relaxed text-text-secondary">{s.body}</p>
-                  </li>
-                );
-              })}
-            </ol>
+                    </li>
+                  ))}
+                </ol>
+              </figcaption>
+            </figure>
           </section>
 
           {/* Two sides */}

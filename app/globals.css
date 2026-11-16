@@ -130,6 +130,8 @@ body {
    Never used for scroll reveals. */
 .enter { animation: enter-rise 640ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards; animation-delay: var(--enter, 0ms); }
 @keyframes enter-rise { from { opacity: 0; transform: translateY(14px); } }
+/* Set by <EnterOnce> after the first play, so in-app visits don't replay it. */
+.entered .enter { animation: none; }
 
 /* .signal-row: an orange bar on the left edge of a row while it is hovered or
    focused (market lists). Put it on the row, or on a table row's first cell. */

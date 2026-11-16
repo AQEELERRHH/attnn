@@ -2,6 +2,7 @@ import type * as React from "react";
 import Link from "next/link";
 import { ArrowRight, Bot, CheckCircle2, Clock3, Inbox, Lock } from "lucide-react";
 import { BidLifecycle } from "@/components/market/bid-lifecycle";
+import { EnterOnce } from "@/components/market/enter-once";
 import { CreatorAvatar, LiveFills, Money, Num, PlatformStats, Sparkline } from "@/components/market";
 import { SiteHeader } from "@/components/market/site-header";
 import { SiteFooter } from "@/components/market/site-footer";
@@ -49,6 +50,7 @@ export default async function HomePage() {
   return (
     <div className="min-h-screen overflow-x-clip bg-arc-bg-0">
       <SiteHeader networkLabel={arc.chain.name} />
+      <EnterOnce />
 
       <main>
         {/* Hero */}

@@ -34,7 +34,7 @@ const money = (n: number) => `$${n.toFixed(2)}`;
 // 5 Reply is pressed                         6 $25 travels to the creator, the escrow counts down
 // 7 paid: the creator's earnings roll up     8 the refund rule lands as the closing note
 const script = async (a: Act<S>) => {
-  const beats = [500, 450, 1200, 1300, 1100, 350, 900, 1000];
+  const beats = [500, 450, 1200, 1300, 1100, 650, 900, 1000];
   for (let i = 0; i < beats.length; i++) {
     await a.wait(beats[i]!);
     a.put({ step: i + 1 });
@@ -84,6 +84,7 @@ function Scene({ s, rect, compact }: { s: S; rect: (name: string) => Rect; compa
     : { from: { x: e.x + e.width, y: e.y + e.height / 2 }, to: { x: c.x, y: e.y + e.height / 2 } };
 
   const escrowed = step >= 2 && step < 6 ? BID : 0;
+  const releasing = step >= 6;
   const paid = step >= 7;
 
   return (
@@ -141,7 +142,7 @@ function Scene({ s, rect, compact }: { s: S; rect: (name: string) => Rect; compa
           <span className="num ml-auto text-xs text-text-secondary">on Arc</span>
         </div>
         <Count
-          className={cn("num mt-4 block text-[44px] font-medium leading-none tracking-[-0.03em]", escrowed ? "text-arc-gold" : "text-text-secondary")}
+          className={cn("mt-4 block font-sans text-[44px] font-semibold leading-none tracking-[-0.03em] tabular-nums", escrowed ? "text-arc-gold" : "text-text-secondary")}
           value={escrowed}
           duration={850}
           format={money}
@@ -149,9 +150,9 @@ function Scene({ s, rect, compact }: { s: S; rect: (name: string) => Rect; compa
         <div className="mt-2 text-sm text-text-secondary">
           <Roll variant="fade">{step < 2 ? "Waiting for a bid" : step < 6 ? "Held until the creator replies" : step < 7 ? "Releasing to the creator" : `Released to ${CREATOR}`}</Roll>
         </div>
-        <div className={cn("bl-refund mt-4 flex items-center gap-2 text-[13px]", paid ? "text-text-secondary" : "text-arc-coral")} data-in={step >= 2 || undefined}>
+        <div className={cn("bl-refund mt-4 flex items-center gap-2 text-[13px]", releasing ? "text-text-secondary" : "text-arc-coral")} data-in={step >= 2 || undefined}>
           <Clock3 className="h-3.5 w-3.5 flex-none" />
-          <Roll variant="fade">{paid ? "Paid on reply. Nothing to refund." : "Refunds to the bidder in 2d 23h"}</Roll>
+          <Roll variant="fade">{releasing ? "Paid on reply. Nothing to refund." : "Refunds to the bidder in 2d 23h"}</Roll>
         </div>
       </div>
 
@@ -215,7 +216,7 @@ function Coin({ at, show }: { at: { x: number; y: number }; show: boolean }) {
       aria-hidden
       className="bl-coin num absolute left-0 top-0 z-20"
       data-show={show || undefined}
-      style={{ transform: `translate(${at.x - 34}px, ${at.y - 13}px)` }}
+      style={{ transform: `translate(${at.x - 34}px, ${at.y - 13}px) scale(${show ? 1 : 0.6})` }}
     >
       {money(BID)}
     </span>

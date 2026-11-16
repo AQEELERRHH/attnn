@@ -35,9 +35,9 @@ export function BrandMark({ className, title }: { className?: string; title?: st
           <rect x="69" y="0" width="200" height="200" rx="42" fill="black" />
         </mask>
       </defs>
-      <rect {...square(136)} fill="none" stroke="#3B3D3F" strokeWidth="24" mask={`url(#${id}-m3)`} />
-      <rect {...square(69)} fill="none" stroke="#7F8082" strokeWidth="24" mask={`url(#${id}-m2)`} />
-      <rect {...square(0)} fill="none" stroke="#FDFAF3" strokeWidth="24" />
+      <rect {...square(136)} fill="none" style={{ stroke: "rgb(var(--logo-c))" }} strokeWidth="24" mask={`url(#${id}-m3)`} />
+      <rect {...square(69)} fill="none" style={{ stroke: "rgb(var(--logo-b))" }} strokeWidth="24" mask={`url(#${id}-m2)`} />
+      <rect {...square(0)} fill="none" style={{ stroke: "rgb(var(--logo-a))" }} strokeWidth="24" />
       <circle cx="100" cy="100" r="28" fill="#FF9A04" />
     </svg>
   );

@@ -89,7 +89,7 @@ export function PriceChart({
         {/* Last price tag on the right edge, like an exchange chart. */}
         <span
           aria-hidden
-          className="num absolute right-0 -translate-y-1/2 rounded bg-arc-gold px-1.5 py-0.5 text-[11px] font-medium text-[#130B00]"
+          className="num absolute right-0 -translate-y-1/2 rounded bg-arc-gold px-1.5 py-0.5 text-[11px] font-medium text-on-accent"
           style={{ top: y(last.v) }}
         >
           {formatUsd(BigInt(Math.round(last.v * 100)) * BigInt(10_000))}

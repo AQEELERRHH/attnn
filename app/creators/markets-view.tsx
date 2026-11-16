@@ -2,7 +2,8 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Search } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { RefreshCw, Search } from "lucide-react";
 import {
   Change,
   CreatorAvatar,
@@ -54,6 +55,9 @@ export function MarketsView({
   now: number;
 }) {
   const [tag, setTag] = React.useState<string>("All");
+  // Refresh re-fetches this page's server data (markets, totals, fills) in place.
+  const router = useRouter();
+  const [refreshing, startRefresh] = React.useTransition();
   const [query, setQuery] = React.useState("");
   const [acceptingOnly, setAcceptingOnly] = React.useState(false);
 
@@ -232,6 +236,16 @@ export function MarketsView({
               className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-text-dim"
             />
           </label>
+          <button
+            type="button"
+            onClick={() => startRefresh(() => router.refresh())}
+            disabled={refreshing}
+            aria-label={refreshing ? "Refreshing markets" : "Refresh markets"}
+            title="Refresh"
+            className="focus-ring inline-flex h-10 w-10 flex-none items-center justify-center rounded-lg border border-border-bright bg-arc-bg-1 text-text-secondary hover:border-text-primary/20 hover:bg-arc-bg-2 hover:text-text-primary active:scale-[0.94] active:duration-75 disabled:cursor-progress"
+          >
+            <RefreshCw aria-hidden className={cn("h-4 w-4", refreshing && "animate-spin text-arc-gold")} />
+          </button>
           <button
             type="button"
             aria-pressed={acceptingOnly}

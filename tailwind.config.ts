@@ -45,9 +45,11 @@ const config: Config = {
           DEFAULT: rgb("up"),
         },
         border: {
-          DEFAULT: "rgb(var(--cream) / 0.07)",
-          bright: "rgb(var(--cream) / 0.13)",
+          DEFAULT: "rgb(var(--cream) / var(--line-a))",
+          bright: "rgb(var(--cream) / var(--line-b))",
         },
+        // Text and icons on a filled accent: dark on the dark theme's bright orange, light on the light theme's.
+        "on-accent": rgb("on-accent"),
       },
       fontFamily: {
         display: ["var(--font-sans)", "ui-sans-serif", "system-ui", "sans-serif"],
@@ -64,8 +66,8 @@ const config: Config = {
       transitionDuration: { DEFAULT: "200ms" },
       boxShadow: {
         // A hairline top highlight plus a soft drop: raised surfaces on ink.
-        raised: "inset 0 1px 0 0 rgb(var(--cream) / 0.04), 0 1px 2px 0 rgb(0 0 0 / 0.4), 0 8px 24px -12px rgb(0 0 0 / 0.6)",
-        pop: "inset 0 1px 0 0 rgb(var(--cream) / 0.05), 0 16px 48px -12px rgb(0 0 0 / 0.75)",
+        raised: "var(--shadow-raised)",
+        pop: "var(--shadow-pop)",
         signal: "0 0 0 1px rgb(var(--signal) / 0.5), 0 8px 24px -10px rgb(var(--signal) / 0.45)",
       },
       animation: {

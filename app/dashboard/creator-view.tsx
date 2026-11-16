@@ -218,7 +218,7 @@ function CreatorMarketDesk({
               <CreatorAvatar handle={profile.handle} src={profile.avatarUrl} size={56} />
               <span
                 aria-hidden
-                className="absolute -bottom-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full border-2 border-arc-bg-1 bg-arc-gold text-[#130B00] transition group-hover:brightness-110"
+                className="absolute -bottom-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full border-2 border-arc-bg-1 bg-arc-gold text-on-accent transition group-hover:brightness-110"
               >
                 <Camera className="h-3 w-3" />
               </span>

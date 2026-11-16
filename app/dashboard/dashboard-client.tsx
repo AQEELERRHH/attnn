@@ -302,7 +302,7 @@ export function DashboardClient({
                   <Num
                     className={cn(
                       "min-w-5 rounded-full px-1.5 py-px text-center text-[11px]",
-                      v.badge ? "bg-arc-gold font-semibold text-[#130B00]" : "bg-arc-bg-2 text-text-secondary",
+                      v.badge ? "bg-arc-gold font-semibold text-on-accent" : "bg-arc-bg-2 text-text-secondary",
                     )}
                   >
                     {v.count}

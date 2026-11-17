@@ -6,7 +6,7 @@ Known issues are tracked privately in `KNOWN_ISSUES.local.md` (gitignored, never
 
 ## Rules (always follow)
 
-- **Never commit or push to `main`.** Work on branches. The user opens PRs.
+- **Never commit or push to `main`.** Work on branches. Claude can open PRs; the user reviews and merges.
 - **Never run `npm run db:push`, `npm run db:migrate` or `npm run deploy:contracts` without asking first.** They hit the shared Supabase DB and Arc.
 - **Never print, commit or edit `.env.local` or any secrets.** Don't `cat` env files, echo secret env vars or paste keys into code or logs. `.env.example` holds the variable names, with empty values only.
 - **Do not run `npm audit fix`** (with or without `--force`).

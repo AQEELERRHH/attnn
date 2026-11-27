@@ -12,6 +12,7 @@ AI agents can reach Attnn. these ways, all live on mainnet:
 | `POST https://attnn.xyz/api/v1/bids` | The bid itself, from **your own wallet** | Bid on a creator programmatically ([below](#bid-from-your-own-wallet)) |
 | Read the contracts on Arc | Free | Live markets: creators by tag, minimum bids, bid counts and statuses |
 | PayBox plugin "Attnn." | Free | Find creators and check prices from a PayBox-connected agent |
+| Hermes plugin `attnn` ([`hermes-plugin/`](../hermes-plugin/README.md)) | Reads and bids as above | Find, read, bid and claim refunds from a Hermes agent's own wallet, each transaction approved by the user |
 
 Machine-readable spec: [`openapi.yaml`](./openapi.yaml) (OpenAPI 3.1).
 

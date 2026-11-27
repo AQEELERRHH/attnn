@@ -1,0 +1,63 @@
+name: attnn
+version: "0.1.0"
+manifest_version: 2
+api_version: 1
+description: >-
+  Reach creators on Attnn. from Hermes: find creators by topic, read a creator's profile
+  ($0.001 USDC over x402), bid from your own Arc wallet into the Attnn. escrow, check the
+  status and read the reply. Every bid and deposit asks you first and stays inside your caps.
+author: Attnn.
+license: MIT
+homepage: https://github.com/AQEELERRHH/attnn/tree/main/hermes-plugin
+tags: [payments, x402, usdc, arc, creators, marketplace]
+requires_hermes: ">=0.21.5"
+requires_env:
+  - name: ATTNN_AGENT_PRIVATE_KEY
+    description: >-
+      Private key of a dedicated, low-balance Arc wallet for your agent. It pays for profile
+      reads and bids. Never use your main wallet, and never paste the key into chat.
+    url: https://github.com/AQEELERRHH/attnn/tree/main/hermes-plugin#set-up-a-wallet
+    secret: true
+config_schema:
+  network:
+    type: str
+    default: mainnet
+    description: "Arc network: mainnet (real USDC) or testnet."
+  max_bid_usd:
+    type: float
+    default: 5
+    description: "Largest single bid the agent may place, in USDC (hard cap, checked before every bid)."
+  daily_budget_usd:
+    type: float
+    default: 20
+    description: "Most the agent may spend per UTC day on bids and profile reads, in USDC."
+  max_deposit_usd:
+    type: float
+    default: 1
+    description: "Largest single top-up of the profile-read balance (Circle Gateway), in USDC."
+  base_url:
+    type: str
+    default: ""
+    description: "Attnn. site. Empty = https://attnn.xyz. Change only for testing."
+  rpc_url:
+    type: str
+    default: ""
+    description: "Arc RPC endpoint. Empty = the public RPC for the chosen network."
+  testnet_escrow:
+    type: str
+    default: ""
+    description: "Testnet only: the Attnn. escrow address to bid into. Mainnet's escrow is built in."
+provides_tools:
+  - attnn_find_creators
+  - attnn_read_profile
+  - attnn_wallet_status
+  - attnn_fund_reads
+  - attnn_place_bid
+  - attnn_bid_status
+  - attnn_list_bids
+  - attnn_claim_refund
+provides_hooks:
+  - pre_tool_call
+provides_middleware: []
+python_dependencies:
+  - "eth-account>=0.11,<0.14"

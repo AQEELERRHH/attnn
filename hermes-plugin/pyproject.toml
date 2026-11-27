@@ -1,0 +1,15 @@
+[project]
+name = "attnn-hermes-plugin"
+version = "0.1.0"
+description = "Attnn. plugin for Hermes Agent: reach creators by bidding USDC on Arc."
+requires-python = ">=3.11"
+license = "MIT"
+dependencies = [
+    "eth-account>=0.11,<0.14",
+]
+
+[dependency-groups]
+dev = ["pytest>=8,<10"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
